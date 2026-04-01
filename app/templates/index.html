@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}首页 - AetherFrame{% endblock %}
+
+{% block content %}
+    <h1>AetherFrame 项目测试</h1>
+    <p>这是一个极简项目，用于验证基础环境连通性。</p>
+    <p>点击下方按钮，将从 <code>data/hello.txt</code> 读取内容并显示。</p>
+    
+    <div style="margin: 2rem 0;">
+        <button 
+            hx-get="/api/hello" 
+            hx-target="#result"
+            style="padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer;"
+        >
+            读取文件内容
+        </button>
+    </div>
+    
+    <div id="result" style="padding: 1rem; border: 1px solid #ccc; min-height: 3rem;">
+        尚未读取
+    </div>
+{% endblock %}
