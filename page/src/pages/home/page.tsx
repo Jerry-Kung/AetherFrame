@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Header from "./components/Header";
 import ModeSwitch, { type ModeId } from "./components/ModeSwitch";
 import ContentArea from "./components/ContentArea";
@@ -22,7 +23,16 @@ const sparkles = [
 ];
 
 export default function Home() {
+  const navigate = useNavigate();
   const [activeMode, setActiveMode] = useState<ModeId>("material");
+
+  const handleModeSwitch = (id: ModeId) => {
+    if (id === "repair") {
+      navigate("/repair");
+      return;
+    }
+    setActiveMode(id);
+  };
 
   return (
     <div
@@ -93,7 +103,7 @@ export default function Home() {
           {/* Vertical divider */}
           <div className="hidden md:block w-px h-10 bg-rose-200/40 mx-6" />
 
-          <ModeSwitch activeMode={activeMode} onSwitch={setActiveMode} />
+          <ModeSwitch activeMode={activeMode} onSwitch={handleModeSwitch} />
         </div>
 
         {/* ── Workspace card — fills remaining height ─── */}
