@@ -5,19 +5,31 @@
 // 任务状态类型
 export type TaskStatus = "pending" | "processing" | "completed" | "failed";
 
-// 后端任务数据（snake_case）
+/** 后端图片字段（任务详情 GET /tasks/:id） */
+export interface BackendImageInfo {
+  filename: string;
+  url: string;
+}
+
+/**
+ * 后端任务 JSON：创建/列表/更新/状态 为简要结构；详情含图片列表。
+ * 与 Pydantic TaskSimple / TaskDetail 的 model_dump 一致。
+ */
 export interface BackendTask {
   id: string;
   name: string;
   status: TaskStatus;
+  prompt: string;
+  output_count: number;
   created_at: string;
   updated_at: string;
-  main_image_filename: string | null;
-  prompt: string | null;
-  reference_image_filenames: string[];
-  output_count: number;
-  result_image_filenames: string[];
-  error_message: string | null;
+  has_main_image: boolean;
+  reference_image_count: number;
+  result_image_count: number;
+  error_message?: string | null;
+  main_image?: BackendImageInfo | null;
+  reference_images?: BackendImageInfo[];
+  result_images?: BackendImageInfo[];
 }
 
 // 前端任务数据（camelCase）
@@ -134,24 +146,63 @@ export function getImageUrl(
   return `/api/repair/tasks/${taskId}/images/${imageType}/${filename}`;
 }
 
-// 后端任务 -> 前端任务
-export function backendToFrontendTask(backendTask: BackendTask): RepairTask {
+function normalizeOutputCount(n: unknown): 1 | 2 | 4 {
+  const v = Number(n);
+  if (v === 2 || v === 4) return v as 2 | 4;
+  return 1;
+}
+
+/**
+ * 将后端 TaskSimple / TaskDetail（及历史仅含 *_filenames 的 payload）转为前端 RepairTask
+ */
+export function backendToFrontendTask(raw: unknown): RepairTask {
+  const t = raw as Record<string, unknown>;
+  const id = String(t.id ?? "");
+
+  let mainImage = "";
+  const mainObj = t.main_image;
+  if (mainObj && typeof mainObj === "object") {
+    const m = mainObj as { url?: string; filename?: string };
+    mainImage = m.url ?? (m.filename ? getImageUrl(id, "main", m.filename) : "");
+  }
+  if (!mainImage && "main_image_filename" in t) {
+    mainImage = getImageUrl(id, "main", t.main_image_filename as string | null);
+  }
+
+  let referenceImages: string[] = [];
+  if (Array.isArray(t.reference_images)) {
+    referenceImages = (t.reference_images as BackendImageInfo[])
+      .map((r) => r.url || (r.filename ? getImageUrl(id, "reference", r.filename) : ""))
+      .filter(Boolean);
+  } else if (Array.isArray(t.reference_image_filenames)) {
+    referenceImages = (t.reference_image_filenames as string[]).map((filename) =>
+      getImageUrl(id, "reference", filename)
+    );
+  }
+
+  let results: string[] = [];
+  if (Array.isArray(t.result_images)) {
+    results = (t.result_images as BackendImageInfo[])
+      .map((r) => r.url || (r.filename ? getImageUrl(id, "result", r.filename) : ""))
+      .filter(Boolean);
+  } else if (Array.isArray(t.result_image_filenames)) {
+    results = (t.result_image_filenames as string[]).map((filename) =>
+      getImageUrl(id, "result", filename)
+    );
+  }
+
   return {
-    id: backendTask.id,
-    name: backendTask.name,
-    status: backendTask.status,
-    createdAt: backendTask.created_at,
-    updatedAt: backendTask.updated_at,
-    mainImage: getImageUrl(backendTask.id, "main", backendTask.main_image_filename),
-    prompt: backendTask.prompt || "",
-    referenceImages: backendTask.reference_image_filenames.map((filename) =>
-      getImageUrl(backendTask.id, "reference", filename)
-    ),
-    outputCount: (backendTask.output_count as 1 | 2 | 4) || 1,
-    results: backendTask.result_image_filenames.map((filename) =>
-      getImageUrl(backendTask.id, "result", filename)
-    ),
-    errorMessage: backendTask.error_message,
+    id,
+    name: String(t.name ?? ""),
+    status: (t.status as TaskStatus) || "pending",
+    createdAt: t.created_at != null ? String(t.created_at) : "",
+    updatedAt: t.updated_at != null ? String(t.updated_at) : "",
+    mainImage,
+    prompt: String(t.prompt ?? ""),
+    referenceImages,
+    outputCount: normalizeOutputCount(t.output_count),
+    results,
+    errorMessage: (t.error_message as string | null) ?? null,
   };
 }
 

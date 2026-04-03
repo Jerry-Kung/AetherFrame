@@ -22,7 +22,8 @@ export function useRepairTasks() {
         order_dir: "desc",
         limit: 100,
       });
-      const frontendTasks = response.tasks.map(backendToFrontendTask);
+      const rows = response.tasks ?? [];
+      const frontendTasks = rows.map((row) => backendToFrontendTask(row));
       setTasks(frontendTasks);
     } catch (err) {
       const message = err instanceof Error ? err.message : "获取任务列表失败";
