@@ -861,10 +861,11 @@ class RepairService:
         """
         logger.info(f"开始生成图片: task_id={task_id}, output_count={output_count}")
 
-        temp_image_paths = []
+        temp_image_paths: List[str] = []
+        temp_dir: Optional[str] = None
         try:
             # 1. 调用 ImageGenerationService 生成图片
-            result_image_paths, error_message = image_generation_service.generate_repair_images(
+            result_image_paths, error_message, temp_dir = image_generation_service.generate_repair_images(
                 task_id=task_id,
                 prompt_template=prompt,
                 main_image_path=main_image_path,
@@ -929,8 +930,7 @@ class RepairService:
                 "error_message": error_msg
             })
         finally:
-            # 清理临时文件
-            image_generation_service.cleanup_temp_images(temp_image_paths)
+            image_generation_service.cleanup_temp_images(temp_image_paths, temp_dir)
 
 
 logger.debug("RepairService 加载完成")

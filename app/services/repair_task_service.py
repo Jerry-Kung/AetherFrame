@@ -136,10 +136,11 @@ class RepairTaskService:
         """
         logger.info(f"开始后台执行任务: task_id={task_id}, output_count={output_count}")
 
-        temp_image_paths = []
+        temp_image_paths: List[str] = []
+        temp_dir: Optional[str] = None
         try:
             # 1. 调用 ImageGenerationService 生成图片
-            result_image_paths, error_message = image_generation_service.generate_repair_images(
+            result_image_paths, error_message, temp_dir = image_generation_service.generate_repair_images(
                 task_id=task_id,
                 prompt_template=prompt,
                 main_image_path=main_image_path,
@@ -189,8 +190,7 @@ class RepairTaskService:
             logger.error(error_msg, exc_info=True)
             self._update_task_status(task_id, "failed", error_msg)
         finally:
-            # 清理临时文件
-            image_generation_service.cleanup_temp_images(temp_image_paths)
+            image_generation_service.cleanup_temp_images(temp_image_paths, temp_dir)
 
     # ==========================================
     # 状态更新
@@ -204,6 +204,10 @@ class RepairTaskService:
     ) -> Optional[RepairTask]:
         """
         更新任务状态
+
+        使用独立的数据库会话：在 FastAPI BackgroundTasks 中执行时，请求级 Session
+        往往已关闭。此处通过原 Session 的 bind（Engine）新建会话，与生产库、
+        测试夹具使用同一数据库文件。
 
         Args:
             task_id: 任务 ID
@@ -221,13 +225,18 @@ class RepairTaskService:
         else:
             updates["error_message"] = None
 
-        updated_task = self.task_repo.update(task_id, updates)
-        if updated_task:
-            logger.info(f"任务状态更新成功: task_id={task_id}, status={status}")
-        else:
-            logger.warning(f"任务状态更新失败: task_id={task_id}")
-
-        return updated_task
+        bind = self.task_repo.db.get_bind()
+        db = Session(bind=bind, autocommit=False, autoflush=False)
+        try:
+            repo = RepairTaskRepository(db)
+            updated_task = repo.update(task_id, updates)
+            if updated_task:
+                logger.info(f"任务状态更新成功: task_id={task_id}, status={status}")
+            else:
+                logger.warning(f"任务状态更新失败: task_id={task_id}")
+            return updated_task
+        finally:
+            db.close()
 
     # ==========================================
     # 任务状态查询

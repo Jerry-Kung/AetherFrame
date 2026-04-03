@@ -257,7 +257,7 @@ class TestAsyncTaskIntegration:
         # 3. Mock 图片生成服务
         temp_image_path = os.path.join(temp_data_dir, "temp_result.png")
         create_test_image(temp_image_path)
-        mock_generate.return_value = ([temp_image_path], None)
+        mock_generate.return_value = ([temp_image_path], None, None)
 
         # 4. 同步执行任务（不使用 BackgroundTasks）
         import asyncio
@@ -303,7 +303,7 @@ class TestAsyncTaskIntegration:
 
         # 3. Mock 图片生成服务返回错误
         error_msg = "模拟图片生成失败"
-        mock_generate.return_value = ([], error_msg)
+        mock_generate.return_value = ([], error_msg, None)
 
         # 4. 同步执行任务
         import asyncio

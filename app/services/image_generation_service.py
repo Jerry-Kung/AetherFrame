@@ -107,7 +107,7 @@ def generate_repair_images(
     reference_image_paths: List[str],
     output_count: int = 2,
     aspect_ratio: str = "1:1"
-) -> Tuple[List[str], Optional[str]]:
+) -> Tuple[List[str], Optional[str], Optional[str]]:
     """
     生成修补图片
 
@@ -120,14 +120,15 @@ def generate_repair_images(
         aspect_ratio: 宽高比
 
     Returns:
-        (成功生成的图片路径列表, 错误信息)
-        - 成功时：错误信息为 None
-        - 失败时：图片路径列表为空，错误信息为失败原因
+        (成功生成的图片路径列表, 错误信息, 临时目录路径)
+        - 成功时：错误信息为 None；临时目录须由调用方在读完文件后通过 cleanup_temp_images 删除
+        - 失败时：图片路径列表为空，错误信息为失败原因；临时目录为 None 或已清理
     """
     logger.info(f"开始生成修补图片: task_id={task_id}, output_count={output_count}")
 
-    result_image_paths = []
-    error_message = None
+    result_image_paths: List[str] = []
+    error_message: Optional[str] = None
+    temp_dir: Optional[str] = None
 
     try:
         # 1. 构建 Content 列表
@@ -140,21 +141,21 @@ def generate_repair_images(
         except ValueError as e:
             error_msg = f"构建 Content 失败: {str(e)}"
             logger.error(error_msg)
-            return [], error_msg
+            return [], error_msg, None
 
-        # 2. 创建临时输出目录
-        with tempfile.TemporaryDirectory() as temp_dir:
-            logger.debug(f"创建临时输出目录: {temp_dir}")
+        # 2. 临时输出目录（不可使用 TemporaryDirectory：退出 with 时会删除目录，
+        #    而调用方需在返回后读取文件并拷贝到 data/repair/tasks）
+        temp_dir = tempfile.mkdtemp(prefix=f"repair_{task_id}_")
+        logger.debug(f"创建临时输出目录: {temp_dir}")
 
+        try:
             # 3. 循环生成指定数量的图片
             for i in range(output_count):
                 logger.info(f"生成第 {i+1}/{output_count} 张图片...")
 
-                # 生成文件名
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 file_name = f"repair_{task_id}_{i}_{timestamp}.png"
 
-                # 调用 Nano Banana Pro 生成图片
                 success = generate_image_with_nano_banana_pro(
                     Content=content,
                     output_path=temp_dir,
@@ -163,7 +164,6 @@ def generate_repair_images(
                 )
 
                 if success:
-                    # 检查生成的文件
                     temp_file_path = os.path.join(temp_dir, file_name)
                     if os.path.exists(temp_file_path):
                         result_image_paths.append(temp_file_path)
@@ -172,31 +172,43 @@ def generate_repair_images(
                         logger.warning(f"第 {i+1} 张图片生成返回成功，但文件不存在")
                 else:
                     logger.error(f"第 {i+1} 张图片生成失败")
-                    # 继续尝试生成下一张
 
-        # 4. 检查结果
-        if len(result_image_paths) == 0:
-            error_message = "所有图片生成均失败"
-            logger.error(error_message)
-        elif len(result_image_paths) < output_count:
-            logger.warning(f"部分图片生成失败: 成功 {len(result_image_paths)}/{output_count}")
-        else:
-            logger.info(f"所有图片生成成功: {len(result_image_paths)} 张")
+            # 4. 检查结果
+            if len(result_image_paths) == 0:
+                error_message = "所有图片生成均失败"
+                logger.error(error_message)
+                if temp_dir and os.path.isdir(temp_dir):
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                return [], error_message, None
 
-        return result_image_paths, error_message
+            if len(result_image_paths) < output_count:
+                logger.warning(f"部分图片生成失败: 成功 {len(result_image_paths)}/{output_count}")
+            else:
+                logger.info(f"所有图片生成成功: {len(result_image_paths)} 张")
+
+            return result_image_paths, error_message, temp_dir
+
+        except Exception:
+            if temp_dir and os.path.isdir(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            raise
 
     except Exception as e:
         error_message = f"生成图片时发生异常: {str(e)}"
         logger.error(error_message, exc_info=True)
-        return [], error_message
+        return [], error_message, None
 
 
-def cleanup_temp_images(image_paths: List[str]) -> None:
+def cleanup_temp_images(
+    image_paths: List[str],
+    temp_dir: Optional[str] = None
+) -> None:
     """
-    清理临时图片文件
+    清理临时图片文件及临时目录
 
     Args:
         image_paths: 图片路径列表
+        temp_dir: generate_repair_images 返回的临时目录（若提供则整目录删除）
     """
     for path in image_paths:
         try:
@@ -205,6 +217,13 @@ def cleanup_temp_images(image_paths: List[str]) -> None:
                 logger.debug(f"已删除临时文件: {path}")
         except Exception as e:
             logger.warning(f"删除临时文件失败: {path}, 错误: {e}")
+
+    if temp_dir and os.path.isdir(temp_dir):
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            logger.debug(f"已删除临时目录: {temp_dir}")
+        except Exception as e:
+            logger.warning(f"删除临时目录失败: {temp_dir}, 错误: {e}")
 
 
 logger.debug("ImageGenerationService 加载完成")

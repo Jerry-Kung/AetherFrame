@@ -3,6 +3,7 @@
 包含：ImageGenerationService、RepairService 图片生成方法、API 接口的完整测试
 """
 import os
+import shutil
 import logging
 import pytest
 from unittest.mock import patch, MagicMock
@@ -108,6 +109,7 @@ class TestImageGenerationService:
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
             main_image = f.name
 
+        temp_dir = None
         try:
             # 模拟生成成功
             mock_generate.return_value = True
@@ -122,7 +124,7 @@ class TestImageGenerationService:
 
             mock_generate.side_effect = side_effect
 
-            result_paths, error_msg = image_generation_service.generate_repair_images(
+            result_paths, error_msg, temp_dir = image_generation_service.generate_repair_images(
                 task_id="test-task-001",
                 prompt_template="修复图片",
                 main_image_path=main_image,
@@ -132,9 +134,12 @@ class TestImageGenerationService:
 
             assert error_msg is None
             assert len(result_paths) == 2
+            assert temp_dir is not None
 
         finally:
             os.unlink(main_image)
+            if temp_dir and os.path.isdir(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
     @patch('app.services.image_generation_service.generate_image_with_nano_banana_pro')
     def test_generate_repair_images_all_fail(self, mock_generate, temp_data_dir):
@@ -148,7 +153,7 @@ class TestImageGenerationService:
         try:
             mock_generate.return_value = False
 
-            result_paths, error_msg = image_generation_service.generate_repair_images(
+            result_paths, error_msg, temp_dir = image_generation_service.generate_repair_images(
                 task_id="test-task-001",
                 prompt_template="修复图片",
                 main_image_path=main_image,
@@ -158,6 +163,7 @@ class TestImageGenerationService:
 
             assert len(result_paths) == 0
             assert "所有图片生成均失败" in error_msg
+            assert temp_dir is None
 
         finally:
             os.unlink(main_image)
@@ -234,7 +240,7 @@ class TestRepairServiceImageGeneration:
                 tf.close()
                 mock_result_paths.append(tf.name)
 
-            mock_ig_service.generate_repair_images.return_value = (mock_result_paths, None)
+            mock_ig_service.generate_repair_images.return_value = (mock_result_paths, None, None)
 
             # 启动任务
             result = repair_service.start_repair_task(

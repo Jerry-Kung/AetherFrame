@@ -1,6 +1,7 @@
 refs/
 page.backup/
 data/
+test_data/
 .cursor/
 
 # Byte-compiled / optimized / DLL files
