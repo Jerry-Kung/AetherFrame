@@ -18,6 +18,9 @@ import type {
 } from "@/types/repair";
 import { getImageUrl } from "@/types/repair";
 
+/** 任务详情与状态轮询请求超时（弱网兜底；修补本身为异步，接口应快速返回） */
+const TASK_FETCH_TIMEOUT_MS = 60_000;
+
 /**
  * 任务管理API
  */
@@ -50,7 +53,7 @@ export async function createTask(data: TaskCreateRequest): Promise<BackendTask> 
 
 // 获取任务详情
 export async function getTask(taskId: string): Promise<BackendTask> {
-  return http.get<BackendTask>(`/tasks/${taskId}`);
+  return http.get<BackendTask>(`/tasks/${taskId}`, { timeout: TASK_FETCH_TIMEOUT_MS });
 }
 
 // 更新任务
@@ -163,7 +166,7 @@ export async function startRepair(
 
 // 获取任务状态
 export async function getTaskStatus(taskId: string): Promise<BackendTask> {
-  return http.get<BackendTask>(`/tasks/${taskId}/status`);
+  return http.get<BackendTask>(`/tasks/${taskId}/status`, { timeout: TASK_FETCH_TIMEOUT_MS });
 }
 
 export default {

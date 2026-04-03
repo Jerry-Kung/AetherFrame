@@ -208,10 +208,14 @@ export function useRepairTask(taskId: string | null) {
       setError(null);
       try {
         const response = await repairApi.startRepair(id, useReferenceImages);
-        await fetchTask();
-        // 避免 fetchTask 与 start 竞态导致未启动轮询：以启动接口返回的状态为准再兜底一次
+        // 先开轮询再拉详情：避免首包 GET 超时/阻塞时轮询从未启动
         if (response.status === "processing") {
           startPollingRef.current();
+        }
+        try {
+          await fetchTask();
+        } catch (fetchErr) {
+          console.warn("启动修补后刷新任务详情失败（轮询将继续）:", fetchErr);
         }
         return response;
       } catch (err) {

@@ -3,6 +3,7 @@
 
 负责使用 FastAPI BackgroundTasks 处理异步任务
 """
+import asyncio
 import logging
 from typing import Optional, List
 from sqlalchemy.orm import Session
@@ -130,32 +131,43 @@ class RepairTaskService:
         output_count: int
     ) -> None:
         """
-        后台执行任务
+        后台执行任务（将阻塞的 LLM/IO 放到线程池，避免占满 asyncio 事件循环导致轮询 API 无响应）
+        """
+        await asyncio.to_thread(
+            self._execute_task_sync,
+            task_id,
+            prompt,
+            main_image_path,
+            reference_image_paths,
+            output_count,
+        )
 
-        Args:
-            task_id: 任务 ID
-            prompt: 修补 Prompt
-            main_image_path: 主图路径
-            reference_image_paths: 参考图路径列表
-            output_count: 输出数量
+    def _execute_task_sync(
+        self,
+        task_id: str,
+        prompt: str,
+        main_image_path: str,
+        reference_image_paths: List[str],
+        output_count: int,
+    ) -> None:
+        """
+        同步执行修补（在线程池中运行）：生成图、落盘、更新状态。
         """
         logger.info(f"开始后台执行任务: task_id={task_id}, output_count={output_count}")
 
         temp_image_paths: List[str] = []
         temp_dir: Optional[str] = None
         try:
-            # 1. 调用 ImageGenerationService 生成图片
             result_image_paths, error_message, temp_dir = image_generation_service.generate_repair_images(
                 task_id=task_id,
                 prompt_template=prompt,
                 main_image_path=main_image_path,
                 reference_image_paths=reference_image_paths,
-                output_count=output_count
+                output_count=output_count,
             )
 
             temp_image_paths = result_image_paths
 
-            # 2. 检查结果
             if error_message:
                 logger.error(f"图片生成失败: {error_message}")
                 self._update_task_status(task_id, "failed", error_message)
@@ -167,22 +179,18 @@ class RepairTaskService:
                 self._update_task_status(task_id, "failed", error_msg)
                 return
 
-            # 3. 保存生成的图片到任务目录
             saved_count = 0
             for i, temp_path in enumerate(result_image_paths):
                 try:
-                    # 读取临时文件
                     with open(temp_path, "rb") as f:
                         image_data = f.read()
 
-                    # 保存到任务目录
                     repair_file_service.save_result_image(task_id, image_data, index=i)
                     saved_count += 1
                     logger.info(f"结果图 {i} 保存成功")
                 except Exception as e:
                     logger.error(f"保存结果图 {i} 失败: {e}", exc_info=True)
 
-            # 4. 更新任务状态
             if saved_count > 0:
                 self._update_task_status(task_id, "completed")
                 logger.info(f"修补任务完成: task_id={task_id}, 成功生成 {saved_count} 张图片")
