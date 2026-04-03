@@ -14,6 +14,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class _SuppressRepairStatusPollAccessLog(logging.Filter):
+    """轮询 GET /api/repair/tasks/*/status 频率极高，默认不写入 uvicorn access 日志"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return True
+        if (
+            "GET " in msg
+            and "/api/repair/tasks/" in msg
+            and "/status HTTP" in msg
+        ):
+            return False
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_SuppressRepairStatusPollAccessLog())
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""

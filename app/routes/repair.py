@@ -742,7 +742,7 @@ async def get_task_status(
     """
     获取任务处理状态（用于轮询）
     """
-    logger.info(f"API 请求 - 获取任务状态: task_id={task_id}")
+    logger.debug(f"API 请求 - 获取任务状态: task_id={task_id}")
 
     try:
         # 使用 task_service 获取任务状态
@@ -755,7 +755,9 @@ async def get_task_status(
 
         task_simple = repair_service.build_task_simple_response(task)
 
-        logger.info(f"API 响应 - 获取任务状态成功: task_id={task_id}, status={task.status}")
+        logger.debug(
+            f"API 响应 - 获取任务状态成功: task_id={task_id}, status={task.status}"
+        )
 
         return ApiResponse(
             success=True,

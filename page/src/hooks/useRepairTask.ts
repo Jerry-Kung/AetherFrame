@@ -7,7 +7,7 @@ import repairApi from "@/services/repairApi";
 import type { RepairTask, TaskStatus } from "@/types/repair";
 import { backendToFrontendTask, frontendToBackendUpdate } from "@/types/repair";
 
-const POLLING_INTERVAL = 2500; // 2.5秒轮询一次
+const POLLING_INTERVAL = 15_000; // 15 秒轮询一次（LLM 耗时长，无需高频请求）
 
 export function useRepairTask(taskId: string | null) {
   const [task, setTask] = useState<RepairTask | null>(null);
