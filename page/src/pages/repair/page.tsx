@@ -1,8 +1,10 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { mockRepairTasks, type RepairTask, type TaskStatus } from "@/mocks/repairTasks";
+import { useRepairTasks } from "@/hooks/useRepairTasks";
+import { useRepairTask } from "@/hooks/useRepairTask";
+import type { RepairTask, TaskStatus, EditorState } from "@/types/repair";
 import TaskList from "./components/TaskList";
-import TaskEditor, { type EditorState } from "./components/TaskEditor";
+import TaskEditor from "./components/TaskEditor";
 import ResultDisplay from "./components/ResultDisplay";
 
 /* ── Background decoration data ───────────────────────── */
@@ -20,8 +22,6 @@ const sparkles = [
   { top: "82%", right: "14%", size: 11, delay: "2.3s" },
 ];
 
-let nextTaskId = 100;
-
 const defaultEditorState = (): EditorState => ({
   mainImage: "",
   prompt: "",
@@ -31,135 +31,189 @@ const defaultEditorState = (): EditorState => ({
 
 export default function RepairPage() {
   const navigate = useNavigate();
-  const [tasks, setTasks] = useState<RepairTask[]>(mockRepairTasks);
-  const [selectedId, setSelectedId] = useState<string | null>(mockRepairTasks[0]?.id ?? null);
-  const [editorMap, setEditorMap] = useState<Record<string, EditorState>>(() => {
-    const m: Record<string, EditorState> = {};
-    mockRepairTasks.forEach((t) => {
-      m[t.id] = {
-        mainImage: t.mainImage,
-        prompt: t.prompt,
-        referenceImages: t.referenceImages,
-        outputCount: t.outputCount,
-      };
-    });
-    return m;
-  });
-  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+  const { tasks, loading: tasksLoading, error: tasksError, createTask, deleteTask, refreshTask } = useRepairTasks();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { 
+    task: currentTask, 
+    loading: taskLoading, 
+    error: taskError,
+    updateTask,
+    uploadMainImage,
+    uploadReferenceImages,
+    deleteMainImage,
+    startRepair,
+    isUploading,
+    fetchTask
+  } = useRepairTask(selectedId);
+  
+  const [editorState, setEditorState] = useState<EditorState>(defaultEditorState());
+  const [localError, setLocalError] = useState<string | null>(null);
 
-  /* ── Derived current task ─── */
-  const currentTask = tasks.find((t) => t.id === selectedId) ?? null;
-  const currentEditor: EditorState = selectedId
-    ? (editorMap[selectedId] ?? defaultEditorState())
-    : defaultEditorState();
-  const isProcessing = selectedId ? processingIds.has(selectedId) : false;
-  const currentResults = currentTask?.results ?? [];
+  // 当选中任务变化时，更新编辑器状态
+  useEffect(() => {
+    if (currentTask) {
+      setEditorState({
+        mainImage: currentTask.mainImage,
+        prompt: currentTask.prompt,
+        referenceImages: currentTask.referenceImages,
+        outputCount: currentTask.outputCount,
+      });
+    } else {
+      setEditorState(defaultEditorState());
+    }
+  }, [currentTask?.id]);
+
+  // 当任务列表加载完成后，自动选择第一个任务
+  useEffect(() => {
+    if (tasks.length > 0 && !selectedId) {
+      setSelectedId(tasks[0].id);
+    }
+  }, [tasks, selectedId]);
+
+  // 显示错误提示
+  const showError = (message: string) => {
+    setLocalError(message);
+    setTimeout(() => setLocalError(null), 5000);
+  };
 
   /* ── Task actions ─── */
   const handleSelect = useCallback((id: string) => setSelectedId(id), []);
 
-  const handleDelete = useCallback((id: string) => {
-    setTasks((prev) => {
-      const next = prev.filter((t) => t.id !== id);
+  const handleDelete = useCallback(async (id: string) => {
+    try {
+      await deleteTask(id);
       if (selectedId === id) {
-        setSelectedId(next[0]?.id ?? null);
+        setSelectedId(tasks.find(t => t.id !== id)?.id ?? null);
       }
-      return next;
-    });
-    setEditorMap((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  }, [selectedId]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "删除任务失败";
+      showError(message);
+    }
+  }, [deleteTask, selectedId, tasks]);
 
-  const handleNew = useCallback(() => {
-    const id = `task-${++nextTaskId}`;
-    const newTask: RepairTask = {
-      id,
-      name: `新任务 #${nextTaskId}`,
-      status: "pending" as TaskStatus,
-      createdAt: new Date().toISOString().split("T")[0],
-      mainImage: "",
-      prompt: "",
-      referenceImages: [],
-      outputCount: 1,
-      results: [],
-    };
-    setTasks((prev) => [newTask, ...prev]);
-    setEditorMap((prev) => ({ ...prev, [id]: defaultEditorState() }));
-    setSelectedId(id);
-  }, []);
+  const handleNew = useCallback(async () => {
+    try {
+      const taskNum = tasks.length + 1;
+      const newTask = await createTask(`新任务 #${taskNum}`);
+      setSelectedId(newTask.id);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "创建任务失败";
+      showError(message);
+    }
+  }, [createTask, tasks.length]);
 
   /* ── Editor change ─── */
   const handleEditorChange = useCallback(
-    (next: Partial<EditorState>) => {
-      if (!selectedId) return;
-      setEditorMap((prev) => ({
-        ...prev,
-        [selectedId]: { ...(prev[selectedId] ?? defaultEditorState()), ...next },
-      }));
+    async (next: Partial<EditorState>) => {
+      if (!selectedId || !currentTask) return;
+      
+      const newState = { ...editorState, ...next };
+      setEditorState(newState);
+
+      // 更新任务信息到后端
+      try {
+        await updateTask({
+          prompt: newState.prompt,
+          outputCount: newState.outputCount,
+        });
+      } catch (err) {
+        console.error("更新任务失败:", err);
+      }
     },
-    [selectedId]
+    [selectedId, currentTask, editorState, updateTask]
   );
 
-  /* ── Continue repair: set result image as new main image ─── */
-  const handleContinueRepair = useCallback(
-    (imageUrl: string) => {
-      if (!selectedId) return;
-      // Update editor state: set result as main image, clear results
-      setEditorMap((prev) => ({
-        ...prev,
-        [selectedId]: {
-          ...(prev[selectedId] ?? defaultEditorState()),
-          mainImage: imageUrl,
-        },
+  // 处理主图上传
+  const handleMainImageUpload = useCallback(async (file: File) => {
+    if (!selectedId) return;
+    try {
+      // 先本地预览
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        setEditorState(prev => ({ ...prev, mainImage: e.target?.result as string }));
+      };
+      reader.readAsDataURL(file);
+      
+      // 上传到后端
+      await uploadMainImage(file);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "上传主图失败";
+      showError(message);
+    }
+  }, [selectedId, uploadMainImage]);
+
+  // 处理参考图上传
+  const handleRefImagesUpload = useCallback(async (files: File[]) => {
+    if (!selectedId) return;
+    try {
+      // 先本地预览
+      const newUrls: string[] = [];
+      for (const file of files) {
+        const url = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.readAsDataURL(file);
+        });
+        newUrls.push(url);
+      }
+      setEditorState(prev => ({ 
+        ...prev, 
+        referenceImages: [...prev.referenceImages, ...newUrls].slice(0, 5)
       }));
-      // Reset task results and status
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === selectedId
-            ? { ...t, status: "pending" as TaskStatus, results: [] }
-            : t
-        )
-      );
+      
+      // 上传到后端
+      await uploadReferenceImages(files);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "上传参考图失败";
+      showError(message);
+    }
+  }, [selectedId, uploadReferenceImages]);
+
+  // 移除参考图
+  const removeRefImage = useCallback((idx: number) => {
+    setEditorState(prev => {
+      const next = [...prev.referenceImages];
+      next.splice(idx, 1);
+      return { ...prev, referenceImages: next };
+    });
+  }, []);
+
+  /* ── Continue repair: create new task with result image ─── */
+  const handleContinueRepair = useCallback(
+    async (imageUrl: string) => {
+      try {
+        const taskNum = tasks.length + 1;
+        const newTask = await createTask(`继续修补 #${taskNum}`);
+        setSelectedId(newTask.id);
+        // 注意：这里需要将结果图片下载后再上传为新任务的主图
+        // 由于跨域限制，这个功能需要后端支持或更复杂的实现
+        showError("继续修补功能需要后端支持");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "创建任务失败";
+        showError(message);
+      }
     },
-    [selectedId]
+    [createTask, tasks.length]
   );
 
   /* ── Submit ─── */
-  const handleSubmit = useCallback(() => {
-    if (!selectedId) return;
-    const editor = editorMap[selectedId];
-    if (!editor?.mainImage || !editor.prompt.trim()) return;
+  const handleSubmit = useCallback(async () => {
+    if (!selectedId || !currentTask) return;
+    if (!editorState.mainImage || !editorState.prompt.trim()) return;
 
-    // Update task status to processing
-    setTasks((prev) =>
-      prev.map((t) => (t.id === selectedId ? { ...t, status: "processing" as TaskStatus } : t))
-    );
-    setProcessingIds((prev) => new Set(prev).add(selectedId));
+    try {
+      const useReferenceImages = editorState.referenceImages.length > 0;
+      await startRepair(useReferenceImages);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "启动修补任务失败";
+      showError(message);
+    }
+  }, [selectedId, currentTask, editorState, startRepair]);
 
-    // Simulate processing — complete after 3s
-    const sid = selectedId;
-    setTimeout(() => {
-      const mockResults = Array.from({ length: editor.outputCount }).map(
-        (_, i) =>
-          `https://readdy.ai/api/search-image?query=cute%20anime%20character%20image%20repair%20result%2C%20soft%20pastel%20kawaii%20illustration%20style%2C%20beautiful%20digital%20art%2C%20refined%20smooth%20details%2C%20pink%20rose%20watercolor%20aesthetic%2C%20clean%20background&width=512&height=512&seq=res${sid}${i}&orientation=squarish`
-      );
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === sid
-            ? { ...t, status: "completed" as TaskStatus, results: mockResults }
-            : t
-        )
-      );
-      setProcessingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(sid);
-        return next;
-      });
-    }, 3000);
-  }, [selectedId, editorMap]);
+  /* ── Derived state ─── */
+  const isProcessing = currentTask?.status === "processing";
+  const isLoading = tasksLoading || taskLoading || isUploading;
+  const currentResults = currentTask?.results ?? [];
 
   return (
     <div
@@ -220,6 +274,34 @@ export default function RepairPage() {
           <i className="ri-star-fill"></i>
         </div>
       ))}
+
+      {/* ── Error toast ─── */}
+      {(tasksError || taskError || localError) && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl bg-red-50 border border-red-200 shadow-lg">
+          <div className="flex items-center gap-2">
+            <i className="ri-error-warning-line text-red-500"></i>
+            <span className="text-sm text-red-600">{tasksError || taskError || localError}</span>
+            <button 
+              onClick={() => setLocalError(null)}
+              className="ml-2 text-red-400 hover:text-red-600"
+            >
+              <i className="ri-close-line"></i>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Loading indicator ─── */}
+      {isLoading && !isProcessing && (
+        <div className="absolute top-4 right-4 z-50 px-3 py-2 rounded-xl bg-white/90 border border-rose-100 shadow-lg">
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-4 flex items-center justify-center animate-spin">
+              <i className="ri-loader-4-line text-rose-400"></i>
+            </span>
+            <span className="text-sm text-rose-600">加载中…</span>
+          </div>
+        </div>
+      )}
 
       {/* ── Page content ─── */}
       <div className="relative z-10 flex flex-col h-full">
@@ -314,10 +396,14 @@ export default function RepairPage() {
               {selectedId ? (
                 <TaskEditor
                   key={selectedId}
-                  state={currentEditor}
+                  state={editorState}
                   onChange={handleEditorChange}
                   onSubmit={handleSubmit}
+                  onMainImageUpload={handleMainImageUpload}
+                  onRefImagesUpload={handleRefImagesUpload}
+                  onRemoveRefImage={removeRefImage}
                   isProcessing={isProcessing}
+                  isUploading={isUploading}
                 />
               ) : (
                 <div className="flex-1 flex items-center justify-center text-rose-300/50 text-sm select-none">

@@ -1,4 +1,4 @@
-import { type RepairTask, type TaskStatus } from "@/mocks/repairTasks";
+import type { RepairTask, TaskStatus } from "@/types/repair";
 
 const STATUS_CONFIG: Record<TaskStatus, { label: string; dot: string; text: string; bg: string }> = {
   pending: {

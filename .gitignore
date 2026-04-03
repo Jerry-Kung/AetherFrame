@@ -1,6 +1,7 @@
 refs/
 page.backup/
 data/
+.cursor/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -256,3 +257,12 @@ page/Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Database
+data/db/
+!data/db/.gitkeep
+
+# Testing
+.pytest_cache/
+__pycache__/
+*.pyc

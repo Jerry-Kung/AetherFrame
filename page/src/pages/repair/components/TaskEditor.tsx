@@ -1,5 +1,4 @@
-import { useRef, useState } from "react";
-import { PROMPT_TEMPLATES } from "@/mocks/repairTasks";
+import { useRef, useState, useEffect } from "react";
 
 export interface EditorState {
   mainImage: string;
@@ -12,12 +11,35 @@ interface TaskEditorProps {
   state: EditorState;
   onChange: (next: Partial<EditorState>) => void;
   onSubmit: () => void;
+  onMainImageUpload?: (file: File) => void;
+  onRefImagesUpload?: (files: File[]) => void;
+  onRemoveRefImage?: (idx: number) => void;
   isProcessing: boolean;
+  isUploading?: boolean;
 }
 
 const OUTPUT_OPTIONS: (1 | 2 | 4)[] = [1, 2, 4];
 
-const TaskEditor = ({ state, onChange, onSubmit, isProcessing }: TaskEditorProps) => {
+// 内置Prompt模板
+const PROMPT_TEMPLATES = [
+  { id: "t1", label: "皮肤瑕疵修补", text: "修补人物皮肤上的瑕疵，保持原有的动漫风格和色调，使皮肤光滑自然，细节真实。" },
+  { id: "t2", label: "水印去除", text: "完整去除图片中的水印、文字标记及logo，自然填充背景，不留痕迹。" },
+  { id: "t3", label: "背景噪点修复", text: "修复背景区域的噪点、模糊和色差问题，使背景干净清晰，与前景融合自然。" },
+  { id: "t4", label: "角色轮廓补全", text: "补全残缺或被遮挡的动漫角色轮廓，风格保持一致，线条流畅自然。" },
+  { id: "t5", label: "服装细节修复", text: "修复衣物皱褶、配饰残损等细节问题，保持角色整体风格统一，细节精致。" },
+  { id: "t6", label: "眼睛高光补绘", text: "为角色眼睛添加或修复高光点，增强眼神灵动感，符合二次元美图风格。" },
+];
+
+const TaskEditor = ({ 
+  state, 
+  onChange, 
+  onSubmit, 
+  onMainImageUpload,
+  onRefImagesUpload,
+  onRemoveRefImage,
+  isProcessing,
+  isUploading = false
+}: TaskEditorProps) => {
   const mainInputRef = useRef<HTMLInputElement>(null);
   const refInputRef = useRef<HTMLInputElement>(null);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -34,8 +56,15 @@ const TaskEditor = ({ state, onChange, onSubmit, isProcessing }: TaskEditorProps
   /* ── Main image handlers ─── */
   const handleMainFile = async (file: File) => {
     if (!file.type.startsWith("image/")) return;
-    const url = await fileToUrl(file);
-    onChange({ mainImage: url });
+    
+    if (onMainImageUpload) {
+      // 使用父组件提供的上传函数
+      onMainImageUpload(file);
+    } else {
+      // 降级：本地预览
+      const url = await fileToUrl(file);
+      onChange({ mainImage: url });
+    }
   };
 
   const handleMainDrop = (e: React.DragEvent) => {
@@ -50,14 +79,25 @@ const TaskEditor = ({ state, onChange, onSubmit, isProcessing }: TaskEditorProps
     const remaining = 5 - state.referenceImages.length;
     if (remaining <= 0) return;
     const selected = Array.from(files).slice(0, remaining);
-    const urls = await Promise.all(selected.filter((f) => f.type.startsWith("image/")).map(fileToUrl));
-    onChange({ referenceImages: [...state.referenceImages, ...urls] });
+    
+    if (onRefImagesUpload) {
+      // 使用父组件提供的上传函数
+      onRefImagesUpload(selected);
+    } else {
+      // 降级：本地预览
+      const urls = await Promise.all(selected.filter((f) => f.type.startsWith("image/")).map(fileToUrl));
+      onChange({ referenceImages: [...state.referenceImages, ...urls] });
+    }
   };
 
-  const removeRefImage = (idx: number) => {
-    const next = [...state.referenceImages];
-    next.splice(idx, 1);
-    onChange({ referenceImages: next });
+  const removeRefImageHandler = (idx: number) => {
+    if (onRemoveRefImage) {
+      onRemoveRefImage(idx);
+    } else {
+      const next = [...state.referenceImages];
+      next.splice(idx, 1);
+      onChange({ referenceImages: next });
+    }
   };
 
   const canAddRef = state.referenceImages.length < 5;
@@ -68,7 +108,7 @@ const TaskEditor = ({ state, onChange, onSubmit, isProcessing }: TaskEditorProps
     setShowTemplates(false);
   };
 
-  const canSubmit = !!state.mainImage && !!state.prompt.trim() && !isProcessing;
+  const canSubmit = !!state.mainImage && !!state.prompt.trim() && !isProcessing && !isUploading;
 
   return (
     <div className="flex flex-col h-full overflow-y-auto px-5 py-4 space-y-4">
@@ -190,7 +230,7 @@ const TaskEditor = ({ state, onChange, onSubmit, isProcessing }: TaskEditorProps
             <div key={idx} className="relative group w-16 h-16 rounded-xl overflow-hidden border border-rose-100/80 shrink-0">
               <img src={url} alt={`参考图${idx + 1}`} className="w-full h-full object-cover" />
               <button
-                onClick={() => removeRefImage(idx)}
+                onClick={() => removeRefImageHandler(idx)}
                 className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-rose-500/80 text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
               >
                 <i className="ri-close-line text-xs leading-none"></i>
@@ -262,12 +302,12 @@ const TaskEditor = ({ state, onChange, onSubmit, isProcessing }: TaskEditorProps
           ].join(" ")}
           style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
         >
-          {isProcessing ? (
+          {isProcessing || isUploading ? (
             <span className="flex items-center justify-center gap-2">
               <span className="w-4 h-4 flex items-center justify-center animate-spin">
                 <i className="ri-loader-4-line"></i>
               </span>
-              修补中…
+              {isUploading ? "上传中…" : "修补中…"}
             </span>
           ) : (
             <span className="flex items-center justify-center gap-1.5">
