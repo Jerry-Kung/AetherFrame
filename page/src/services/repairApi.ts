@@ -16,6 +16,7 @@ import type {
   StartRepairRequest,
   StartRepairResponse,
 } from "@/types/repair";
+import { getImageUrl } from "@/types/repair";
 
 /**
  * 任务管理API
@@ -105,8 +106,8 @@ export async function deleteReferenceImage(
   return http.delete<void>(`/tasks/${taskId}/reference-images/${encodeURIComponent(filename)}`);
 }
 
-// 获取图片URL（从类型导出）
-export { getImageUrl } from "@/types/repair";
+// 获取图片 URL（需在模块内 import，供 default 导出使用）
+export { getImageUrl };
 
 /**
  * Prompt模板API
