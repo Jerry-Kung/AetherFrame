@@ -95,7 +95,7 @@ pending
              ▼
 ┌─────────────────────────────────┐
 │   Task Service Layer            │
-│   - repair_task_service.py      │ ← 新建
+│   - repair_service/repair_task… │ ← 任务服务
 │   * 任务启动                    │
 │   * 状态更新                    │
 │   * 进度跟踪                    │
@@ -104,7 +104,7 @@ pending
              ▼
 ┌─────────────────────────────────┐
 │   Image Generation Layer        │
-│   - image_generation_service.py │
+│   - repair_service/image_gen…   │
 │   * 调用图片生成工具            │
 │   * 保存结果图片                │
 └────────────┬────────────────────┘
@@ -122,13 +122,18 @@ pending
 ```
 app/
 ├── services/
-│   ├── repair_task_service.py    # 任务处理服务（新建）
-│   ├── image_generation_service.py # 图片生成服务
-│   └── repair_service.py         # 修补业务逻辑
+│   ├── repair_service/           # 修补领域包
+│   │   ├── repair_task_service.py
+│   │   ├── image_generation_service.py
+│   │   ├── repair_service.py
+│   │   ├── repair_file_service.py
+│   │   └── repair_execution.py
+│   ├── file_service.py
+│   └── directory_service.py
 ├── routes/
-│   └── repair.py                 # 修补模块路由
+│   └── repair.py
 └── schemas/
-    └── repair.py                 # 扩展API模式
+    └── repair.py
 ```
 
 ---
@@ -425,7 +430,7 @@ except Exception as e:
 ```python
 # app/routes/repair.py
 
-from app.services.repair_task_service import RepairTaskService
+from app.services.repair_service import RepairTaskService
 
 @router.post("/tasks/{task_id}/start", response_model=ApiResponse)
 async def start_task(
@@ -477,8 +482,7 @@ async def get_task_status(
 - [x] 错误处理完整
 
 ### 代码实现检查（后续）
-- [ ] 创建 `app/services/repair_task_service.py`
-- [ ] 创建/完善 `app/services/image_generation_service.py`
+- [x] 修补任务与生成逻辑位于 `app/services/repair_service/` 包内
 - [ ] 在 `app/schemas/repair.py` 中添加新模型
 - [ ] 在 `app/routes/repair.py` 中添加新端点
 - [ ] 编写单元测试

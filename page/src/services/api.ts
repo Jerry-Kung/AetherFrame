@@ -1,14 +1,12 @@
 /**
- * API基础服务
+ * API基础服务（修补模块 /api/repair）
  */
 
 import type { ApiResponse } from "@/types/repair";
 
-// API基础配置
 const API_BASE_URL = "/api/repair";
 const DEFAULT_TIMEOUT = 30000; // 30秒
 
-// API错误类
 export class ApiError extends Error {
   status?: number;
   details?: any;
@@ -21,12 +19,10 @@ export class ApiError extends Error {
   }
 }
 
-// 请求配置
-interface RequestConfig extends RequestInit {
+type RequestConfig = NonNullable<Parameters<typeof fetch>[1]> & {
   timeout?: number;
-}
+};
 
-// 带超时的fetch
 async function fetchWithTimeout(
   url: string,
   options: RequestConfig = {}
@@ -47,123 +43,97 @@ async function fetchWithTimeout(
   }
 }
 
-// 统一请求处理
+async function parseJsonApiResponse<T>(response: Response): Promise<ApiResponse<T>> {
+  try {
+    return await response.json();
+  } catch {
+    throw new ApiError("响应解析失败", response.status);
+  }
+}
+
+function throwIfHttpOrBusinessError<T>(
+  response: Response,
+  data: ApiResponse<T>
+): void {
+  if (!response.ok) {
+    const detail = (data as { detail?: unknown }).detail;
+    const detailStr =
+      typeof detail === "string"
+        ? detail
+        : Array.isArray(detail) && detail[0] && typeof (detail[0] as { msg?: string }).msg === "string"
+          ? (detail as { msg: string }[]).map((x) => x.msg).join("; ")
+          : undefined;
+    throw new ApiError(
+      (data as { message?: string }).message || detailStr || `请求失败: ${response.status}`,
+      response.status,
+      data
+    );
+  }
+
+  if (!data.success) {
+    throw new ApiError(data.message || "操作失败", response.status, data);
+  }
+}
+
+function rethrowAsApiError(error: unknown): never {
+  if (error instanceof ApiError) {
+    throw error;
+  }
+  if (error instanceof Error) {
+    if (error.name === "AbortError") {
+      throw new ApiError("请求超时", 408);
+    }
+    throw new ApiError(`网络错误: ${error.message}`, 0, error);
+  }
+  throw new ApiError("未知错误", 0, error);
+}
+
+async function sendRepairRequest<T>(
+  endpoint: string,
+  fetchOptions: RequestConfig,
+  withJsonContentType: boolean
+): Promise<T> {
+  const url = `${API_BASE_URL}${endpoint}`;
+  const baseHeaders = withJsonContentType
+    ? { "Content-Type": "application/json" }
+    : {};
+  const mergedHeaders = {
+    ...baseHeaders,
+    ...(fetchOptions.headers as Record<string, string> | undefined),
+  };
+
+  try {
+    const response = await fetchWithTimeout(url, {
+      ...fetchOptions,
+      headers: mergedHeaders,
+    });
+    const data = await parseJsonApiResponse<T>(response);
+    throwIfHttpOrBusinessError(response, data);
+    return data.data;
+  } catch (error) {
+    rethrowAsApiError(error);
+  }
+}
+
 async function request<T = any>(
   endpoint: string,
   options: RequestConfig = {}
 ): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint}`;
-
-  try {
-    const response = await fetchWithTimeout(url, {
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
-      ...options,
-    });
-
-    // 解析响应
-    let data: ApiResponse<T>;
-    try {
-      data = await response.json();
-    } catch (e) {
-      throw new ApiError("响应解析失败", response.status);
-    }
-
-    // 检查HTTP状态（FastAPI HTTPException 为 { detail: string | array }）
-    if (!response.ok) {
-      const detail = (data as { detail?: unknown }).detail;
-      const detailStr =
-        typeof detail === "string"
-          ? detail
-          : Array.isArray(detail) && detail[0] && typeof (detail[0] as { msg?: string }).msg === "string"
-            ? (detail as { msg: string }[]).map((x) => x.msg).join("; ")
-            : undefined;
-      throw new ApiError(
-        (data as { message?: string }).message || detailStr || `请求失败: ${response.status}`,
-        response.status,
-        data
-      );
-    }
-
-    // 检查业务状态
-    if (!data.success) {
-      throw new ApiError(data.message || "操作失败", response.status, data);
-    }
-
-    return data.data;
-  } catch (error) {
-    if (error instanceof ApiError) {
-      throw error;
-    }
-    if (error instanceof Error) {
-      if (error.name === "AbortError") {
-        throw new ApiError("请求超时", 408);
-      }
-      throw new ApiError(`网络错误: ${error.message}`, 0, error);
-    }
-    throw new ApiError("未知错误", 0, error);
-  }
+  return sendRepairRequest<T>(endpoint, options, true);
 }
 
-// 文件上传请求（不设置Content-Type，让浏览器自动设置）
 async function uploadRequest<T = any>(
   endpoint: string,
   formData: FormData,
   options: RequestConfig = {}
 ): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint}`;
-
-  try {
-    const response = await fetchWithTimeout(url, {
-      method: "POST",
-      body: formData,
-      ...options,
-    });
-
-    let data: ApiResponse<T>;
-    try {
-      data = await response.json();
-    } catch (e) {
-      throw new ApiError("响应解析失败", response.status);
-    }
-
-    if (!response.ok) {
-      const detail = (data as { detail?: unknown }).detail;
-      const detailStr =
-        typeof detail === "string"
-          ? detail
-          : Array.isArray(detail) && detail[0] && typeof (detail[0] as { msg?: string }).msg === "string"
-            ? (detail as { msg: string }[]).map((x) => x.msg).join("; ")
-            : undefined;
-      throw new ApiError(
-        (data as { message?: string }).message || detailStr || `请求失败: ${response.status}`,
-        response.status,
-        data
-      );
-    }
-
-    if (!data.success) {
-      throw new ApiError(data.message || "操作失败", response.status, data);
-    }
-
-    return data.data;
-  } catch (error) {
-    if (error instanceof ApiError) {
-      throw error;
-    }
-    if (error instanceof Error) {
-      if (error.name === "AbortError") {
-        throw new ApiError("请求超时", 408);
-      }
-      throw new ApiError(`网络错误: ${error.message}`, 0, error);
-    }
-    throw new ApiError("未知错误", 0, error);
-  }
+  return sendRepairRequest<T>(
+    endpoint,
+    { method: "POST", body: formData, ...options },
+    false
+  );
 }
 
-// 导出HTTP方法
 export const http = {
   get: <T = any>(endpoint: string, options?: RequestConfig) =>
     request<T>(endpoint, { method: "GET", ...options }),

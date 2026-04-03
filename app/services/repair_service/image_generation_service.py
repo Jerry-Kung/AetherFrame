@@ -16,19 +16,8 @@ from app.tools.llm.nano_banana_pro import generate_image_with_nano_banana_pro
 # 配置日志
 logger = logging.getLogger(__name__)
 
-# 图片生成配置
-IMAGE_GENERATION_CONFIG = {
-    # 默认宽高比
-    "default_aspect_ratio": "1:1",
-    # 生成图片尺寸
-    "image_size": "2K",
-    # 重试次数
-    "max_retries": 2,
-    # 重试间隔（秒）
-    "retry_interval": 5,
-    # API 超时时间（秒）
-    "timeout": 300
-}
+# 修补任务默认宽高比（传给 nano_banana_pro；imageSize 等仍由该工具内建）
+DEFAULT_REPAIR_ASPECT_RATIO = "16:9"
 
 
 def build_repair_content(
@@ -106,7 +95,7 @@ def generate_repair_images(
     main_image_path: str,
     reference_image_paths: List[str],
     output_count: int = 2,
-    aspect_ratio: str = "16:9"
+    aspect_ratio: str = DEFAULT_REPAIR_ASPECT_RATIO
 ) -> Tuple[List[str], Optional[str], Optional[str]]:
     """
     生成修补图片

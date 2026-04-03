@@ -71,10 +71,9 @@
               │
 ┌─────────────▼───────────────────────────┐
 │       业务逻辑层 (Services)               │
-│  app/services/repair_service.py          │
-│  app/services/repair_task_service.py     │
-│  app/services/image_generation_service.py│
-│  app/services/repair_file_service.py     │
+│  app/services/repair_service/            │
+│  (repair_service, repair_task_service,   │
+│   image_generation_service, …)           │
 └─────────────┬───────────────────────────┘
               │
 ┌─────────────▼───────────────────────────┐
@@ -110,10 +109,12 @@ app/
 │   ├── __init__.py
 │   └── repair_repository.py          # 修补模块 Repository
 ├── services/                         # 业务逻辑层
-│   ├── repair_service.py             # 修补业务逻辑
-│   ├── repair_task_service.py        # 异步任务处理
-│   ├── repair_file_service.py        # 修补文件服务
-│   ├── image_generation_service.py   # 图片生成服务
+│   └── repair_service/               # 修补领域包
+│       ├── repair_service.py         # 修补业务逻辑
+│       ├── repair_task_service.py    # 异步任务处理
+│       ├── repair_file_service.py    # 修补文件服务
+│       ├── image_generation_service.py
+│       └── repair_execution.py
 │   └── directory_service.py          # 目录服务
 ├── routes/                           # API 路由
 │   ├── __init__.py

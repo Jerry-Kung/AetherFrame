@@ -46,7 +46,7 @@
 **代码示例**:
 ```
 app/routes/repair.py          # 路由层 - 处理 HTTP 请求
-app/services/repair_service.py # 业务逻辑层 - 核心业务逻辑
+app/services/repair_service/   # 修补业务逻辑包（repair_service.py 等）
 app/repositories/repair_repository.py # 数据访问层 - 数据库操作
 app/models/repair.py           # 数据模型层 - 数据结构定义
 ```

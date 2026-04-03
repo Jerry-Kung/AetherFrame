@@ -1,12 +1,13 @@
 """
 图片生成集成测试用例
-包含：ImageGenerationService、RepairService 图片生成方法、API 接口的完整测试
+包含：ImageGenerationService、RepairTaskService 启动与校验、API 相关说明
 """
+import asyncio
 import os
 import shutil
 import logging
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # 配置日志
 logging.basicConfig(
@@ -26,7 +27,7 @@ class TestImageGenerationService:
 
     def test_build_repair_content_with_refs(self, temp_data_dir):
         """测试 build_repair_content - 有参考图"""
-        from app.services import image_generation_service
+        from app.services.repair_service import image_generation_service
 
         # 创建测试图片文件
         import tempfile
@@ -64,7 +65,7 @@ class TestImageGenerationService:
 
     def test_build_repair_content_without_refs(self, temp_data_dir):
         """测试 build_repair_content - 无参考图"""
-        from app.services import image_generation_service
+        from app.services.repair_service import image_generation_service
 
         import tempfile
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
@@ -90,7 +91,7 @@ class TestImageGenerationService:
 
     def test_build_repair_content_main_not_exists(self):
         """测试 build_repair_content - 主图不存在"""
-        from app.services import image_generation_service
+        from app.services.repair_service import image_generation_service
 
         with pytest.raises(ValueError, match="主图文件不存在"):
             image_generation_service.build_repair_content(
@@ -99,10 +100,10 @@ class TestImageGenerationService:
                 reference_image_paths=[]
             )
 
-    @patch('app.services.image_generation_service.generate_image_with_nano_banana_pro')
+    @patch('app.services.repair_service.image_generation_service.generate_image_with_nano_banana_pro')
     def test_generate_repair_images_success(self, mock_generate, temp_data_dir):
         """测试 generate_repair_images - 成功"""
-        from app.services import image_generation_service
+        from app.services.repair_service import image_generation_service
         import tempfile
 
         # 创建测试图片
@@ -141,10 +142,10 @@ class TestImageGenerationService:
             if temp_dir and os.path.isdir(temp_dir):
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
-    @patch('app.services.image_generation_service.generate_image_with_nano_banana_pro')
+    @patch('app.services.repair_service.image_generation_service.generate_image_with_nano_banana_pro')
     def test_generate_repair_images_all_fail(self, mock_generate, temp_data_dir):
         """测试 generate_repair_images - 全部失败"""
-        from app.services import image_generation_service
+        from app.services.repair_service import image_generation_service
         import tempfile
 
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
@@ -170,102 +171,103 @@ class TestImageGenerationService:
 
 
 # ==========================================
-# 第二部分：RepairService 图片生成方法测试
+# 第二部分：RepairTaskService 启动与流水线（与生产路径一致）
 # ==========================================
 
-class TestRepairServiceImageGeneration:
-    """测试 RepairService 的图片生成相关方法"""
+class TestRepairTaskServiceStart:
+    """测试 RepairTaskService.start_task（无 BackgroundTasks 时同步执行流水线）"""
 
-    def test_start_repair_task_no_main_image(self, db_session, repair_service, test_task):
-        """测试 start_repair_task - 没有主图"""
-        with pytest.raises(ValueError, match="主图不存在"):
-            repair_service.start_repair_task(
+    def test_start_task_no_main_image(self, repair_task_service, test_task):
+        async def run():
+            await repair_task_service.start_task(
                 task_id=test_task.id,
-                use_reference_images=True
+                use_reference_images=True,
+                background_tasks=None,
             )
 
-    def test_start_repair_task_wrong_status(self, db_session, repair_service, test_task):
-        """测试 start_repair_task - 任务状态不是 pending"""
+        with pytest.raises(ValueError, match="主图不存在"):
+            asyncio.run(run())
+
+    def test_start_task_wrong_status(self, db_session, repair_task_service, test_task):
         from app.repositories.repair_repository import RepairTaskRepository
 
         repo = RepairTaskRepository(db_session)
         repo.update(test_task.id, {"status": "processing"})
 
-        with pytest.raises(ValueError, match="任务状态不允许启动"):
-            repair_service.start_repair_task(
+        async def run():
+            await repair_task_service.start_task(
                 task_id=test_task.id,
-                use_reference_images=True
+                use_reference_images=True,
+                background_tasks=None,
             )
 
-    def test_start_repair_task_not_exists(self, repair_service):
-        """测试 start_repair_task - 任务不存在"""
-        with pytest.raises(ValueError, match="任务不存在"):
-            repair_service.start_repair_task(
+        with pytest.raises(ValueError, match="任务状态不允许启动"):
+            asyncio.run(run())
+
+    def test_start_task_not_exists(self, repair_task_service):
+        async def run():
+            await repair_task_service.start_task(
                 task_id="non-existent-task",
-                use_reference_images=True
+                use_reference_images=True,
+                background_tasks=None,
             )
 
-    @patch('app.services.repair_service.image_generation_service')
-    def test_start_repair_task_success(self, mock_ig_service, db_session, repair_service, test_task, temp_data_dir):
-        """测试 start_repair_task - 成功流程（模拟图片生成）"""
-        from app.services import repair_file_service
-        import tempfile
+        with pytest.raises(ValueError, match="任务不存在"):
+            asyncio.run(run())
 
-        # 创建一个临时图片作为主图
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
-            f.write(b'test image data')
+    @patch("app.services.repair_service.image_generation_service.generate_repair_images")
+    def test_start_task_success(self, mock_generate, db_session, repair_task_service, test_task, temp_data_dir):
+        """模拟 generate_repair_images，经 repair_execution 流水线落盘并更新状态"""
+        from app.services.repair_service import repair_file_service
+        import tempfile
+        from fastapi import UploadFile
+        from io import BytesIO
+
+        mock_result_paths: list = []
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            f.write(b"test image data")
             temp_image = f.name
 
         try:
-            # 模拟上传主图
-            from fastapi import UploadFile
-            from io import BytesIO
-
-            with open(temp_image, 'rb') as f:
+            with open(temp_image, "rb") as f:
                 file_content = f.read()
 
-            upload_file = UploadFile(
-                filename="test.png",
-                file=BytesIO(file_content)
-            )
+            upload_file = UploadFile(filename="test.png", file=BytesIO(file_content))
 
             repair_file_service.ensure_task_dirs(test_task.id)
             repair_file_service.save_main_image(test_task.id, upload_file)
 
-            # 模拟 image_generation_service.generate_repair_images
-            mock_result_paths = []
-            for i in range(2):
-                tf = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
-                tf.write(b'result image')
+            for _ in range(2):
+                tf = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                tf.write(b"result image")
                 tf.close()
                 mock_result_paths.append(tf.name)
 
-            mock_ig_service.generate_repair_images.return_value = (mock_result_paths, None, None)
+            mock_generate.return_value = (mock_result_paths, None, None)
 
-            # 启动任务
-            result = repair_service.start_repair_task(
-                task_id=test_task.id,
-                use_reference_images=True
-            )
+            async def run():
+                await repair_task_service.start_task(
+                    task_id=test_task.id,
+                    use_reference_images=True,
+                    background_tasks=None,
+                )
 
-            # 验证结果
-            assert result is True
+            asyncio.run(run())
 
-            # 检查任务状态更新
-            updated_task = repair_service.get_task(test_task.id)
-            # 注意：因为我们是同步调用，状态会变为 completed 或 failed
+            updated_task = repair_task_service.task_repo.get_by_id(test_task.id)
+            assert updated_task is not None
             assert updated_task.status in ["completed", "failed"]
 
         finally:
-            # 清理
             try:
                 os.unlink(temp_image)
-            except:
+            except Exception:
                 pass
             for path in mock_result_paths:
                 try:
                     os.unlink(path)
-                except:
+                except Exception:
                     pass
 
 
@@ -312,7 +314,7 @@ class TestIntegrationWithTestData:
 
     def test_build_content_with_real_test_data(self, test_data_dir, temp_data_dir):
         """使用真实测试数据构建 Content"""
-        from app.services import image_generation_service
+        from app.services.repair_service import image_generation_service
 
         # 查找可能的图片文件
         main_image = None

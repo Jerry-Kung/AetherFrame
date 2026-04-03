@@ -107,3 +107,10 @@ def repair_service(db_session):
     """创建 RepairService 实例 - 服务层测试共享"""
     from app.services.repair_service import RepairService
     return RepairService(db_session)
+
+
+@pytest.fixture(scope="function")
+def repair_task_service(db_session):
+    """创建 RepairTaskService 实例 - 异步修补任务测试共享"""
+    from app.services.repair_service import RepairTaskService
+    return RepairTaskService(db_session)

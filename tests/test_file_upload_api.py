@@ -226,7 +226,7 @@ class TestFileServiceIntegration:
 
     def test_repair_file_service_ensure_task_dirs(self, temp_data_dir, test_task):
         """测试确保任务目录存在"""
-        from app.services import repair_file_service
+        from app.services.repair_service import repair_file_service
 
         main_dir, refs_dir, results_dir = repair_file_service.ensure_task_dirs(test_task.id)
 
@@ -237,7 +237,7 @@ class TestFileServiceIntegration:
 
     def test_repair_file_service_get_task_dir(self, temp_data_dir, test_task):
         """测试获取任务目录"""
-        from app.services import repair_file_service
+        from app.services.repair_service import repair_file_service
 
         task_dir = repair_file_service.get_task_dir(test_task.id)
 
@@ -246,7 +246,7 @@ class TestFileServiceIntegration:
 
     def test_repair_file_service_list_reference_images_empty(self, temp_data_dir, test_task):
         """测试列出参考图 - 空目录"""
-        from app.services import repair_file_service
+        from app.services.repair_service import repair_file_service
 
         # 确保目录存在
         repair_file_service.ensure_task_dirs(test_task.id)
@@ -258,7 +258,7 @@ class TestFileServiceIntegration:
 
     def test_repair_file_service_list_result_images_empty(self, temp_data_dir, test_task):
         """测试列出结果图 - 空目录"""
-        from app.services import repair_file_service
+        from app.services.repair_service import repair_file_service
 
         # 确保目录存在
         repair_file_service.ensure_task_dirs(test_task.id)

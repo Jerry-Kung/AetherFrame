@@ -18,7 +18,7 @@
 ```
 ┌─────────────────────────────────────────┐
 │   模块专用层 (Module-Specific)        │
-│   - repair_file_service.py            │
+│   - repair_service/repair_file_service│
 │   - (未来) material_file_service.py   │
 │   - (未来) beautify_file_service.py   │
 └────────────┬────────────────────────────┘
@@ -213,7 +213,7 @@ files = file_service.list_files_in_dir("/path/to/save", {".png"})
 ### 修补模块文件操作
 
 ```python
-from app.services import repair_file_service
+from app.services.repair_service import repair_file_service
 from fastapi import UploadFile
 
 task_id = "task-001"

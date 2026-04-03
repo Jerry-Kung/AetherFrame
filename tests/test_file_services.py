@@ -269,7 +269,7 @@ class TestRepairFileService:
             if key.startswith('app.services'):
                 del sys.modules[key]
         
-        from app.services import repair_file_service
+        from app.services.repair_service import repair_file_service
         
         task_id = "test-task-001"
         file = MockUploadFile("test.png", sample_image_bytes, "image/png")
@@ -294,7 +294,7 @@ class TestRepairFileService:
             if key.startswith('app.services'):
                 del sys.modules[key]
         
-        from app.services import repair_file_service
+        from app.services.repair_service import repair_file_service
         
         task_id = "test-task-002"
         
@@ -322,7 +322,7 @@ class TestRepairFileService:
             if key.startswith('app.services'):
                 del sys.modules[key]
         
-        from app.services import repair_file_service
+        from app.services.repair_service import repair_file_service
         
         task_id = "test-task-003"
         
@@ -350,7 +350,8 @@ class TestRepairFileService:
             if key.startswith('app.services'):
                 del sys.modules[key]
         
-        from app.services import repair_file_service, directory_service
+        from app.services import directory_service
+        from app.services.repair_service import repair_file_service
         
         task_id = "test-task-004"
         
@@ -389,8 +390,9 @@ class TestFileServicesIntegration:
             if key.startswith('app.services'):
                 del sys.modules[key]
         
-        from app.services import directory_service, repair_file_service
-        
+        from app.services import directory_service
+        from app.services.repair_service import repair_file_service
+
         logger.info("开始文件服务集成测试")
         
         task_id = "integration-test-001"

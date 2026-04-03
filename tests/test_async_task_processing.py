@@ -75,7 +75,7 @@ def create_test_task(db_session):
     """创建测试任务的辅助函数"""
     def _create_task(name="测试任务", status="pending"):
         from app.repositories.repair_repository import RepairTaskRepository
-        from app.services.repair_file_service import ensure_task_dirs
+        from app.services.repair_service.repair_file_service import ensure_task_dirs
         
         repo = RepairTaskRepository(db_session)
         task = repo.create({
@@ -115,7 +115,7 @@ class TestRepairTaskService:
 
     def test_get_task_status(self, db_session, create_test_task):
         """测试获取任务状态"""
-        from app.services.repair_task_service import RepairTaskService
+        from app.services.repair_service import RepairTaskService
 
         task = create_test_task()
         service = RepairTaskService(db_session)
@@ -129,7 +129,7 @@ class TestRepairTaskService:
 
     def test_get_task_status_not_found(self, db_session):
         """测试获取不存在的任务状态"""
-        from app.services.repair_task_service import RepairTaskService
+        from app.services.repair_service import RepairTaskService
 
         service = RepairTaskService(db_session)
         fetched_task = service.get_task_status("non_existent_id")
@@ -139,8 +139,8 @@ class TestRepairTaskService:
 
     def test_start_task_success(self, db_session, create_test_task, create_test_image):
         """测试成功启动任务"""
-        from app.services.repair_task_service import RepairTaskService
-        from app.services.repair_file_service import get_task_subdirs
+        from app.services.repair_service import RepairTaskService
+        from app.services.repair_service.repair_file_service import get_task_subdirs
 
         task = create_test_task()
         service = RepairTaskService(db_session)
@@ -159,7 +159,7 @@ class TestRepairTaskService:
 
     def test_start_task_not_found(self, db_session):
         """测试启动不存在的任务"""
-        from app.services.repair_task_service import RepairTaskService
+        from app.services.repair_service import RepairTaskService
 
         service = RepairTaskService(db_session)
 
@@ -173,7 +173,7 @@ class TestRepairTaskService:
 
     def test_start_task_not_pending(self, db_session, create_test_task):
         """测试启动非 pending 状态的任务"""
-        from app.services.repair_task_service import RepairTaskService
+        from app.services.repair_service import RepairTaskService
 
         task = create_test_task(status="processing")
         service = RepairTaskService(db_session)
@@ -186,7 +186,7 @@ class TestRepairTaskService:
 
     def test_start_task_no_main_image(self, db_session, create_test_task):
         """测试启动没有主图的任务"""
-        from app.services.repair_task_service import RepairTaskService
+        from app.services.repair_service import RepairTaskService
 
         task = create_test_task()
         service = RepairTaskService(db_session)
@@ -199,7 +199,7 @@ class TestRepairTaskService:
 
     def test_update_task_status(self, db_session, create_test_task):
         """测试更新任务状态"""
-        from app.services.repair_task_service import RepairTaskService
+        from app.services.repair_service import RepairTaskService
 
         task = create_test_task()
         service = RepairTaskService(db_session)
@@ -232,7 +232,7 @@ class TestRepairTaskService:
 class TestAsyncTaskIntegration:
     """异步任务集成测试"""
 
-    @patch('app.services.image_generation_service.generate_repair_images')
+    @patch('app.services.repair_service.image_generation_service.generate_repair_images')
     def test_full_task_flow(
         self,
         mock_generate,
@@ -242,8 +242,8 @@ class TestAsyncTaskIntegration:
         temp_data_dir
     ):
         """测试完整的任务流程（模拟图片生成）"""
-        from app.services.repair_task_service import RepairTaskService
-        from app.services.repair_file_service import get_task_subdirs, list_result_images
+        from app.services.repair_service import RepairTaskService
+        from app.services.repair_service.repair_file_service import get_task_subdirs, list_result_images
 
         # 1. 创建测试任务
         task = create_test_task()
@@ -280,7 +280,7 @@ class TestAsyncTaskIntegration:
         assert len(result_images) == 1
         logger.info("✓ 完整任务流程测试通过")
 
-    @patch('app.services.image_generation_service.generate_repair_images')
+    @patch('app.services.repair_service.image_generation_service.generate_repair_images')
     def test_task_failure_flow(
         self,
         mock_generate,
@@ -289,8 +289,8 @@ class TestAsyncTaskIntegration:
         create_test_image
     ):
         """测试任务失败流程"""
-        from app.services.repair_task_service import RepairTaskService
-        from app.services.repair_file_service import get_task_subdirs
+        from app.services.repair_service import RepairTaskService
+        from app.services.repair_service.repair_file_service import get_task_subdirs
 
         # 1. 创建测试任务
         task = create_test_task()

@@ -24,8 +24,7 @@ from app.schemas.repair import (
     StartRepairRequest,
     StartRepairResponse
 )
-from app.services.repair_service import RepairService
-from app.services.repair_task_service import RepairTaskService
+from app.services.repair_service import RepairService, RepairTaskService
 from app.services.file_service import FileValidationError, FileSaveError, FileDeleteError
 
 logger = logging.getLogger(__name__)
@@ -40,6 +39,11 @@ router = APIRouter(prefix="/api/repair", tags=["repair"])
 def get_repair_service(db: Session = Depends(get_db)) -> RepairService:
     """获取 RepairService 实例"""
     return RepairService(db)
+
+
+def get_repair_task_service(db: Session = Depends(get_db)) -> RepairTaskService:
+    """获取 RepairTaskService 实例"""
+    return RepairTaskService(db)
 
 
 # ==========================================
@@ -685,7 +689,7 @@ async def start_repair_task(
     task_id: str,
     request: StartRepairRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    task_service: RepairTaskService = Depends(get_repair_task_service),
 ):
     """
     启动修补任务（异步）
@@ -696,10 +700,6 @@ async def start_repair_task(
     logger.info(f"API 请求 - 启动修补任务: task_id={task_id}, use_reference_images={request.use_reference_images}")
 
     try:
-        # 使用新的异步任务服务
-        task_service = RepairTaskService(db)
-        
-        # 启动任务
         task = await task_service.start_task(
             task_id=task_id,
             use_reference_images=request.use_reference_images,
@@ -737,7 +737,6 @@ async def start_repair_task(
 async def get_task_status(
     task_id: str,
     repair_service: RepairService = Depends(get_repair_service),
-    db: Session = Depends(get_db)
 ):
     """
     获取任务处理状态（用于轮询）
@@ -745,10 +744,8 @@ async def get_task_status(
     logger.debug(f"API 请求 - 获取任务状态: task_id={task_id}")
 
     try:
-        # 使用 task_service 获取任务状态
-        task_service = RepairTaskService(db)
-        task = task_service.get_task_status(task_id)
-        
+        task = repair_service.get_task(task_id)
+
         if not task:
             logger.warning(f"API 响应 - 任务不存在: task_id={task_id}")
             raise HTTPException(status_code=404, detail="任务不存在")

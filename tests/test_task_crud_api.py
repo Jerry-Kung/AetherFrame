@@ -301,7 +301,7 @@ class TestRepairService:
     def test_delete_task_removes_data_directory(self, db_session):
         """删除任务时一并移除 data 下任务目录"""
         from app.services.repair_service import RepairService
-        from app.services import repair_file_service
+        from app.services.repair_service import repair_file_service
         from app.schemas.repair import TaskCreate
 
         service = RepairService(db_session)

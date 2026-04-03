@@ -19,7 +19,7 @@
 └──────────────────────┬──────────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────────┐
-│                业务逻辑层 (Services)                     │
+│     业务逻辑层 app/services/repair_service/ 包           │
 │  ┌──────────────────┬──────────────────┬──────────────┐ │
 │  │ RepairService    │ RepairTaskService│ RepairFile   │ │
 │  │ 任务CRUD+业务    │  异步任务处理    │ Service 文件 │ │
@@ -52,10 +52,12 @@
 | 文件 | 行数 | 职责 | 评分 |
 |------|------|------|------|
 | `app/routes/repair.py` | 767 | API 路由定义 | ⭐⭐⭐⭐⭐ |
-| `app/services/repair_service.py` | 937 | 核心业务逻辑 | ⭐⭐⭐⭐⭐ |
-| `app/services/repair_task_service.py` | 251 | 异步任务处理 | ⭐⭐⭐⭐⭐ |
-| `app/services/repair_file_service.py` | 372 | 文件管理 | ⭐⭐⭐⭐⭐ |
-| `app/services/image_generation_service.py` | 211 | AI 图片生成 | ⭐⭐⭐⭐⭐ |
+| `app/services/repair_service/` | — | 修补领域服务包 | ⭐⭐⭐⭐⭐ |
+| `app/services/repair_service/repair_service.py` | — | 任务 CRUD、模板、响应组装 | ⭐⭐⭐⭐⭐ |
+| `app/services/repair_service/repair_task_service.py` | — | 异步任务处理 | ⭐⭐⭐⭐⭐ |
+| `app/services/repair_service/repair_file_service.py` | — | 文件管理 | ⭐⭐⭐⭐⭐ |
+| `app/services/repair_service/image_generation_service.py` | — | AI 图片生成 | ⭐⭐⭐⭐⭐ |
+| `app/services/repair_service/repair_execution.py` | — | 生成流水线 | ⭐⭐⭐⭐⭐ |
 | `app/models/repair.py` | 39 | 数据库模型 | ⭐⭐⭐⭐⭐ |
 | `app/schemas/repair.py` | 194 | 数据验证 | ⭐⭐⭐⭐⭐ |
 | `app/repositories/repair_repository.py` | 116 | 数据访问 | ⭐⭐⭐⭐⭐ |

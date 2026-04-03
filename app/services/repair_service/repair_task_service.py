@@ -11,8 +11,8 @@ from fastapi import BackgroundTasks
 
 from app.models.repair import RepairTask
 from app.repositories.repair_repository import RepairTaskRepository
-from app.services import repair_file_service
-from app.services import image_generation_service
+from . import repair_file_service
+from . import repair_execution
 
 logger = logging.getLogger(__name__)
 
@@ -154,56 +154,14 @@ class RepairTaskService:
         同步执行修补（在线程池中运行）：生成图、落盘、更新状态。
         """
         logger.info(f"开始后台执行任务: task_id={task_id}, output_count={output_count}")
-
-        temp_image_paths: List[str] = []
-        temp_dir: Optional[str] = None
-        try:
-            result_image_paths, error_message, temp_dir = image_generation_service.generate_repair_images(
-                task_id=task_id,
-                prompt_template=prompt,
-                main_image_path=main_image_path,
-                reference_image_paths=reference_image_paths,
-                output_count=output_count,
-            )
-
-            temp_image_paths = result_image_paths
-
-            if error_message:
-                logger.error(f"图片生成失败: {error_message}")
-                self._update_task_status(task_id, "failed", error_message)
-                return
-
-            if not result_image_paths:
-                error_msg = "没有生成任何图片"
-                logger.error(error_msg)
-                self._update_task_status(task_id, "failed", error_msg)
-                return
-
-            saved_count = 0
-            for i, temp_path in enumerate(result_image_paths):
-                try:
-                    with open(temp_path, "rb") as f:
-                        image_data = f.read()
-
-                    repair_file_service.save_result_image(task_id, image_data, index=i)
-                    saved_count += 1
-                    logger.info(f"结果图 {i} 保存成功")
-                except Exception as e:
-                    logger.error(f"保存结果图 {i} 失败: {e}", exc_info=True)
-
-            if saved_count > 0:
-                self._update_task_status(task_id, "completed")
-                logger.info(f"修补任务完成: task_id={task_id}, 成功生成 {saved_count} 张图片")
-            else:
-                self._update_task_status(task_id, "failed", "所有结果图保存失败")
-                logger.error(f"修补任务失败: 所有结果图保存失败")
-
-        except Exception as e:
-            error_msg = f"执行任务时发生异常: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            self._update_task_status(task_id, "failed", error_msg)
-        finally:
-            image_generation_service.cleanup_temp_images(temp_image_paths, temp_dir)
+        repair_execution.run_repair_generation_pipeline(
+            task_id=task_id,
+            prompt=prompt,
+            main_image_path=main_image_path,
+            reference_image_paths=reference_image_paths,
+            output_count=output_count,
+            update_status=self._update_task_status,
+        )
 
     # ==========================================
     # 状态更新

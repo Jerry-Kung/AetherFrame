@@ -541,16 +541,18 @@ class TestArchitectureValidation:
 
         # 检查修补模块是否存在
         from app.routes import repair
-        from app.services import repair_service
-        from app.services import repair_task_service
-        from app.services import repair_file_service
-        from app.services import image_generation_service
+        import app.services.repair_service as repair_service_pkg
+        from app.services.repair_service import (
+            repair_file_service,
+            image_generation_service,
+            repair_task_service,
+        )
         from app.models import repair
         from app.schemas import repair
         from app.repositories import repair_repository
 
         assert repair is not None
-        assert repair_service is not None
+        assert repair_service_pkg is not None
         assert repair_task_service is not None
         assert repair_file_service is not None
         assert image_generation_service is not None

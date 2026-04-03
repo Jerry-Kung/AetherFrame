@@ -82,15 +82,20 @@ content = [
              │
              ▼
 ┌─────────────────────────────────────────┐
-│   Service 层 (repair_service.py)       │
-│   - start_repair_task()                │
-│   - _generate_images()                  │
+│   RepairTaskService                     │
+│   (repair_service/repair_task_service)  │
+│   - start_task() / BackgroundTasks     │
 └────────────┬────────────────────────────┘
              │
              ▼
 ┌─────────────────────────────────────────┐
-│   Image Generation Service              │
-│   (新增: image_generation_service.py)  │
+│   repair_service/repair_execution.py      │
+│   - run_repair_generation_pipeline()    │
+└────────────┬────────────────────────────┘
+             │
+             ▼
+┌─────────────────────────────────────────┐
+│   repair_service/image_generation_...   │
 │   - build_repair_content()              │
 │   - generate_repair_images()            │
 └────────────┬────────────────────────────┘
@@ -108,7 +113,7 @@ content = [
 
 ### 1. ImageGenerationService（新增）
 
-**文件位置**：`app/services/image_generation_service.py`
+**文件位置**：`app/services/repair_service/image_generation_service.py`
 
 **职责**：
 - 构建图片修补任务的 Content 列表
@@ -170,65 +175,13 @@ def generate_repair_images(
 
 ---
 
-### 2. RepairService 扩展
+### 2. RepairTaskService 与 repair_execution
 
-在现有的 `RepairService` 中添加以下方法：
+生产路径由 **`RepairTaskService.start_task()`**（[`app/services/repair_service/repair_task_service.py`](../../app/services/repair_service/repair_task_service.py)）处理：校验任务、置为 `processing`、注册 `BackgroundTasks` 或使用 `asyncio.to_thread` 执行同步流水线。
 
-#### start_repair_task()
-启动修补任务
+同步生成与落盘逻辑集中在 **`run_repair_generation_pipeline()`**（[`app/services/repair_service/repair_execution.py`](../../app/services/repair_service/repair_execution.py)）：调用 `generate_repair_images`、写入结果目录、通过回调更新任务状态（后台任务使用独立 DB 会话）、最后清理临时文件。
 
-```python
-def start_repair_task(
-    self,
-    task_id: str,
-    use_reference_images: bool = True
-) -> bool:
-    """
-    启动修补任务
-    
-    Args:
-        task_id: 任务 ID
-        use_reference_images: 是否使用参考图
-        
-    Returns:
-        是否成功启动
-        
-    Raises:
-        ValueError: 任务不存在或状态不允许
-    """
-```
-
-**流程**：
-1. 验证任务存在且状态为 `pending`
-2. 更新任务状态为 `processing`
-3. 获取任务相关文件路径
-4. 调用 ImageGenerationService 生成图片
-5. 保存生成的结果图
-6. 更新任务状态为 `completed` 或 `failed`
-
-#### _generate_images()（内部方法）
-异步生成图片的核心逻辑
-
-```python
-def _generate_images(
-    self,
-    task_id: str,
-    prompt: str,
-    main_image_path: str,
-    reference_image_paths: List[str],
-    output_count: int
-) -> None:
-    """
-    异步生成图片（内部方法）
-    
-    Args:
-        task_id: 任务 ID
-        prompt: 修补 Prompt
-        main_image_path: 主图路径
-        reference_image_paths: 参考图路径列表
-        output_count: 输出数量
-    """
-```
+`RepairService` 负责任务 CRUD、文件上传与响应组装，**不再**包含启动修补或生成流水线，避免与 `RepairTaskService` 重复实现。
 
 ---
 
@@ -278,23 +231,9 @@ pending ──> processing ──> completed
 
 ## 目录结构影响
 
-### 新增文件
+### 目录（当前）
 
-```
-app/
-├── services/
-│   └── image_generation_service.py  # 新增：图片生成服务
-```
-
-### 修改文件
-
-```
-app/
-├── services/
-│   └── repair_service.py             # 修改：添加图片生成相关方法
-└── routes/
-    └── repair.py                     # 修改：添加启动任务的 API
-```
+修补相关实现集中在包 **`app/services/repair_service/`**（含 `image_generation_service.py`、`repair_execution.py`、`repair_task_service.py` 等）；路由仍在 `app/routes/repair.py`。
 
 ---
 
@@ -352,8 +291,11 @@ repair_service.upload_main_image(task.id, main_file)
 # 3. 上传参考图
 repair_service.upload_reference_images(task.id, ref_files)
 
-# 4. 启动修补任务
-repair_service.start_repair_task(task.id, use_reference_images=True)
+# 4. 启动修补任务（由路由注入 BackgroundTasks，内部为 RepairTaskService.start_task）
+# POST /api/repair/tasks/{task_id}/start
+# 若在脚本中调用：await RepairTaskService(db).start_task(
+#     task.id, use_reference_images=True, background_tasks=background_tasks
+# )
 
 # 5. 轮询获取任务状态
 # GET /api/repair/tasks/{task_id}/status
@@ -363,29 +305,10 @@ repair_service.start_repair_task(task.id, use_reference_images=True)
 
 ## 配置项
 
-### 图片生成配置
+### 图片生成相关
 
-在 `app/tools/llm/config.py` 中或新增配置文件：
-
-```python
-# 图片生成配置
-IMAGE_GENERATION_CONFIG = {
-    # 默认宽高比（建议 1:1 保持原图比例）
-    "default_aspect_ratio": "1:1",
-    
-    # 生成图片尺寸
-    "image_size": "2K",
-    
-    # 重试次数
-    "max_retries": 2,
-    
-    # 重试间隔（秒）
-    "retry_interval": 5,
-    
-    # API 超时时间（秒）
-    "timeout": 300
-}
-```
+- **宽高比**：`app/services/repair_service/image_generation_service.py` 中的 `DEFAULT_REPAIR_ASPECT_RATIO`，作为 `generate_repair_images(..., aspect_ratio=...)` 的默认值。
+- **imageSize（如 2K）与 HTTP 调用**：由 `app/tools/llm/nano_banana_pro.py` 内建；若需可配置或超时/重试，应扩展该工具函数的参数与实现，而非在 service 层保留未使用的字典配置。
 
 ---
 

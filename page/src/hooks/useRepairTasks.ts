@@ -4,7 +4,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import repairApi from "@/services/repairApi";
-import type { RepairTask, BackendTask } from "@/types/repair";
+import type { RepairTask } from "@/types/repair";
 import { backendToFrontendTask } from "@/types/repair";
 
 export function useRepairTasks() {
