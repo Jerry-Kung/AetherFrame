@@ -431,7 +431,7 @@ export default function RepairPage() {
               <div className="flex-1 min-h-0 overflow-hidden">
                 <ResultDisplay
                   results={currentResults}
-                  outputCount={currentEditor.outputCount}
+                  outputCount={editorState.outputCount}
                   isProcessing={isProcessing}
                   onContinueRepair={handleContinueRepair}
                 />
