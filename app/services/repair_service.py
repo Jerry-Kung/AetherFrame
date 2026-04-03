@@ -801,6 +801,11 @@ class RepairService:
             logger.warning(error_msg)
             raise ValueError(error_msg)
 
+        if not (task.prompt or "").strip():
+            error_msg = "请先填写修补 Prompt 后再提交任务"
+            logger.warning(error_msg)
+            raise ValueError(error_msg)
+
         # 4. 更新任务状态为 processing
         self.task_repo.update(task_id, {
             "status": "processing",

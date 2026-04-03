@@ -114,6 +114,14 @@ class TestSchemas:
                 output_count=2
             )
 
+    def test_task_create_name_only_defaults(self):
+        """仅传 name 时可通过校验（与前端「新建任务」一致）"""
+        from app.schemas.repair import TaskCreate
+
+        task_data = TaskCreate(name="新任务 #1")
+        assert task_data.prompt == ""
+        assert task_data.output_count == 2
+
     def test_task_update_partial(self):
         """测试 TaskUpdate - 部分更新"""
         from app.schemas.repair import TaskUpdate

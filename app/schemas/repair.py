@@ -13,7 +13,11 @@ logger = logging.getLogger(__name__)
 class TaskBase(BaseModel):
     """任务基础模型"""
     name: str = Field(..., min_length=1, max_length=100, description="任务名称")
-    prompt: str = Field(..., min_length=1, max_length=2000, description="修补 Prompt")
+    prompt: str = Field(
+        default="",
+        max_length=2000,
+        description="修补 Prompt（创建时可留空，在编辑区填写后再提交任务）",
+    )
     output_count: int = Field(2, ge=1, le=4, description="输出数量 (1/2/4)")
 
     @field_validator('output_count')

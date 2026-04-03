@@ -46,6 +46,8 @@ export interface TaskListResponse {
 // 任务创建请求
 export interface TaskCreateRequest {
   name: string;
+  prompt?: string;
+  output_count?: number;
 }
 
 // 任务更新请求

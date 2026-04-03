@@ -36,7 +36,11 @@ export function useRepairTasks() {
   const createTask = useCallback(async (name: string): Promise<RepairTask> => {
     setError(null);
     try {
-      const backendTask = await repairApi.createTask({ name });
+      const backendTask = await repairApi.createTask({
+        name,
+        prompt: "",
+        output_count: 1,
+      });
       const frontendTask = backendToFrontendTask(backendTask);
       setTasks((prev) => [frontendTask, ...prev]);
       return frontendTask;
