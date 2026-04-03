@@ -31,7 +31,14 @@ const defaultEditorState = (): EditorState => ({
 
 export default function RepairPage() {
   const navigate = useNavigate();
-  const { tasks, loading: tasksLoading, error: tasksError, createTask, deleteTask, refreshTask } = useRepairTasks();
+  const {
+    tasks,
+    loading: tasksLoading,
+    error: tasksError,
+    createTask,
+    deleteTask,
+    applyTaskSnapshot,
+  } = useRepairTasks();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { 
     task: currentTask, 
@@ -70,6 +77,11 @@ export default function RepairPage() {
     }
   }, [tasks, selectedId]);
 
+  // 详情 / 轮询更新 currentTask 时同步左侧列表中的状态与结果，避免侧栏一直显示「未开始」
+  useEffect(() => {
+    if (currentTask) applyTaskSnapshot(currentTask);
+  }, [currentTask, applyTaskSnapshot]);
+
   // 显示错误提示
   const showError = (message: string) => {
     setLocalError(message);
@@ -80,10 +92,16 @@ export default function RepairPage() {
   const handleSelect = useCallback((id: string) => setSelectedId(id), []);
 
   const handleDelete = useCallback(async (id: string) => {
+    const task = tasks.find((t) => t.id === id);
+    const label = task?.name ?? id;
+    const ok = window.confirm(
+      `确定删除任务「${label}」吗？\n将同时删除数据库记录与本地 data 目录中的该任务图片。`
+    );
+    if (!ok) return;
     try {
       await deleteTask(id);
       if (selectedId === id) {
-        setSelectedId(tasks.find(t => t.id !== id)?.id ?? null);
+        setSelectedId(tasks.find((t) => t.id !== id)?.id ?? null);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "删除任务失败";
@@ -380,16 +398,28 @@ export default function RepairPage() {
               style={{ minWidth: 0 }}
             >
               {/* Section title */}
-              <div className="px-5 pt-4 pb-2 shrink-0 flex items-center gap-2">
-                <span className="w-4 h-4 flex items-center justify-center text-rose-400/70 text-sm">
+              <div className="px-5 pt-4 pb-2 shrink-0 flex items-center gap-2 min-w-0">
+                <span className="w-4 h-4 flex items-center justify-center text-rose-400/70 text-sm shrink-0">
                   <i className="ri-edit-2-line"></i>
                 </span>
                 <h2
-                  className="text-sm font-semibold text-rose-600/70 tracking-wide"
+                  className="flex-1 min-w-0 text-sm font-semibold text-rose-600/70 tracking-wide truncate"
                   style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
                 >
                   {currentTask ? currentTask.name : "选择任务开始编辑"}
                 </h2>
+                {currentTask && selectedId ? (
+                  <button
+                    type="button"
+                    title={isProcessing ? "处理中，暂不可删除" : "删除当前任务"}
+                    disabled={isProcessing}
+                    onClick={() => handleDelete(selectedId)}
+                    className="shrink-0 px-2 py-1 rounded-lg text-xs text-rose-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:pointer-events-none cursor-pointer transition-colors"
+                  >
+                    <i className="ri-delete-bin-6-line" />
+                    <span className="sr-only">删除当前任务</span>
+                  </button>
+                ) : null}
               </div>
               <div className="mx-5 h-px bg-rose-100/60 shrink-0 mb-1" />
 

@@ -71,10 +71,17 @@ async function request<T = any>(
       throw new ApiError("响应解析失败", response.status);
     }
 
-    // 检查HTTP状态
+    // 检查HTTP状态（FastAPI HTTPException 为 { detail: string | array }）
     if (!response.ok) {
+      const detail = (data as { detail?: unknown }).detail;
+      const detailStr =
+        typeof detail === "string"
+          ? detail
+          : Array.isArray(detail) && detail[0] && typeof (detail[0] as { msg?: string }).msg === "string"
+            ? (detail as { msg: string }[]).map((x) => x.msg).join("; ")
+            : undefined;
       throw new ApiError(
-        data.message || `请求失败: ${response.status}`,
+        (data as { message?: string }).message || detailStr || `请求失败: ${response.status}`,
         response.status,
         data
       );
@@ -123,8 +130,15 @@ async function uploadRequest<T = any>(
     }
 
     if (!response.ok) {
+      const detail = (data as { detail?: unknown }).detail;
+      const detailStr =
+        typeof detail === "string"
+          ? detail
+          : Array.isArray(detail) && detail[0] && typeof (detail[0] as { msg?: string }).msg === "string"
+            ? (detail as { msg: string }[]).map((x) => x.msg).join("; ")
+            : undefined;
       throw new ApiError(
-        data.message || `请求失败: ${response.status}`,
+        (data as { message?: string }).message || detailStr || `请求失败: ${response.status}`,
         response.status,
         data
       );

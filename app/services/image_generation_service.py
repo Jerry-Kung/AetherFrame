@@ -106,7 +106,7 @@ def generate_repair_images(
     main_image_path: str,
     reference_image_paths: List[str],
     output_count: int = 2,
-    aspect_ratio: str = "1:1"
+    aspect_ratio: str = "16:9"
 ) -> Tuple[List[str], Optional[str], Optional[str]]:
     """
     生成修补图片

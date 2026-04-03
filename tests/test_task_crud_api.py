@@ -298,6 +298,43 @@ class TestRepairService:
         assert fetched is None
         logger.info("✓ 删除任务测试通过")
 
+    def test_delete_task_removes_data_directory(self, db_session):
+        """删除任务时一并移除 data 下任务目录"""
+        from app.services.repair_service import RepairService
+        from app.services import repair_file_service
+        from app.schemas.repair import TaskCreate
+
+        service = RepairService(db_session)
+        task = service.create_task(
+            TaskCreate(name="目录清理测试", prompt="x", output_count=1)
+        )
+        repair_file_service.ensure_task_dirs(task.id)
+        task_dir = repair_file_service.get_task_dir(task.id)
+        assert os.path.isdir(task_dir)
+
+        assert service.delete_task(task.id) is True
+        assert service.get_task(task.id) is None
+        assert not os.path.exists(task_dir)
+        logger.info("✓ 删除任务同时清理目录测试通过")
+
+    def test_delete_task_rejects_processing(self, db_session):
+        """处理中任务不可删除（避免与后台任务竞态）"""
+        from app.services.repair_service import RepairService
+        from app.repositories.repair_repository import RepairTaskRepository
+        from app.schemas.repair import TaskCreate
+
+        service = RepairService(db_session)
+        task = service.create_task(
+            TaskCreate(name="处理中删除", prompt="x", output_count=1)
+        )
+        RepairTaskRepository(db_session).update_status(task.id, "processing")
+
+        with pytest.raises(ValueError, match="处理中"):
+            service.delete_task(task.id)
+
+        assert service.get_task(task.id) is not None
+        logger.info("✓ 处理中任务拒绝删除测试通过")
+
     def test_build_task_simple(self, db_session):
         """测试构建任务简要信息"""
         from app.services.repair_service import RepairService

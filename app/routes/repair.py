@@ -233,9 +233,16 @@ async def delete_task(
             logger.warning(f"API 响应 - 任务不存在: task_id={task_id}")
             raise HTTPException(status_code=404, detail="任务不存在")
 
-        success = repair_service.delete_task(task_id)
+        try:
+            success = repair_service.delete_task(task_id)
+        except ValueError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+
         if not success:
-            raise HTTPException(status_code=500, detail="删除任务失败")
+            raise HTTPException(
+                status_code=500,
+                detail="删除任务失败：本地文件未能完全清理，数据库记录未删除",
+            )
 
         logger.info(f"API 响应 - 删除任务成功: task_id={task_id}")
 

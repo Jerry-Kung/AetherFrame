@@ -81,6 +81,17 @@ export function useRepairTasks() {
     }
   }, []);
 
+  /** 用详情/轮询得到的快照更新左侧列表中的同一条任务（不发请求） */
+  const applyTaskSnapshot = useCallback((task: RepairTask) => {
+    setTasks((prev) => {
+      const i = prev.findIndex((t) => t.id === task.id);
+      if (i < 0) return prev;
+      const next = [...prev];
+      next[i] = task;
+      return next;
+    });
+  }, []);
+
   // 初始化时获取任务列表
   useEffect(() => {
     fetchTasks();
@@ -94,5 +105,6 @@ export function useRepairTasks() {
     createTask,
     deleteTask,
     refreshTask,
+    applyTaskSnapshot,
   };
 }

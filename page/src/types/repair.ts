@@ -152,6 +152,13 @@ function normalizeOutputCount(n: unknown): 1 | 2 | 4 {
   return 1;
 }
 
+const TASK_STATUSES: TaskStatus[] = ["pending", "processing", "completed", "failed"];
+
+function normalizeStatus(s: unknown): TaskStatus {
+  const x = String(s ?? "").trim().toLowerCase();
+  return (TASK_STATUSES.includes(x as TaskStatus) ? x : "pending") as TaskStatus;
+}
+
 /**
  * 将后端 TaskSimple / TaskDetail（及历史仅含 *_filenames 的 payload）转为前端 RepairTask
  */
@@ -194,7 +201,7 @@ export function backendToFrontendTask(raw: unknown): RepairTask {
   return {
     id,
     name: String(t.name ?? ""),
-    status: (t.status as TaskStatus) || "pending",
+    status: normalizeStatus(t.status),
     createdAt: t.created_at != null ? String(t.created_at) : "",
     updatedAt: t.updated_at != null ? String(t.updated_at) : "",
     mainImage,

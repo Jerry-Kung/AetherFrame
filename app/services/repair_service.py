@@ -188,6 +188,9 @@ class RepairService:
 
         Returns:
             是否删除成功
+
+        Raises:
+            ValueError: 任务处于 processing 状态（后台仍在执行，禁止删除以免残留目录）
         """
         logger.info(f"删除任务: task_id={task_id}")
 
@@ -197,13 +200,17 @@ class RepairService:
             logger.warning(f"删除失败，任务不存在: {task_id}")
             return False
 
-        # 删除任务文件
+        if task.status == "processing":
+            logger.warning(f"删除失败，任务处理中: {task_id}")
+            raise ValueError("任务处理中，无法删除。请等待完成或失败后再试。")
+
+        # 先删本地 data 目录，失败则不删数据库，避免「库无记录但磁盘仍有文件」
         try:
             repair_file_service.delete_task_files(task_id)
-            logger.info(f"任务文件删除成功: {task_id}")
-        except Exception as e:
+            logger.info(f"任务目录已清理: {task_id}")
+        except FileDeleteError as e:
             logger.error(f"任务文件删除失败: {task_id}, error={e}", exc_info=True)
-            # 继续删除数据库记录
+            return False
 
         # 删除数据库记录
         success = self.task_repo.delete(task_id)

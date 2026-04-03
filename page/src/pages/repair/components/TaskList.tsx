@@ -112,15 +112,18 @@ const TaskList = ({ tasks, selectedId, onSelect, onDelete, onNew }: TaskListProp
                 </span>
               </div>
 
-              {/* Delete button */}
+              {/* Delete task：触屏设备始终可见；桌面端悬停行时显示 */}
               <button
+                type="button"
+                title="删除任务"
+                aria-label={`删除任务 ${task.name}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   onDelete(task.id);
                 }}
-                className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-150 hover:bg-rose-100 cursor-pointer text-rose-300 hover:text-rose-500"
+                className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150 hover:bg-rose-100 cursor-pointer text-rose-300 hover:text-rose-500"
               >
-                <i className="ri-delete-bin-6-line text-xs"></i>
+                <i className="ri-delete-bin-6-line text-sm"></i>
               </button>
             </div>
           );
