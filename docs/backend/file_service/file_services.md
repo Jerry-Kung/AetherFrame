@@ -73,6 +73,8 @@ data/
 └── temp/                            # 临时文件（自动清理）
 ```
 
+**Prompt 模板与 `templates.json`：** 上表中 `repair/templates/templates.json` 为目录结构预留说明。**当前实现不以该文件为数据源**：Prompt 模板的增删改查与列表均使用 SQLite 表 `prompt_templates`（修补模块 REST API）。目录 `repair/templates/` 仍可由 `directory_service` 创建，便于日后扩展（例如导出备份脚本），与 [数据库架构文档](../database/architecture.md) 中「权威数据在库表」的原则一致。
+
 ### 文件命名规范
 
 | 文件类型 | 命名格式 | 说明 |

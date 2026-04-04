@@ -11,6 +11,7 @@ import type {
   PromptTemplate,
   PromptTemplateCreateRequest,
   PromptTemplateUpdateRequest,
+  PromptTemplateListData,
   MainImageUploadResponse,
   ReferenceImagesUploadResponse,
   StartRepairRequest,
@@ -116,12 +117,13 @@ export { getImageUrl };
  * Prompt模板API
  */
 
-// 获取模板列表
+// 获取模板列表（后端 data 为 { templates, total }）
 export async function getTemplates(template_type?: "builtin" | "custom"): Promise<PromptTemplate[]> {
   const endpoint = template_type
     ? `/templates?template_type=${template_type}`
     : "/templates";
-  return http.get<PromptTemplate[]>(endpoint);
+  const data = await http.get<PromptTemplateListData>(endpoint);
+  return data.templates ?? [];
 }
 
 // 创建模板

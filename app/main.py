@@ -92,26 +92,21 @@ static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# API 路由应该在 catch-all 路由之前
-app.include_router(api.router)
-app.include_router(repair.router)
-app.include_router(pages.router)
-
-
+# API 路由应在 SPA catch-all 之前；/health 也必须在 catch-all 之前，否则会被 GET /{path:path} 抢走
 @app.get("/health")
 async def health_check():
     """健康检查端点"""
     from app.models.database import check_db_connection, get_db_info
     from app.services import directory_service
-    
+
     db_ok = check_db_connection()
     db_info = get_db_info()
     dir_health = directory_service.check_data_directory_health()
-    
+
     overall_status = "ok"
     if not db_ok or dir_health["issues"]:
         overall_status = "degraded"
-    
+
     return {
         "status": overall_status,
         "service": "AetherFrame",
@@ -121,3 +116,8 @@ async def health_check():
         },
         "directories": dir_health
     }
+
+
+app.include_router(api.router)
+app.include_router(repair.router)
+app.include_router(pages.router)

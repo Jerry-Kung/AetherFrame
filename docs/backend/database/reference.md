@@ -40,7 +40,7 @@ async def list_items(db: Session = Depends(get_db)):
 
 #### `init_db()`
 
-初始化数据库，创建所有表。
+初始化数据库，创建所有表；随后执行与模板表相关的轻量迁移（如为已存在库补充 `prompt_templates.description` 列）。
 
 **用法：**
 ```python
@@ -55,6 +55,12 @@ init_db()
 所有数据表创建成功
 ========== 数据库初始化完成 ==========
 ```
+
+---
+
+#### `migrate_prompt_templates_add_description()`
+
+若数据库文件已存在且 `prompt_templates` 表缺少 `description` 列，则执行 `ALTER TABLE ... ADD COLUMN`。由 `init_db()` 内部调用，无需单独使用。
 
 ---
 
@@ -248,6 +254,7 @@ print(f"数据库大小: {info.get('database_size_bytes', 0)} bytes")
   - `id` - 可选，模板 ID
   - `label` - 模板名称
   - `text` - 模板内容
+  - `description` - 可选，简短说明（列表展示，最多 100 字；未传则存空串）
   - `is_builtin` - 可选，是否内置（默认 False）
   - `sort_order` - 可选，排序（默认 0）
 

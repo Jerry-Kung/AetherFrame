@@ -57,14 +57,46 @@ def get_db():
         db.close()
 
 
+def migrate_prompt_templates_add_description() -> None:
+    """
+    轻量迁移：为已存在的 prompt_templates 表补充 description 列。
+    新建库由 create_all 直接带列；老库通过 ALTER TABLE 补齐（无 Alembic）。
+    """
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='prompt_templates'"
+                )
+            ).fetchone()
+            if row is None:
+                return
+            cols = conn.execute(text("PRAGMA table_info(prompt_templates)")).fetchall()
+            names = {c[1] for c in cols}
+            if "description" in names:
+                return
+            conn.execute(
+                text(
+                    "ALTER TABLE prompt_templates ADD COLUMN description VARCHAR(100) NOT NULL DEFAULT ''"
+                )
+            )
+        logger.info("已迁移: prompt_templates 增加 description 列")
+    except Exception as e:
+        logger.error(f"迁移 prompt_templates.description 失败: {e}", exc_info=True)
+        raise
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
     try:
         # 导入所有模型，确保它们被注册
         from app.models.repair import RepairTask, PromptTemplate
-        
+
         Base.metadata.create_all(bind=engine)
+        migrate_prompt_templates_add_description()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:

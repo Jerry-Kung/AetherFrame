@@ -424,7 +424,8 @@ class TestPromptTemplateIntegration:
             "/api/repair/templates",
             json={
                 "label": "集成测试模板",
-                "text": "这是一个用于集成测试的 prompt 模板。请对图片进行修补。"
+                "text": "这是一个用于集成测试的 prompt 模板。请对图片进行修补。",
+                "description": "集成测试用简短说明",
             }
         )
 
@@ -436,6 +437,7 @@ class TestPromptTemplateIntegration:
         template_data = data["data"]
         assert template_data["label"] == "集成测试模板"
         assert template_data["is_builtin"] is False
+        assert template_data.get("description") == "集成测试用简短说明"
 
         TestPromptTemplateIntegration._template_id = template_data["id"]
         logger.info(f"✓ 模板创建成功: template_id={TestPromptTemplateIntegration._template_id}")
@@ -477,7 +479,8 @@ class TestPromptTemplateIntegration:
             f"/api/repair/templates/{TestPromptTemplateIntegration._template_id}",
             json={
                 "label": "集成测试模板（已更新）",
-                "text": "这是更新后的 prompt 模板内容。"
+                "text": "这是更新后的 prompt 模板内容。",
+                "description": "更新后的说明文案",
             }
         )
 
@@ -488,6 +491,7 @@ class TestPromptTemplateIntegration:
 
         template_data = data["data"]
         assert template_data["label"] == "集成测试模板（已更新）"
+        assert template_data.get("description") == "更新后的说明文案"
 
         logger.info(f"✓ 模板更新成功")
 

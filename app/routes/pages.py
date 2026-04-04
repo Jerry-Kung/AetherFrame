@@ -1,8 +1,31 @@
 import os
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
+from fastapi.routing import APIRoute
+from starlette.routing import Match
+from starlette.types import Scope
 
-router = APIRouter()
+
+class SPAAPIRoute(APIRoute):
+    """
+    SPA 回退路由不得参与 /api、/docs 等路径的匹配。
+
+    否则对 ``POST /api/repair/tasks`` 等请求：若因尾随斜杠等与 API 路由未完全匹配，
+    会只剩 ``GET /{path:path}`` 的「路径命中、方法不符」的 PARTIAL 匹配，
+    Starlette 会返回 405 且 Allow: GET（易被误判为「不允许 POST」）。
+    """
+
+    def matches(self, scope: Scope):
+        if scope.get("type") == "http":
+            path = scope.get("path") or ""
+            if path.startswith("/api") or path.startswith("/docs") or path.startswith(
+                "/openapi"
+            ) or path.startswith("/redoc"):
+                return Match.NONE, {}
+        return super().matches(scope)
+
+
+router = APIRouter(route_class=SPAAPIRoute)
 
 # 获取静态文件目录路径
 static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")

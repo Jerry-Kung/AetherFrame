@@ -165,6 +165,12 @@ def init_db():
 
 ---
 
+## Schema 演进（无 Alembic）
+
+对 SQLite 的**列级变更**采用启动时轻量检测与 `ALTER TABLE` 补齐，例如 `app.models.database` 中的 `migrate_prompt_templates_add_description()`：在 `init_db()` 于 `create_all` 之后执行，若 `prompt_templates` 表缺少 `description` 列则添加，保证旧库升级与新建库一致。Prompt 模板的权威数据仍在数据库表中，不由 JSON 文件承载。
+
+---
+
 ## 目录结构
 
 ```

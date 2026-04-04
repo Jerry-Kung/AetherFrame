@@ -612,7 +612,8 @@ class RepairService:
         template_dict = {
             "label": template_data.label,
             "text": template_data.text,
-            "is_builtin": False
+            "description": (template_data.description or "").strip(),
+            "is_builtin": False,
         }
 
         template = self.template_repo.create(template_dict)
@@ -667,6 +668,8 @@ class RepairService:
             updates["label"] = template_data.label
         if template_data.text is not None:
             updates["text"] = template_data.text
+        if template_data.description is not None:
+            updates["description"] = template_data.description.strip()
 
         if not updates:
             logger.warning(f"更新失败，没有提供更新字段: {template_id}")
@@ -724,9 +727,13 @@ class RepairService:
         Returns:
             PromptTemplateResponse 对象
         """
+        desc = getattr(template, "description", None)
+        if desc is None:
+            desc = ""
         return PromptTemplateResponse(
             id=template.id,
             label=template.label,
+            description=desc,
             text=template.text,
             is_builtin=template.is_builtin,
             sort_order=template.sort_order,

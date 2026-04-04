@@ -29,6 +29,7 @@ class PromptTemplate(Base):
 
     id = Column(String, primary_key=True, index=True)
     label = Column(String(100), nullable=False)
+    description = Column(String(100), nullable=False, server_default="")
     text = Column(Text, nullable=False)
     is_builtin = Column(Boolean, nullable=False, default=True, index=True)
     sort_order = Column(Integer, nullable=False, default=0, index=True)

@@ -425,7 +425,7 @@ export default function RepairPage() {
 
               {selectedId ? (
                 <TaskEditor
-                  key={selectedId}
+                  taskId={selectedId}
                   state={editorState}
                   onChange={handleEditorChange}
                   onSubmit={handleSubmit}
@@ -434,6 +434,7 @@ export default function RepairPage() {
                   onRemoveRefImage={removeRefImage}
                   isProcessing={isProcessing}
                   isUploading={isUploading}
+                  onTemplateError={showError}
                 />
               ) : (
                 <div className="flex-1 flex items-center justify-center text-rose-300/50 text-sm select-none">

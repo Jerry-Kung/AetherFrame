@@ -51,6 +51,7 @@ def get_repair_task_service(db: Session = Depends(get_db)) -> RepairTaskService:
 # ==========================================
 
 @router.get("/tasks", response_model=ApiResponse)
+@router.get("/tasks/", response_model=ApiResponse)
 async def list_tasks(
     skip: int = Query(0, ge=0, description="跳过数量"),
     limit: int = Query(50, ge=1, le=100, description="返回数量"),
@@ -115,6 +116,7 @@ async def list_tasks(
 
 
 @router.post("/tasks", response_model=ApiResponse)
+@router.post("/tasks/", response_model=ApiResponse)
 async def create_task(
     task_data: TaskCreate,
     repair_service: RepairService = Depends(get_repair_service)

@@ -87,6 +87,14 @@ class TestPromptTemplateSchemas:
 
         assert template.label == "测试模板"
         assert template.text == "这是模板内容"
+        assert template.description == ""
+
+        with_desc = PromptTemplateBase(
+            label="测试模板",
+            text="这是模板内容",
+            description="简短说明",
+        )
+        assert with_desc.description == "简短说明"
 
     def test_prompt_template_create(self):
         """测试 PromptTemplateCreate"""
@@ -99,6 +107,7 @@ class TestPromptTemplateSchemas:
 
         assert template.label == "创建测试"
         assert template.text == "创建测试内容"
+        assert template.description == ""
 
     def test_prompt_template_update(self):
         """测试 PromptTemplateUpdate"""
@@ -111,6 +120,9 @@ class TestPromptTemplateSchemas:
         update2 = PromptTemplateUpdate(text="新内容")
         assert update2.label is None
         assert update2.text == "新内容"
+
+        update3 = PromptTemplateUpdate(description="新描述")
+        assert update3.description == "新描述"
 
 
 # ==========================================
@@ -129,7 +141,8 @@ class TestRepairServiceTemplateOperations:
 
         template_data = PromptTemplateCreate(
             label="测试模板",
-            text="这是测试模板内容"
+            text="这是测试模板内容",
+            description="  描述一行  ",
         )
 
         template = service.create_template(template_data)
@@ -137,6 +150,7 @@ class TestRepairServiceTemplateOperations:
         assert template.id is not None
         assert template.label == "测试模板"
         assert template.text == "这是测试模板内容"
+        assert template.description == "描述一行"
         assert template.is_builtin is False
         logger.info(f"✓ 创建模板测试通过: template_id={template.id}")
 
@@ -201,12 +215,14 @@ class TestRepairServiceTemplateOperations:
 
         updated = service.update_template(template.id, PromptTemplateUpdate(
             label="新标签",
-            text="新内容"
+            text="新内容",
+            description="更新后的说明",
         ))
 
         assert updated is not None
         assert updated.label == "新标签"
         assert updated.text == "新内容"
+        assert updated.description == "更新后的说明"
         logger.info("✓ 更新自定义模板测试通过")
 
     def test_delete_template(self, db_session):

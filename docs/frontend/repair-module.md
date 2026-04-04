@@ -1,7 +1,7 @@
 # 图片修补模块 — 设计说明文档
 
-> 文档版本：v1.0  
-> 最后更新：2026-04-02  
+> 文档版本：v2.0  
+> 最后更新：2026-04-05  
 > 所属项目：二次元美图开发引擎
 
 ---
@@ -72,13 +72,16 @@
 
 #### ② 修补 Prompt 输入区
 - 多行文本框（4 行），支持自由输入修补描述
-- 右上角"选用模板"按钮，点击展开模板面板
+- 右上角 **「新建模板」**：打开大尺寸表单弹窗，创建自定义 Prompt 模板（与后端 `/api/repair/templates` 对接）
+- 右上角 **「选用模板」**：展开模板列表面板；列表数据来自接口，加载中显示占位提示
 
-#### ③ Prompt 模板选择区
-- 内置 6 个预置模板（见下方模板列表）
-- 点击模板项自动填入 Prompt 输入框，面板自动收起
+#### ③ Prompt 模板列表面板
+- 展示当前账号下全部模板（内置 + 自定义），点击条目主体将 **模板内容（text）** 填入 Prompt 输入框并收起面板
+- **内置模板**：展示「内置」角标；**不提供** 编辑 / 删除（与后端策略一致：内置模板不可更新、不可删除）
+- **自定义模板**：右侧提供铅笔（修改）、垃圾桶（删除）；删除前在同一行展开 **确认 / 取消** 二次确认
+- **空列表**：当接口返回 0 条模板时，展示引导文案，提示用户通过「新建模板」创建
 
-**内置模板：**
+**内置模板（与数据库种子一致，共 6 条）：**
 
 | 模板名称 | 适用场景 |
 |----------|----------|
@@ -127,7 +130,34 @@
 
 ---
 
-## 三、大图预览弹窗
+## 三、Prompt 模板管理功能（v2.0）
+
+### 3.1 新建 / 编辑弹窗（`TemplateModal`）
+
+- **触发**：Prompt 区域右上角「新建模板」；或模板列表中对自定义模板点击铅笔图标（预填当前标题、描述、内容）
+- **布局**：全屏半透明遮罩 + 居中卡片，**最大高度 90vh**，标题栏与底栏固定，**中间表单区域可滚动**
+- **字段与校验**
+
+| 字段 | 规则 |
+|------|------|
+| 模板标题 | 必填，最多 40 字（提交至后端时字段名为 `label`，后端上限为 100，前端收紧为 40） |
+| 模板描述 | 选填，最多 100 字；**仅用于前端列表展示**。内置说明由 `src/mocks/repairTasks.ts` 中的映射表提供；自定义模板描述保存在浏览器 `localStorage`（键 `aetherframe_repair_tpl_desc_v1`），刷新后仍可见 |
+| 模板内容 | 必填，最多 5000 字，对应后端字段 `text`；输入框下方 **实时字数统计** |
+
+- **交互**：`ESC` 关闭；点击遮罩（非卡片区域）关闭；「取消」关闭；「创建模板」/「保存修改」通过校验后调用创建或更新接口并刷新列表
+
+### 3.2 与任务切换的联动
+
+- 切换当前修补任务时，自动收起模板面板、关闭模板弹窗、取消进行中的删除确认，避免跨任务误操作（由 `TaskEditor` 的 `taskId` 属性驱动）
+
+### 3.3 接口与类型说明
+
+- 列表接口返回的 `data` 为 `{ templates, total }`，前端在 `repairApi.getTemplates` 中解包为 `templates` 数组
+- `PromptTemplate`（`src/types/repair.ts`）与后端一致：`label`、`text`、`is_builtin`、`sort_order`、`created_at` 等；前端展示用扩展类型见 `src/mocks/repairTasks.ts`（增加 `description`）
+
+---
+
+## 四、大图预览弹窗
 
 点击任意结果图片，弹出全屏预览弹窗（`ImagePreviewModal` 组件）。
 
@@ -162,7 +192,7 @@
 
 ---
 
-## 四、核心交互流程
+## 五、核心交互流程
 
 ### 4.1 标准修补流程
 
@@ -205,19 +235,24 @@
 
 ---
 
-## 五、文件结构
+## 六、文件结构
 
 ```
 src/
 ├── mocks/
-│   └── repairTasks.ts          # Mock 数据：任务列表、Prompt 模板
+│   └── repairTasks.ts          # 内置模板说明映射、自定义模板描述 localStorage、列表 enrich 工具
+├── types/
+│   └── repair.ts               # API 对齐类型（含 PromptTemplate / text 字段）
+├── services/
+│   └── repairApi.ts            # 修补 API（含 getTemplates 解包 { templates, total }）
 │
 └── pages/
     └── repair/
         ├── page.tsx             # 页面主入口，状态管理中心
         └── components/
             ├── TaskList.tsx     # 左侧任务列表
-            ├── TaskEditor.tsx   # 中间任务编辑区
+            ├── TaskEditor.tsx   # 中间任务编辑区（含模板 CRUD 与列表）
+            ├── TemplateModal.tsx # 新建/编辑 Prompt 模板弹窗
             ├── ResultDisplay.tsx # 右侧结果展示区
             └── ImagePreviewModal.tsx # 大图预览弹窗
 ```
@@ -228,14 +263,15 @@ src/
 |------|------|
 | `page.tsx` | 全局状态管理（任务列表、编辑器状态、处理状态）；协调各子组件通信 |
 | `TaskList.tsx` | 渲染任务列表；处理选中、删除、新建事件 |
-| `TaskEditor.tsx` | 图片上传、Prompt 输入、模板选择、参考图管理、输出数量选择、提交 |
+| `TaskEditor.tsx` | 图片上传、Prompt 输入、模板列表与 API 对接、参考图管理、输出数量选择、提交 |
+| `TemplateModal.tsx` | 模板表单校验、字数统计、ESC/遮罩关闭；新建或编辑模式复用 |
 | `ResultDisplay.tsx` | 结果图片网格展示；空状态/加载状态切换；触发预览弹窗 |
 | `ImagePreviewModal.tsx` | 全屏大图预览；键盘导航；下载；继续修补 |
-| `repairTasks.ts` | 类型定义（`RepairTask`、`TaskStatus`）；Mock 任务数据；Prompt 模板数据 |
+| `repairTasks.ts` | `PromptTemplate` 展示类型（含 `description`）、内置 id 与说明文案、自定义描述读写 |
 
 ---
 
-## 六、数据结构
+## 七、数据结构
 
 ### RepairTask
 
@@ -266,9 +302,28 @@ interface EditorState {
 }
 ```
 
+### PromptTemplate（API，`src/types/repair.ts`）
+
+与后端 `PromptTemplateResponse` 一致：
+
+```typescript
+interface PromptTemplate {
+  id: string;
+  label: string;
+  text: string;           // 模板正文，填入修补 Prompt
+  is_builtin: boolean;
+  sort_order: number;
+  created_at: string;
+}
+```
+
+### PromptTemplate（展示用，`src/mocks/repairTasks.ts`）
+
+在 API 类型基础上增加仅前端使用的 `description`（列表副标题），由 `enrichPromptTemplate(s)` 生成。
+
 ---
 
-## 七、视觉设计规范
+## 八、视觉设计规范
 
 ### 色彩体系
 
@@ -309,7 +364,7 @@ interface EditorState {
 
 ---
 
-## 八、路由配置
+## 九、路由配置
 
 | 路径 | 组件 | 说明 |
 |------|------|------|
@@ -320,7 +375,7 @@ interface EditorState {
 
 ---
 
-## 九、当前限制与后续规划
+## 十、当前限制与后续规划
 
 ### 当前限制
 

@@ -117,6 +117,11 @@ class PromptTemplateBase(BaseModel):
     """模板基础模型"""
     label: str = Field(..., min_length=1, max_length=100, description="模板标签")
     text: str = Field(..., min_length=1, max_length=5000, description="模板内容")
+    description: str = Field(
+        default="",
+        max_length=100,
+        description="模板简短说明（列表展示，可选）",
+    )
 
 class PromptTemplateCreate(PromptTemplateBase):
     """创建模板请求模型"""
@@ -126,11 +131,13 @@ class PromptTemplateUpdate(BaseModel):
     """更新模板请求模型"""
     label: Optional[str] = Field(None, min_length=1, max_length=100)
     text: Optional[str] = Field(None, min_length=1, max_length=5000)
+    description: Optional[str] = Field(None, max_length=100)
 
 class PromptTemplateResponse(BaseModel):
     """模板响应模型"""
     id: str
     label: str
+    description: str
     text: str
     is_builtin: bool
     sort_order: int

@@ -69,25 +69,35 @@ export interface TaskUpdateRequest {
   output_count?: number;
 }
 
-// Prompt模板类型
+// Prompt 模板类型（与后端 PromptTemplateResponse 一致，字段名为 text）
 export interface PromptTemplate {
   id: string;
   label: string;
-  prompt: string;
+  description: string;
+  text: string;
   is_builtin: boolean;
+  sort_order: number;
   created_at: string;
 }
 
 // 模板创建请求
 export interface PromptTemplateCreateRequest {
   label: string;
-  prompt: string;
+  text: string;
+  description?: string;
 }
 
 // 模板更新请求
 export interface PromptTemplateUpdateRequest {
   label?: string;
-  prompt?: string;
+  text?: string;
+  description?: string;
+}
+
+/** 列表接口 data 包裹层 */
+export interface PromptTemplateListData {
+  templates: PromptTemplate[];
+  total: number;
 }
 
 // 文件上传响应
