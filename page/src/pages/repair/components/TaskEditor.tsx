@@ -315,11 +315,6 @@ const TaskEditor = ({
                     >
                       <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                         <span className="font-semibold text-xs text-rose-600/80">{tpl.label}</span>
-                        {tpl.is_builtin && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-400/80 shrink-0">
-                            内置
-                          </span>
-                        )}
                         {tpl.description ? (
                           <span className="text-rose-400/55 text-xs line-clamp-1 min-w-0">{tpl.description}</span>
                         ) : null}
