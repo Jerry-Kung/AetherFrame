@@ -3,6 +3,7 @@ page.backup/
 data/
 test_data/
 .cursor/
+app/tools/llm/config.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
