@@ -187,7 +187,7 @@ async def update_task(
     """
     更新任务信息
 
-    仅允许更新 pending 状态的任务
+    processing 状态不可更新；pending、completed、failed 可更新名称、prompt、输出数量等
     """
     logger.info(f"API 请求 - 更新任务: task_id={task_id}")
 
@@ -199,7 +199,7 @@ async def update_task(
 
         updated_task = repair_service.update_task(task_id, task_data)
         if not updated_task:
-            if task.status != "pending":
+            if task.status == "processing":
                 raise HTTPException(
                     status_code=409,
                     detail=f"任务状态不允许更新，当前状态: {task.status}"
@@ -696,8 +696,9 @@ async def start_repair_task(
     """
     启动修补任务（异步）
 
-    任务状态必须为 pending 才能启动
-    必须先上传主图
+    允许 pending、completed、failed 启动；processing 不可重复启动。
+    completed/failed 再次启动时会先清空 results 目录再执行。
+    须已上传主图并填写 prompt。
     """
     logger.info(f"API 请求 - 启动修补任务: task_id={task_id}, use_reference_images={request.use_reference_images}")
 

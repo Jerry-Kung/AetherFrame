@@ -270,6 +270,73 @@ class TestRepairTaskServiceStart:
                 except Exception:
                     pass
 
+    @patch("app.services.repair_service.image_generation_service.generate_repair_images")
+    def test_start_task_from_completed_clears_old_results(
+        self, mock_generate, db_session, repair_task_service, test_task, temp_data_dir
+    ):
+        """completed 再次启动时先清空 results 目录再跑流水线"""
+        from app.services.repair_service import repair_file_service
+        from app.repositories.repair_repository import RepairTaskRepository
+        import tempfile
+        from fastapi import UploadFile
+        from io import BytesIO
+
+        mock_result_paths: list = []
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            f.write(b"test image data")
+            temp_image = f.name
+
+        try:
+            with open(temp_image, "rb") as f:
+                file_content = f.read()
+
+            upload_file = UploadFile(filename="test.png", file=BytesIO(file_content))
+
+            repair_file_service.ensure_task_dirs(test_task.id)
+            repair_file_service.save_main_image(test_task.id, upload_file)
+
+            _, _, results_dir = repair_file_service.get_task_subdirs(test_task.id)
+            stale_path = os.path.join(results_dir, "result_stale.png")
+            with open(stale_path, "wb") as sf:
+                sf.write(b"stale")
+
+            repo = RepairTaskRepository(db_session)
+            repo.update(test_task.id, {"status": "completed"})
+
+            for _ in range(2):
+                tf = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                tf.write(b"result image")
+                tf.close()
+                mock_result_paths.append(tf.name)
+
+            mock_generate.return_value = (mock_result_paths, None, None)
+
+            async def run():
+                await repair_task_service.start_task(
+                    task_id=test_task.id,
+                    use_reference_images=True,
+                    background_tasks=None,
+                )
+
+            asyncio.run(run())
+
+            assert not os.path.isfile(stale_path)
+            updated_task = repair_task_service.task_repo.get_by_id(test_task.id)
+            assert updated_task is not None
+            assert updated_task.status in ["completed", "failed"]
+
+        finally:
+            try:
+                os.unlink(temp_image)
+            except Exception:
+                pass
+            for path in mock_result_paths:
+                try:
+                    os.unlink(path)
+                except Exception:
+                    pass
+
 
 # ==========================================
 # 第三部分：API 接口测试（跳过 - 依赖项兼容性问题）

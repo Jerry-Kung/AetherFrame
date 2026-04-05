@@ -255,8 +255,8 @@ class RepairService:
         Returns:
             是否可以更新
         """
-        # 只有 pending 状态的任务可以更新
-        return task.status == "pending"
+        # processing 中与后台生成并发，禁止改库；其余非处理态可编辑参数
+        return task.status != "processing"
 
     def _build_task_simple(self, task: RepairTask) -> TaskSimple:
         """

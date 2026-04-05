@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from "react";
+import type { TaskStatus } from "@/types/repair";
 import type { PromptTemplate } from "@/mocks/repairTasks";
 import {
   DEFAULT_TAGS,
@@ -44,6 +45,8 @@ interface TaskEditorProps {
   isUploading?: boolean;
   /** 当前任务 id：切换任务时收起模板面板与弹窗 */
   taskId?: string | null;
+  /** 用于「重新修补」等按钮文案 */
+  taskStatus?: TaskStatus | null;
   /** 模板 CRUD / 加载失败时提示 */
   onTemplateError?: (message: string) => void;
 }
@@ -67,6 +70,7 @@ const TaskEditor = ({
   isProcessing,
   isUploading = false,
   taskId,
+  taskStatus,
   onTemplateError,
 }: TaskEditorProps) => {
   const mainInputRef = useRef<HTMLInputElement>(null);
@@ -314,6 +318,8 @@ const TaskEditor = ({
   };
 
   const canSubmit = !!state.mainImage && !!state.prompt.trim() && !isProcessing && !isUploading;
+  const submitLabel =
+    taskStatus === "completed" || taskStatus === "failed" ? "重新修补" : "开始修补";
 
   return (
     <>
@@ -750,7 +756,7 @@ const TaskEditor = ({
                 <span className="w-4 h-4 flex items-center justify-center">
                   <i className="ri-eraser-line"></i>
                 </span>
-                开始修补
+                {submitLabel}
               </span>
             )}
           </button>

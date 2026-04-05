@@ -121,6 +121,16 @@ def save_main_image(task_id: str, file: UploadFile) -> str:
     
     # 确保目录存在
     main_dir, _, _ = ensure_task_dirs(task_id)
+
+    # 避免 main_image.jpg 与 main_image.png 并存导致 get_main_image_path 命中旧文件
+    for ext in ALLOWED_IMAGE_EXTENSIONS:
+        old_path = os.path.join(main_dir, f"main_image{ext}")
+        if os.path.isfile(old_path):
+            try:
+                os.remove(old_path)
+            except OSError as e:
+                logger.error(f"删除旧主图失败: {old_path}, {e}", exc_info=True)
+                raise FileDeleteError(f"删除旧主图失败: {str(e)}")
     
     # 确定文件扩展名
     ext = get_file_extension(file.filename or "image.png")
@@ -346,6 +356,35 @@ def list_result_images(task_id: str) -> List[str]:
     """
     _, _, results_dir = get_task_subdirs(task_id)
     return list_files_in_dir(results_dir, ALLOWED_IMAGE_EXTENSIONS)
+
+
+def clear_result_images(task_id: str) -> int:
+    """
+    删除任务 results 目录下的全部结果图文件，并确保目录存在。
+
+    Returns:
+        成功删除的文件数量
+    """
+    logger.info(f"清空结果图目录: task_id={task_id}")
+    _, _, results_dir = get_task_subdirs(task_id)
+    if not os.path.isdir(results_dir):
+        ensure_task_dirs(task_id)
+        return 0
+
+    removed = 0
+    for name in list_result_images(task_id):
+        path = os.path.join(results_dir, name)
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+                removed += 1
+            except OSError as e:
+                logger.error(f"删除结果图失败: {path}, {e}", exc_info=True)
+                raise FileDeleteError(f"删除结果图失败: {str(e)}")
+
+    ensure_dir_exists(results_dir)
+    logger.info(f"清空结果图完成: task_id={task_id}, removed={removed}")
+    return removed
 
 
 # ==========================================

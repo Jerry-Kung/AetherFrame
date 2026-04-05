@@ -57,11 +57,19 @@ class RepairTaskService:
             logger.warning(error_msg)
             raise ValueError(error_msg)
 
-        # 2. 检查任务状态
-        if task.status != "pending":
+        # 2. 检查任务状态（processing 中不可重复启动；pending / completed / failed 可启动）
+        if task.status == "processing":
             error_msg = f"任务状态不允许启动，当前状态: {task.status}"
             logger.warning(error_msg)
             raise ValueError(error_msg)
+        if task.status not in ("pending", "completed", "failed"):
+            error_msg = f"任务状态不允许启动，当前状态: {task.status}"
+            logger.warning(error_msg)
+            raise ValueError(error_msg)
+
+        # 2b. 再次运行前清空旧结果（磁盘）
+        if task.status in ("completed", "failed"):
+            repair_file_service.clear_result_images(task_id)
 
         # 3. 检查主图是否存在
         main_image_path = repair_file_service.get_main_image_path(task_id)

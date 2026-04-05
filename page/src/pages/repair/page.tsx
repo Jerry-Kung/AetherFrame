@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useRepairTasks } from "@/hooks/useRepairTasks";
 import { useRepairTask } from "@/hooks/useRepairTask";
-import type { RepairTask, TaskStatus, EditorState } from "@/types/repair";
+import type { RepairTask, EditorState } from "@/types/repair";
 import TaskList from "./components/TaskList";
 import TaskEditor from "./components/TaskEditor";
 import ResultDisplay from "./components/ResultDisplay";
@@ -29,6 +29,8 @@ const defaultEditorState = (): EditorState => ({
   outputCount: 1,
 });
 
+const PROMPT_SYNC_DEBOUNCE_MS = 350;
+
 export default function RepairPage() {
   const navigate = useNavigate();
   const {
@@ -48,6 +50,7 @@ export default function RepairPage() {
     uploadMainImage,
     uploadReferenceImages,
     deleteMainImage,
+    deleteReferenceImage,
     startRepair,
     isUploading,
     fetchTask
@@ -55,6 +58,10 @@ export default function RepairPage() {
   
   const [editorState, setEditorState] = useState<EditorState>(defaultEditorState());
   const [localError, setLocalError] = useState<string | null>(null);
+  const promptSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPromptRef = useRef<string>("");
+  const editorStateRef = useRef(editorState);
+  editorStateRef.current = editorState;
 
   // 当选中任务变化时，更新编辑器状态
   useEffect(() => {
@@ -81,6 +88,22 @@ export default function RepairPage() {
   useEffect(() => {
     if (currentTask) applyTaskSnapshot(currentTask);
   }, [currentTask, applyTaskSnapshot]);
+
+  useEffect(() => {
+    return () => {
+      if (promptSyncTimerRef.current) {
+        clearTimeout(promptSyncTimerRef.current);
+        promptSyncTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (promptSyncTimerRef.current) {
+      clearTimeout(promptSyncTimerRef.current);
+      promptSyncTimerRef.current = null;
+    }
+  }, [selectedId]);
 
   // 显示错误提示（稳定引用，避免子组件中依赖它的 effect / callback 被无意义重建）
   const showError = useCallback((message: string) => {
@@ -122,23 +145,27 @@ export default function RepairPage() {
 
   /* ── Editor change ─── */
   const handleEditorChange = useCallback(
-    async (next: Partial<EditorState>) => {
+    (next: Partial<EditorState>) => {
       if (!selectedId || !currentTask) return;
-      
-      const newState = { ...editorState, ...next };
-      setEditorState(newState);
 
-      // 更新任务信息到后端
-      try {
-        await updateTask({
-          prompt: newState.prompt,
-          outputCount: newState.outputCount,
-        });
-      } catch (err) {
-        console.error("更新任务失败:", err);
+      setEditorState((prev) => ({ ...prev, ...next }));
+
+      if (next.outputCount !== undefined) {
+        void updateTask({ outputCount: next.outputCount });
+      }
+
+      if (next.prompt !== undefined) {
+        pendingPromptRef.current = next.prompt;
+        if (promptSyncTimerRef.current) clearTimeout(promptSyncTimerRef.current);
+        promptSyncTimerRef.current = setTimeout(() => {
+          promptSyncTimerRef.current = null;
+          void updateTask({ prompt: pendingPromptRef.current }).catch((err) => {
+            console.error("更新任务失败:", err);
+          });
+        }, PROMPT_SYNC_DEBOUNCE_MS);
       }
     },
-    [selectedId, currentTask, editorState, updateTask]
+    [selectedId, currentTask, updateTask]
   );
 
   // 处理主图上传
@@ -187,14 +214,35 @@ export default function RepairPage() {
     }
   }, [selectedId, uploadReferenceImages]);
 
-  // 移除参考图
-  const removeRefImage = useCallback((idx: number) => {
-    setEditorState(prev => {
-      const next = [...prev.referenceImages];
-      next.splice(idx, 1);
-      return { ...prev, referenceImages: next };
-    });
-  }, []);
+  // 移除参考图（已落盘的须调后端删除文件）
+  const removeRefImage = useCallback(
+    async (idx: number) => {
+      const url = editorStateRef.current.referenceImages[idx];
+      if (url === undefined) return;
+
+      const isLocalPreview = url.startsWith("data:") || url.startsWith("blob:");
+      if (!isLocalPreview) {
+        const m = url.match(/\/images\/reference\/([^/?#]+)/);
+        const filename = m ? decodeURIComponent(m[1]) : null;
+        if (filename) {
+          try {
+            await deleteReferenceImage(filename);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : "删除参考图失败";
+            showError(message);
+            return;
+          }
+        }
+      }
+
+      setEditorState((prev) => {
+        const next = [...prev.referenceImages];
+        next.splice(idx, 1);
+        return { ...prev, referenceImages: next };
+      });
+    },
+    [deleteReferenceImage, showError]
+  );
 
   /* ── Continue repair: create new task with result image ─── */
   const handleContinueRepair = useCallback(
@@ -219,14 +267,23 @@ export default function RepairPage() {
     if (!selectedId || !currentTask) return;
     if (!editorState.mainImage || !editorState.prompt.trim()) return;
 
+    if (promptSyncTimerRef.current) {
+      clearTimeout(promptSyncTimerRef.current);
+      promptSyncTimerRef.current = null;
+    }
+
     try {
+      await updateTask({
+        prompt: editorState.prompt,
+        outputCount: editorState.outputCount,
+      });
       const useReferenceImages = editorState.referenceImages.length > 0;
       await startRepair(useReferenceImages);
     } catch (err) {
       const message = err instanceof Error ? err.message : "启动修补任务失败";
       showError(message);
     }
-  }, [selectedId, currentTask, editorState, startRepair]);
+  }, [selectedId, currentTask, editorState, updateTask, startRepair]);
 
   /* ── Derived state ─── */
   const isProcessing = currentTask?.status === "processing";
@@ -426,6 +483,7 @@ export default function RepairPage() {
               {selectedId ? (
                 <TaskEditor
                   taskId={selectedId}
+                  taskStatus={currentTask?.status}
                   state={editorState}
                   onChange={handleEditorChange}
                   onSubmit={handleSubmit}

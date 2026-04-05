@@ -255,8 +255,8 @@ class TestRepairService:
         assert updated.prompt == "新描述"
         logger.info("✓ 更新任务测试通过")
 
-    def test_update_task_not_pending(self, db_session):
-        """测试更新非 pending 状态的任务"""
+    def test_update_task_processing_blocked(self, db_session):
+        """processing 状态下禁止更新任务"""
         from app.services.repair_service import RepairService
         from app.repositories.repair_repository import RepairTaskRepository
         from app.schemas.repair import TaskCreate, TaskUpdate
@@ -270,13 +270,32 @@ class TestRepairService:
             output_count=1
         ))
 
-        # 更新状态为 processing
         repo.update_status(task.id, "processing")
 
-        # 尝试更新应该失败
         updated = service.update_task(task.id, TaskUpdate(name="新名称"))
         assert updated is None
-        logger.info("✓ 更新非 pending 状态任务测试通过")
+        logger.info("✓ processing 状态任务不可更新测试通过")
+
+    def test_update_task_completed_allowed(self, db_session):
+        """completed 状态下允许更新 prompt 等字段"""
+        from app.services.repair_service import RepairService
+        from app.repositories.repair_repository import RepairTaskRepository
+        from app.schemas.repair import TaskCreate, TaskUpdate
+
+        service = RepairService(db_session)
+        repo = RepairTaskRepository(db_session)
+
+        task = service.create_task(TaskCreate(
+            name="已完成任务",
+            prompt="old",
+            output_count=1
+        ))
+        repo.update_status(task.id, "completed")
+
+        updated = service.update_task(task.id, TaskUpdate(prompt="new prompt"))
+        assert updated is not None
+        assert updated.prompt == "new prompt"
+        logger.info("✓ completed 状态任务可更新测试通过")
 
     def test_delete_task(self, db_session):
         """测试删除任务"""
