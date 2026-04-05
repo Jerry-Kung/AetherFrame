@@ -82,11 +82,11 @@ export default function RepairPage() {
     if (currentTask) applyTaskSnapshot(currentTask);
   }, [currentTask, applyTaskSnapshot]);
 
-  // 显示错误提示
-  const showError = (message: string) => {
+  // 显示错误提示（稳定引用，避免子组件中依赖它的 effect / callback 被无意义重建）
+  const showError = useCallback((message: string) => {
     setLocalError(message);
     setTimeout(() => setLocalError(null), 5000);
-  };
+  }, []);
 
   /* ── Task actions ─── */
   const handleSelect = useCallback((id: string) => setSelectedId(id), []);

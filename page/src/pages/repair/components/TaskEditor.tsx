@@ -57,7 +57,7 @@ const TaskEditor = ({
   const [mainDragOver, setMainDragOver] = useState(false);
 
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
-  const [templatesLoading, setTemplatesLoading] = useState(true);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
 
   const [modalMode, setModalMode] = useState<ModalMode | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -76,8 +76,13 @@ const TaskEditor = ({
     }
   }, [onTemplateError]);
 
-  useEffect(() => {
-    refreshTemplates();
+  /** 仅在展开「选用模板」面板时拉取列表，避免随父组件轮询重渲染反复请求 */
+  const toggleTemplatePanel = useCallback(() => {
+    setShowTemplates((open) => {
+      if (open) return false;
+      void refreshTemplates();
+      return true;
+    });
   }, [refreshTemplates]);
 
   useEffect(() => {
@@ -273,7 +278,7 @@ const TaskEditor = ({
               </span>
               <button
                 type="button"
-                onClick={() => setShowTemplates((v) => !v)}
+                onClick={toggleTemplatePanel}
                 className="flex items-center gap-1 text-xs text-pink-400 hover:text-pink-600 cursor-pointer transition-colors whitespace-nowrap"
               >
                 <i className="ri-magic-line text-xs"></i>
