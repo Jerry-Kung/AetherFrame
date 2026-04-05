@@ -309,25 +309,28 @@ class ImageGenerationService:
 **路径参数**：
 - `task_id` (string, required): 任务 ID
 
-**响应示例**：
+**响应示例**（`data` 为 `TaskSimple`，与列表项/创建/更新返回的摘要一致；**不含** `error_message` 与图片列表）：
+
 ```json
 {
   "success": true,
   "data": {
-    "id": "task-001",
+    "id": "task_abc12345",
+    "name": "修补任务 1",
     "status": "processing",
-    "progress": 50,  // 预留字段
-    "errorMessage": null,
-    "updatedAt": "2026-04-03T10:05:00Z",
-    "resultImages": [  // 只有completed时才有
-      {
-        "filename": "result_0.png",
-        "url": "/api/repair/tasks/task-001/images/result/result_0.png"
-      }
-    ]
-  }
+    "prompt": "…",
+    "output_count": 2,
+    "created_at": "2026-04-03T10:00:00+00:00",
+    "updated_at": "2026-04-03T10:05:00+00:00",
+    "has_main_image": true,
+    "reference_image_count": 1,
+    "result_image_count": 0
+  },
+  "message": "获取任务状态成功"
 }
 ```
+
+任务结束（`completed` / `failed`）后，前端应再请求 `GET /api/repair/tasks/{task_id}` 获取 `error_message` 与 `result_images` 等详情字段。
 
 ---
 
@@ -337,27 +340,10 @@ class ImageGenerationService:
 
 已有的模型字段已足够，无需新增字段。
 
-### 扩展 Pydantic Schemas
+### Pydantic Schemas（与实现对齐）
 
-在 `app/schemas/repair.py` 中添加：
-
-```python
-# ========== 任务启动 ==========
-class TaskStartRequest(BaseModel):
-    use_reference_images: bool = Field(True, description="是否使用参考图")
-
-# ========== 任务状态响应 ==========
-class TaskStatusResponse(BaseModel):
-    id: str
-    status: str
-    progress: Optional[int] = Field(None, ge=0, le=100)  # 预留
-    error_message: Optional[str]
-    updated_at: datetime
-    result_images: Optional[List[ImageInfo]] = None
-    
-    class Config:
-        from_attributes = True
-```
+- 任务启动请求体为 `StartRepairRequest`（`use_reference_images`），见 `app/schemas/repair.py`。
+- 轮询接口 **`GET /api/repair/tasks/{task_id}/status`** 的 `data` 使用 **`TaskSimple`**，不再使用历史上曾草拟的独立 `TaskStatusResponse` 形态，避免文档与 OpenAPI 误导。
 
 ---
 

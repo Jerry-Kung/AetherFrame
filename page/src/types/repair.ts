@@ -117,7 +117,8 @@ export interface UploadedImageInfo {
 }
 
 export interface FailedUploadInfo {
-  filename: string;
+  /** 与后端 `FailedUploadInfo.original_filename` 一致 */
+  original_filename: string;
   error: string;
 }
 

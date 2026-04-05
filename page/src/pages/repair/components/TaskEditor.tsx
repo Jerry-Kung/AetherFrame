@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from "react";
-import type { TaskStatus } from "@/types/repair";
-import type { PromptTemplate } from "@/mocks/repairTasks";
+import type { TaskStatus, EditorState } from "@/types/repair";
+import type { PromptTemplate } from "@/repair/repairTemplateUtils";
 import {
   DEFAULT_TAGS,
   enrichPromptTemplates,
@@ -16,7 +16,7 @@ import {
   stripTagFromAllStoredTemplates,
   setTemplateTags,
   removeTemplateTags,
-} from "@/mocks/repairTasks";
+} from "@/repair/repairTemplateUtils";
 import {
   getTemplates,
   createTemplate,
@@ -26,13 +26,6 @@ import {
 import TemplateModal from "./TemplateModal";
 import TemplateViewModal from "./TemplateViewModal";
 import ImagePreviewModal from "./ImagePreviewModal";
-
-export interface EditorState {
-  mainImage: string;
-  prompt: string;
-  referenceImages: string[];
-  outputCount: 1 | 2 | 4;
-}
 
 interface TaskEditorProps {
   state: EditorState;

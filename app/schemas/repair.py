@@ -220,21 +220,6 @@ class StartRepairResponse(BaseModel):
     task_id: str
     status: str
 
-# ============== 任务状态响应模型 ==============
-
-class TaskStatusResponse(BaseModel):
-    """
-    任务状态响应模型（用于轮询）
-    """
-    id: str
-    status: str
-    progress: Optional[int] = Field(None, ge=0, le=100, description="任务进度（预留）")
-    error_message: Optional[str] = None
-    updated_at: datetime
-    result_images: Optional[List[ImageInfo]] = None
-    
-    model_config = ConfigDict(from_attributes=True)
-
 # ============== 统一响应模型 ==============
 
 class ApiResponse(BaseModel):

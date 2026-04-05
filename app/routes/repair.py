@@ -742,7 +742,11 @@ async def get_task_status(
     repair_service: RepairService = Depends(get_repair_service),
 ):
     """
-    获取任务处理状态（用于轮询）
+    获取任务处理状态（用于轮询）。
+
+    `data` 与 `TaskSimple` 一致（名称、状态、prompt、计数、时间戳等），
+    与列表项及创建/更新接口返回的摘要结构相同。
+    不含 `error_message` 与图片 URL 列表；任务结束后请再调 `GET /tasks/{task_id}` 取详情与结果图。
     """
     logger.debug(f"API 请求 - 获取任务状态: task_id={task_id}")
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { PromptTemplate } from "@/mocks/repairTasks";
+import type { PromptTemplate } from "@/repair/repairTemplateUtils";
 
 interface TemplateViewModalProps {
   template: PromptTemplate;

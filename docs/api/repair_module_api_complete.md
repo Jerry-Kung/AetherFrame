@@ -685,44 +685,29 @@ app/
 **路径参数**:
 - `task_id` (string, required): 任务 ID
 
-**响应示例**:
+**说明**：`data` 为 **`TaskSimple`**（与任务列表项、创建/更新返回的摘要一致），**不包含** `error_message`、`result_images` 等详情字段。轮询仅用于观察 `status` 与计数变化；任务结束后请调用 **`GET /api/repair/tasks/{task_id}`** 获取错误信息与结果图 URL。
+
+**响应示例**（处理中）:
 ```json
 {
   "success": true,
   "data": {
-    "id": "task-001",
+    "id": "task_abc12345",
+    "name": "修补任务 1",
     "status": "processing",
-    "progress": null,
-    "error_message": null,
-    "updated_at": "2026-04-03T10:05:00Z",
-    "result_images": null
-  }
+    "prompt": "…",
+    "output_count": 2,
+    "created_at": "2026-04-03T10:00:00+00:00",
+    "updated_at": "2026-04-03T10:05:00+00:00",
+    "has_main_image": true,
+    "reference_image_count": 1,
+    "result_image_count": 0
+  },
+  "message": "获取任务状态成功"
 }
 ```
 
-**任务完成时响应示例**:
-```json
-{
-  "success": true,
-  "data": {
-    "id": "task-001",
-    "status": "completed",
-    "progress": null,
-    "error_message": null,
-    "updated_at": "2026-04-03T10:10:00Z",
-    "result_images": [
-      {
-        "filename": "result_0.png",
-        "url": "/api/repair/tasks/task-001/images/result/result_0.png"
-      },
-      {
-        "filename": "result_1.png",
-        "url": "/api/repair/tasks/task-001/images/result/result_1.png"
-      }
-    ]
-  }
-}
-```
+**任务完成时**：`status` 为 `completed`，`result_image_count` 与 `output_count` 一致；仍须 **`GET /api/repair/tasks/{task_id}`** 取得 `result_images` 列表。
 
 ---
 

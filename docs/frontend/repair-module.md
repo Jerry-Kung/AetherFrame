@@ -143,7 +143,7 @@
 ### 3.3 接口与类型说明
 
 - 列表接口返回的 `data` 为 `{ templates, total }`，前端在 `repairApi.getTemplates` 中解包为 `templates` 数组
-- `PromptTemplate`（`src/types/repair.ts`）与后端一致：`label`、`text`、`is_builtin`、`sort_order`、`created_at` 等；前端展示用扩展类型见 `src/mocks/repairTasks.ts`（增加 `description`）
+- `PromptTemplate`（`src/types/repair.ts`）与后端一致：`label`、`text`、`is_builtin`、`sort_order`、`created_at` 等；前端展示用扩展类型见 `src/repair/repairTemplateUtils.ts`（增加 `description` / `tags` 与 enrich）
 
 ---
 
@@ -229,10 +229,10 @@
 
 ```
 src/
-├── mocks/
-│   └── repairTasks.ts          # 模板列表 enrich、历史描述 localStorage 读写
+├── repair/
+│   └── repairTemplateUtils.ts  # 模板列表 enrich、历史描述 localStorage 读写（非 mock）
 ├── types/
-│   └── repair.ts               # API 对齐类型（含 PromptTemplate / text 字段）
+│   └── repair.ts               # API 对齐类型（含 PromptTemplate / text 字段、EditorState）
 ├── services/
 │   └── repairApi.ts            # 修补 API（含 getTemplates 解包 { templates, total }）
 │
@@ -257,7 +257,7 @@ src/
 | `TemplateModal.tsx` | 模板表单校验、字数统计、ESC/遮罩关闭；新建或编辑模式复用 |
 | `ResultDisplay.tsx` | 结果图片网格展示；空状态/加载状态切换；触发预览弹窗 |
 | `ImagePreviewModal.tsx` | 全屏大图预览；键盘导航；下载；继续修补 |
-| `repairTasks.ts` | `PromptTemplate` 展示类型（含 `description`）、列表 enrich 与 localStorage 描述兜底 |
+| `repairTemplateUtils.ts` | `PromptTemplate` 展示类型（含 `description` / `tags`）、列表 enrich 与 localStorage 描述兜底 |
 
 ---
 
@@ -281,7 +281,7 @@ interface RepairTask {
 type TaskStatus = "pending" | "processing" | "completed" | "failed";
 ```
 
-### EditorState（TaskEditor 内部状态）
+### EditorState（`src/types/repair.ts`，与 `TaskEditor` / `page.tsx` 共用）
 
 ```typescript
 interface EditorState {
@@ -308,9 +308,9 @@ interface PromptTemplate {
 }
 ```
 
-### PromptTemplate（展示用，`src/mocks/repairTasks.ts`）
+### PromptTemplate（展示用，`src/repair/repairTemplateUtils.ts`）
 
-在 API 类型基础上增加仅前端使用的 `description`（列表副标题），由 `enrichPromptTemplate(s)` 生成。
+在 API 类型基础上增加仅前端使用的 `description`（列表副标题）与 `tags`，由 `enrichPromptTemplate(s)` 生成。
 
 ---
 

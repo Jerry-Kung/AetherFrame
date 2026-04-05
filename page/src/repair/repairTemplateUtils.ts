@@ -1,5 +1,6 @@
 /**
  * 修补模块：模板列表 enrich（description / tags 兜底）与历史 localStorage 读写。
+ * 非 mock 数据；运行时模板仍来自 API，本模块仅做展示层补充与本地持久化。
  */
 
 import type { PromptTemplate as ApiPromptTemplate } from "@/types/repair";
