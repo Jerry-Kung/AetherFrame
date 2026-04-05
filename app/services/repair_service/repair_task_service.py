@@ -1,0 +1,238 @@
+"""
+修补任务异步处理服务
+
+负责使用 FastAPI BackgroundTasks 处理异步任务
+"""
+import asyncio
+import logging
+from typing import Optional, List
+from sqlalchemy.orm import Session
+from fastapi import BackgroundTasks
+
+from app.models.repair import RepairTask
+from app.repositories.repair_repository import RepairTaskRepository
+from . import repair_file_service
+from . import repair_execution
+
+logger = logging.getLogger(__name__)
+
+
+class RepairTaskService:
+    """修补任务异步处理服务"""
+
+    def __init__(self, db: Session):
+        self.db = db
+        self.task_repo = RepairTaskRepository(db)
+
+    # ==========================================
+    # 任务启动
+    # ==========================================
+
+    async def start_task(
+        self,
+        task_id: str,
+        use_reference_images: bool = True,
+        background_tasks: Optional[BackgroundTasks] = None
+    ) -> RepairTask:
+        """
+        启动修补任务
+
+        Args:
+            task_id: 任务 ID
+            use_reference_images: 是否使用参考图
+            background_tasks: FastAPI BackgroundTasks 对象
+
+        Returns:
+            更新后的 RepairTask 对象
+
+        Raises:
+            ValueError: 任务不存在、状态不允许或主图不存在
+        """
+        logger.info(f"启动修补任务: task_id={task_id}, use_reference_images={use_reference_images}")
+
+        # 1. 获取任务
+        task = self.task_repo.get_by_id(task_id)
+        if not task:
+            error_msg = f"任务不存在: {task_id}"
+            logger.warning(error_msg)
+            raise ValueError(error_msg)
+
+        # 2. 检查任务状态（processing 中不可重复启动；pending / completed / failed 可启动）
+        if task.status == "processing":
+            error_msg = f"任务状态不允许启动，当前状态: {task.status}"
+            logger.warning(error_msg)
+            raise ValueError(error_msg)
+        if task.status not in ("pending", "completed", "failed"):
+            error_msg = f"任务状态不允许启动，当前状态: {task.status}"
+            logger.warning(error_msg)
+            raise ValueError(error_msg)
+
+        # 2b. 再次运行前清空旧结果（磁盘）
+        if task.status in ("completed", "failed"):
+            repair_file_service.clear_result_images(task_id)
+
+        # 3. 检查主图是否存在
+        main_image_path = repair_file_service.get_main_image_path(task_id)
+        if not main_image_path:
+            error_msg = "主图不存在，请先上传主图"
+            logger.warning(error_msg)
+            raise ValueError(error_msg)
+
+        if not (task.prompt or "").strip():
+            error_msg = "请先填写修补 Prompt 后再提交任务"
+            logger.warning(error_msg)
+            raise ValueError(error_msg)
+
+        # 4. 更新任务状态为 processing
+        updated_task = self.task_repo.update(task_id, {
+            "status": "processing",
+            "error_message": None
+        })
+        logger.info(f"任务状态更新为 processing: {task_id}")
+
+        # 5. 获取参考图路径（如果需要）
+        reference_image_paths = []
+        if use_reference_images:
+            ref_filenames = repair_file_service.list_reference_images(task_id)
+            for filename in ref_filenames:
+                ref_path = repair_file_service.get_reference_image_path(task_id, filename)
+                if ref_path:
+                    reference_image_paths.append(ref_path)
+            logger.debug(f"使用 {len(reference_image_paths)} 张参考图")
+        else:
+            logger.debug("不使用参考图")
+
+        # 6. 添加后台任务
+        if background_tasks:
+            background_tasks.add_task(
+                self._execute_task,
+                task_id=task_id,
+                prompt=task.prompt,
+                main_image_path=main_image_path,
+                reference_image_paths=reference_image_paths,
+                output_count=task.output_count
+            )
+            logger.info(f"已添加后台任务: task_id={task_id}")
+        else:
+            logger.warning("没有提供 background_tasks，任务将同步执行")
+            # 同步执行（用于测试或特殊情况）
+            await self._execute_task(
+                task_id=task_id,
+                prompt=task.prompt,
+                main_image_path=main_image_path,
+                reference_image_paths=reference_image_paths,
+                output_count=task.output_count
+            )
+
+        return updated_task
+
+    # ==========================================
+    # 任务执行（后台）
+    # ==========================================
+
+    async def _execute_task(
+        self,
+        task_id: str,
+        prompt: str,
+        main_image_path: str,
+        reference_image_paths: List[str],
+        output_count: int
+    ) -> None:
+        """
+        后台执行任务（将阻塞的 LLM/IO 放到线程池，避免占满 asyncio 事件循环导致轮询 API 无响应）
+        """
+        await asyncio.to_thread(
+            self._execute_task_sync,
+            task_id,
+            prompt,
+            main_image_path,
+            reference_image_paths,
+            output_count,
+        )
+
+    def _execute_task_sync(
+        self,
+        task_id: str,
+        prompt: str,
+        main_image_path: str,
+        reference_image_paths: List[str],
+        output_count: int,
+    ) -> None:
+        """
+        同步执行修补（在线程池中运行）：生成图、落盘、更新状态。
+        """
+        logger.info(f"开始后台执行任务: task_id={task_id}, output_count={output_count}")
+        repair_execution.run_repair_generation_pipeline(
+            task_id=task_id,
+            prompt=prompt,
+            main_image_path=main_image_path,
+            reference_image_paths=reference_image_paths,
+            output_count=output_count,
+            update_status=self._update_task_status,
+        )
+
+    # ==========================================
+    # 状态更新
+    # ==========================================
+
+    def _update_task_status(
+        self,
+        task_id: str,
+        status: str,
+        error_message: Optional[str] = None
+    ) -> Optional[RepairTask]:
+        """
+        更新任务状态
+
+        使用独立的数据库会话：在 FastAPI BackgroundTasks 中执行时，请求级 Session
+        往往已关闭。此处通过原 Session 的 bind（Engine）新建会话，与生产库、
+        测试夹具使用同一数据库文件。
+
+        Args:
+            task_id: 任务 ID
+            status: 新状态
+            error_message: 错误信息（仅失败时）
+
+        Returns:
+            更新后的 RepairTask 对象
+        """
+        logger.info(f"更新任务状态: task_id={task_id}, status={status}")
+
+        updates = {"status": status}
+        if error_message is not None:
+            updates["error_message"] = error_message
+        else:
+            updates["error_message"] = None
+
+        bind = self.task_repo.db.get_bind()
+        db = Session(bind=bind, autocommit=False, autoflush=False)
+        try:
+            repo = RepairTaskRepository(db)
+            updated_task = repo.update(task_id, updates)
+            if updated_task:
+                logger.info(f"任务状态更新成功: task_id={task_id}, status={status}")
+            else:
+                logger.warning(f"任务状态更新失败: task_id={task_id}")
+            return updated_task
+        finally:
+            db.close()
+
+    # ==========================================
+    # 任务状态查询
+    # ==========================================
+
+    def get_task_status(self, task_id: str) -> Optional[RepairTask]:
+        """
+        获取任务状态
+
+        Args:
+            task_id: 任务 ID
+
+        Returns:
+            RepairTask 对象，不存在则返回 None
+        """
+        logger.debug(f"获取任务状态: task_id={task_id}")
+        return self.task_repo.get_by_id(task_id)
+
+
+logger.debug("RepairTaskService 加载完成")
