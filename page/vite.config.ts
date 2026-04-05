@@ -4,94 +4,102 @@ import { resolve } from "node:path";
 import AutoImport from "unplugin-auto-import/vite";
 // import { readdyJsxRuntimeProxyPlugin } from "./vite.jsx-runtime-proxy";
 
-const base = process.env.BASE_PATH || "/static/";
 const isPreview = process.env.IS_PREVIEW ? true : false;
 //const proxyPlugins = isPreview ? [readdyJsxRuntimeProxyPlugin()] : [];
 // https://vite.dev/config/
-export default defineConfig({
-  define: {
-    __BASE_PATH__: JSON.stringify(base),
-    __IS_PREVIEW__: JSON.stringify(isPreview),
-    __READDY_PROJECT_ID__: JSON.stringify(process.env.PROJECT_ID || ""),
-    __READDY_VERSION_ID__: JSON.stringify(process.env.VERSION_ID || ""),
-    __READDY_AI_DOMAIN__: JSON.stringify(process.env.READDY_AI_DOMAIN || ""),
-  },
-  plugins: [
-    // ...proxyPlugins,
-    react(),
-    AutoImport({
-      imports: [
-        {
-          react: [
-            ["default", "React"],
-            "useState",
-            "useEffect",
-            "useContext",
-            "useReducer",
-            "useCallback",
-            "useMemo",
-            "useRef",
-            "useImperativeHandle",
-            "useLayoutEffect",
-            "useDebugValue",
-            "useDeferredValue",
-            "useId",
-            "useInsertionEffect",
-            "useSyncExternalStore",
-            "useTransition",
-            "startTransition",
-            "lazy",
-            "memo",
-            "forwardRef",
-            "createContext",
-            "createElement",
-            "cloneElement",
-            "isValidElement",
-          ],
-        },
-        {
-          "react-router-dom": [
-            "useNavigate",
-            "useLocation",
-            "useParams",
-            "useSearchParams",
-            "Link",
-            "NavLink",
-            "Navigate",
-            "Outlet",
-          ],
-        },
-        // React i18n
-        {
-          "react-i18next": ["useTranslation", "Trans"],
-        },
-      ],
-      dts: true,
-    }),
-  ],
-  base,
-  build: {
-    sourcemap: true,
-    outDir: '../app/static',
-    emptyOutDir: true,
-  },
-  resolve: {
-    alias: {
-      "@": resolve(__dirname, "./src"),
+// 开发环境 base 用 "/"：否则 React Router 会导航到 /material，而 Vite 在 base=/static/ 时
+// 不会对根路径 /material 做 SPA 回退，导致整页 404。生产构建仍用 /static/ 以匹配 FastAPI 挂载。
+export default defineConfig(({ command }) => {
+  const base =
+    command === "serve"
+      ? "/"
+      : process.env.BASE_PATH || "/static/";
+
+  return {
+    define: {
+      __BASE_PATH__: JSON.stringify(base),
+      __IS_PREVIEW__: JSON.stringify(isPreview),
+      __READDY_PROJECT_ID__: JSON.stringify(process.env.PROJECT_ID || ""),
+      __READDY_VERSION_ID__: JSON.stringify(process.env.VERSION_ID || ""),
+      __READDY_AI_DOMAIN__: JSON.stringify(process.env.READDY_AI_DOMAIN || ""),
     },
-  },
-  server: {
-    port: 3000,
-    host: "0.0.0.0",
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
+    plugins: [
+      // ...proxyPlugins,
+      react(),
+      AutoImport({
+        imports: [
+          {
+            react: [
+              ["default", "React"],
+              "useState",
+              "useEffect",
+              "useContext",
+              "useReducer",
+              "useCallback",
+              "useMemo",
+              "useRef",
+              "useImperativeHandle",
+              "useLayoutEffect",
+              "useDebugValue",
+              "useDeferredValue",
+              "useId",
+              "useInsertionEffect",
+              "useSyncExternalStore",
+              "useTransition",
+              "startTransition",
+              "lazy",
+              "memo",
+              "forwardRef",
+              "createContext",
+              "createElement",
+              "cloneElement",
+              "isValidElement",
+            ],
+          },
+          {
+            "react-router-dom": [
+              "useNavigate",
+              "useLocation",
+              "useParams",
+              "useSearchParams",
+              "Link",
+              "NavLink",
+              "Navigate",
+              "Outlet",
+            ],
+          },
+          // React i18n
+          {
+            "react-i18next": ["useTranslation", "Trans"],
+          },
+        ],
+        dts: true,
+      }),
+    ],
+    base,
+    build: {
+      sourcemap: true,
+      outDir: '../app/static',
+      emptyOutDir: true,
+    },
+    resolve: {
+      alias: {
+        "@": resolve(__dirname, "./src"),
       },
-      '/uploads': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
+    },
+    server: {
+      port: 3000,
+      host: "0.0.0.0",
+      proxy: {
+        '/api': {
+          target: 'http://localhost:8000',
+          changeOrigin: true,
+        },
+        '/uploads': {
+          target: 'http://localhost:8000',
+          changeOrigin: true,
+        }
       }
-    }
-  },
+    },
+  };
 });
