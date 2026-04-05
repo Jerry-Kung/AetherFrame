@@ -31,11 +31,12 @@ interface TaskListProps {
   tasks: RepairTask[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  onDelete: (id: string) => void;
+  /** 点击删除图标时触发（由父级弹出确认框后再真正删除） */
+  onDeleteConfirm: (id: string) => void;
   onNew: () => void;
 }
 
-const TaskList = ({ tasks, selectedId, onSelect, onDelete, onNew }: TaskListProps) => {
+const TaskList = ({ tasks, selectedId, onSelect, onDeleteConfirm, onNew }: TaskListProps) => {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -119,7 +120,7 @@ const TaskList = ({ tasks, selectedId, onSelect, onDelete, onNew }: TaskListProp
                 aria-label={`删除任务 ${task.name}`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDelete(task.id);
+                  onDeleteConfirm(task.id);
                 }}
                 className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150 hover:bg-rose-100 cursor-pointer text-rose-300 hover:text-rose-500"
               >

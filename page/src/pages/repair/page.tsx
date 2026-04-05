@@ -6,6 +6,7 @@ import type { RepairTask, EditorState } from "@/types/repair";
 import TaskList from "./components/TaskList";
 import TaskEditor from "./components/TaskEditor";
 import ResultDisplay from "./components/ResultDisplay";
+import CuteConfirmModal from "./components/CuteConfirmModal";
 
 /* ── Background decoration data ───────────────────────── */
 const decorations = [
@@ -58,6 +59,10 @@ export default function RepairPage() {
   
   const [editorState, setEditorState] = useState<EditorState>(defaultEditorState());
   const [localError, setLocalError] = useState<string | null>(null);
+  const [deleteConfirmTask, setDeleteConfirmTask] = useState<{ id: string; name: string } | null>(
+    null
+  );
+  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
   const promptSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPromptRef = useRef<string>("");
   const editorStateRef = useRef(editorState);
@@ -114,15 +119,22 @@ export default function RepairPage() {
   /* ── Task actions ─── */
   const handleSelect = useCallback((id: string) => setSelectedId(id), []);
 
-  const handleDelete = useCallback(async (id: string) => {
-    const task = tasks.find((t) => t.id === id);
-    const label = task?.name ?? id;
-    const ok = window.confirm(
-      `确定删除任务「${label}」吗？\n将同时删除数据库记录与本地 data 目录中的该任务图片。`
-    );
-    if (!ok) return;
+  const openDeleteConfirm = useCallback(
+    (id: string) => {
+      const task = tasks.find((t) => t.id === id);
+      setDeleteConfirmTask({ id, name: task?.name ?? id });
+    },
+    [tasks]
+  );
+
+  const handleDeleteCancel = useCallback(() => setDeleteConfirmTask(null), []);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteConfirmTask) return;
+    const id = deleteConfirmTask.id;
     try {
       await deleteTask(id);
+      setDeleteConfirmTask(null);
       if (selectedId === id) {
         setSelectedId(tasks.find((t) => t.id !== id)?.id ?? null);
       }
@@ -130,7 +142,7 @@ export default function RepairPage() {
       const message = err instanceof Error ? err.message : "删除任务失败";
       showError(message);
     }
-  }, [deleteTask, selectedId, tasks]);
+  }, [deleteConfirmTask, deleteTask, selectedId, tasks, showError]);
 
   const handleNew = useCallback(async () => {
     try {
@@ -263,7 +275,7 @@ export default function RepairPage() {
   );
 
   /* ── Submit ─── */
-  const handleSubmit = useCallback(async () => {
+  const doSubmit = useCallback(async () => {
     if (!selectedId || !currentTask) return;
     if (!editorState.mainImage || !editorState.prompt.trim()) return;
 
@@ -283,7 +295,25 @@ export default function RepairPage() {
       const message = err instanceof Error ? err.message : "启动修补任务失败";
       showError(message);
     }
-  }, [selectedId, currentTask, editorState, updateTask, startRepair]);
+  }, [selectedId, currentTask, editorState, updateTask, startRepair, showError]);
+
+  const handleSubmit = useCallback(() => {
+    if (!selectedId || !currentTask) return;
+    if (!editorState.mainImage || !editorState.prompt.trim()) return;
+
+    if (currentTask.status === "completed" || currentTask.status === "failed") {
+      setRestartConfirmOpen(true);
+      return;
+    }
+    void doSubmit();
+  }, [selectedId, currentTask, editorState, doSubmit]);
+
+  const handleRestartCancel = useCallback(() => setRestartConfirmOpen(false), []);
+
+  const handleRestartConfirm = useCallback(() => {
+    setRestartConfirmOpen(false);
+    void doSubmit();
+  }, [doSubmit]);
 
   /* ── Derived state ─── */
   const isProcessing = currentTask?.status === "processing";
@@ -444,7 +474,7 @@ export default function RepairPage() {
                 tasks={tasks}
                 selectedId={selectedId}
                 onSelect={handleSelect}
-                onDelete={handleDelete}
+                onDeleteConfirm={openDeleteConfirm}
                 onNew={handleNew}
               />
             </div>
@@ -470,7 +500,7 @@ export default function RepairPage() {
                     type="button"
                     title={isProcessing ? "处理中，暂不可删除" : "删除当前任务"}
                     disabled={isProcessing}
-                    onClick={() => handleDelete(selectedId)}
+                    onClick={() => openDeleteConfirm(selectedId)}
                     className="shrink-0 px-2 py-1 rounded-lg text-xs text-rose-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:pointer-events-none cursor-pointer transition-colors"
                   >
                     <i className="ri-delete-bin-6-line" />
@@ -529,6 +559,34 @@ export default function RepairPage() {
           </div>
         </div>
       </div>
+
+      <CuteConfirmModal
+        isOpen={deleteConfirmTask !== null}
+        title="确认删除任务？"
+        message={
+          deleteConfirmTask
+            ? `将删除「${deleteConfirmTask.name}」及其数据库记录与本地图片文件，且不可恢复。`
+            : ""
+        }
+        icon="delete"
+        confirmText="确认删除"
+        cancelText="取消"
+        titleId="repair-delete-confirm-title"
+        onConfirm={() => void handleDeleteConfirm()}
+        onCancel={handleDeleteCancel}
+      />
+
+      <CuteConfirmModal
+        isOpen={restartConfirmOpen}
+        title="重新修补"
+        message="该操作会删除当前结果并重新提交修补任务，是否继续？"
+        icon="warning"
+        confirmText="确认重新修补"
+        cancelText="取消"
+        titleId="repair-restart-confirm-title"
+        onConfirm={handleRestartConfirm}
+        onCancel={handleRestartCancel}
+      />
 
       {/* ── Keyframes ─── */}
       <style>{`
