@@ -104,7 +104,7 @@ const ResultDisplay = ({ results, outputCount, isProcessing, onContinueRepair }:
             <i className="ri-check-double-line text-rose-400"></i>
             已生成 {results.length} 张结果
           </span>
-          <span className="text-xs text-rose-300/40">· 点击图片可放大预览</span>
+          <span className="text-xs text-rose-300/40">· 点击预览，双击放大查看细节</span>
         </div>
 
         {/* Image grid */}
