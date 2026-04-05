@@ -517,7 +517,12 @@ const TaskEditor = ({
                         key={tpl.id}
                         className="group flex items-start gap-2 px-3 py-2.5 border-b border-pink-50/60 last:border-0 hover:bg-pink-50/50 transition-colors"
                       >
-                        <div className="flex-1 text-left min-w-0">
+                        <button
+                          type="button"
+                          className="flex-1 text-left min-w-0 cursor-pointer rounded-lg -m-1 p-1 hover:bg-pink-50/60 transition-colors"
+                          onClick={() => applyTemplate(tpl.text ?? "")}
+                          title="点击将模板内容填入修补 Prompt"
+                        >
                           <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                             <span className="font-semibold text-xs text-rose-600/80">{tpl.label}</span>
                           </div>
@@ -540,7 +545,7 @@ const TaskEditor = ({
                           ) : (
                             <span className="text-[10px] text-rose-300/60">暂无标签</span>
                           )}
-                        </div>
+                        </button>
 
                         <div className="flex items-center gap-0.5 shrink-0 pt-0.5">
                           <button

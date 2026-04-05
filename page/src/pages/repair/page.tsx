@@ -158,7 +158,9 @@ export default function RepairPage() {
   /* ── Editor change ─── */
   const handleEditorChange = useCallback(
     (next: Partial<EditorState>) => {
-      if (!selectedId || !currentTask) return;
+      // 仅依赖 selectedId：详情请求完成前 currentTask 可能仍为 null，若此处要求 currentTask
+      // 则选用模板、改 Prompt 等会被静默丢弃，表现为「点了模板没反应」。
+      if (!selectedId) return;
 
       setEditorState((prev) => ({ ...prev, ...next }));
 
@@ -177,7 +179,7 @@ export default function RepairPage() {
         }, PROMPT_SYNC_DEBOUNCE_MS);
       }
     },
-    [selectedId, currentTask, updateTask]
+    [selectedId, updateTask]
   );
 
   // 处理主图上传
