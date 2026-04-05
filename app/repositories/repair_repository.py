@@ -64,7 +64,9 @@ class PromptTemplateRepository(BaseRepository[PromptTemplate]):
             template_data["sort_order"] = 0
         if "description" not in template_data:
             template_data["description"] = ""
-        
+        if "tags" not in template_data:
+            template_data["tags"] = "[]"
+
         template = super().create(template_data)
         logger.info(f"创建模板成功: {template.id} - {template.label}")
         return template

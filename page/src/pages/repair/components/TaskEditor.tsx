@@ -1,9 +1,20 @@
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import type { PromptTemplate } from "@/mocks/repairTasks";
 import {
+  DEFAULT_TAGS,
   enrichPromptTemplates,
   setCustomTemplateDescription,
   removeCustomTemplateDescription,
+  computeAllTags,
+  readExtraTags,
+  readDeletedCatalogTags,
+  appendExtraTag,
+  removeExtraTag,
+  removeDeletedCatalogTag,
+  addDeletedCatalogTag,
+  stripTagFromAllStoredTemplates,
+  setTemplateTags,
+  removeTemplateTags,
 } from "@/mocks/repairTasks";
 import {
   getTemplates,
@@ -12,6 +23,7 @@ import {
   deleteTemplate,
 } from "@/services/repairApi";
 import TemplateModal from "./TemplateModal";
+import TemplateViewModal from "./TemplateViewModal";
 import ImagePreviewModal from "./ImagePreviewModal";
 
 export interface EditorState {
@@ -37,8 +49,13 @@ interface TaskEditorProps {
 }
 
 const OUTPUT_OPTIONS: (1 | 2 | 4)[] = [1, 2, 4];
+const TEMPLATE_PAGE_SIZE = 10;
 
 type ModalMode = { type: "create" } | { type: "edit"; template: PromptTemplate };
+
+function isDefaultTagName(name: string): boolean {
+  return (DEFAULT_TAGS as readonly string[]).includes(name);
+}
 
 const TaskEditor = ({
   state,
@@ -64,6 +81,12 @@ const TaskEditor = ({
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [mainPreviewOpen, setMainPreviewOpen] = useState(false);
   const [refPreviewIndex, setRefPreviewIndex] = useState<number | null>(null);
+
+  const [extraTagList, setExtraTagList] = useState<string[]>(() => readExtraTags());
+  const [deletedCatalogTags, setDeletedCatalogTags] = useState<string[]>(() => readDeletedCatalogTags());
+  const [selectedFilterTags, setSelectedFilterTags] = useState<string[]>([]);
+  const [templatePanelPage, setTemplatePanelPage] = useState(1);
+  const [viewingTemplate, setViewingTemplate] = useState<PromptTemplate | null>(null);
 
   const refreshTemplates = useCallback(async () => {
     setTemplatesLoading(true);
@@ -94,7 +117,81 @@ const TaskEditor = ({
     setModalMode(null);
     setMainPreviewOpen(false);
     setRefPreviewIndex(null);
+    setSelectedFilterTags([]);
+    setTemplatePanelPage(1);
+    setViewingTemplate(null);
   }, [taskId]);
+
+  const allTags = useMemo(
+    () => computeAllTags(templates, extraTagList, deletedCatalogTags),
+    [templates, extraTagList, deletedCatalogTags]
+  );
+
+  const filteredTemplates = useMemo(() => {
+    if (selectedFilterTags.length === 0) return templates;
+    return templates.filter((tpl) =>
+      selectedFilterTags.every((tag) => tpl.tags.includes(tag))
+    );
+  }, [templates, selectedFilterTags]);
+
+  const templateTotalPages = Math.max(1, Math.ceil(filteredTemplates.length / TEMPLATE_PAGE_SIZE));
+
+  useEffect(() => {
+    if (templatePanelPage > templateTotalPages) {
+      setTemplatePanelPage(templateTotalPages);
+    }
+  }, [templatePanelPage, templateTotalPages]);
+
+  const paginatedTemplates = useMemo(() => {
+    const start = (templatePanelPage - 1) * TEMPLATE_PAGE_SIZE;
+    return filteredTemplates.slice(start, start + TEMPLATE_PAGE_SIZE);
+  }, [filteredTemplates, templatePanelPage]);
+
+  const toggleFilterTag = (tag: string) => {
+    setSelectedFilterTags((prev) => {
+      const has = prev.includes(tag);
+      const next = has ? prev.filter((t) => t !== tag) : [...prev, tag];
+      return next;
+    });
+    setTemplatePanelPage(1);
+  };
+
+  const clearFilterTags = () => {
+    setSelectedFilterTags([]);
+    setTemplatePanelPage(1);
+  };
+
+  const handleCreateCatalogTag = useCallback((name: string) => {
+    const t = name.trim();
+    if (!t) return;
+    removeDeletedCatalogTag(t);
+    if (!isDefaultTagName(t)) {
+      appendExtraTag(t);
+    }
+    setExtraTagList(readExtraTags());
+    setDeletedCatalogTags(readDeletedCatalogTags());
+  }, []);
+
+  const handleDeleteCatalogTag = useCallback((name: string) => {
+    const t = name.trim();
+    if (!t) return;
+    stripTagFromAllStoredTemplates(t);
+    setTemplates((prev) => {
+      for (const tpl of prev) {
+        if (tpl.tags.includes(t)) {
+          setTemplateTags(
+            tpl.id,
+            tpl.tags.filter((x) => x !== t)
+          );
+        }
+      }
+      return prev.map((x) => ({ ...x, tags: x.tags.filter((y) => y !== t) }));
+    });
+    removeExtraTag(t);
+    addDeletedCatalogTag(t);
+    setExtraTagList(readExtraTags());
+    setDeletedCatalogTags(readDeletedCatalogTags());
+  }, []);
 
   /* ── File to base64 ─── */
   const fileToUrl = (file: File): Promise<string> =>
@@ -166,7 +263,12 @@ const TaskEditor = ({
     setShowTemplates(false);
   };
 
-  const handleSaveTemplate = async (data: { label: string; description: string; text: string }) => {
+  const handleSaveTemplate = async (data: {
+    label: string;
+    description: string;
+    text: string;
+    tags: string[];
+  }) => {
     if (!modalMode) return;
     try {
       if (modalMode.type === "create") {
@@ -174,16 +276,20 @@ const TaskEditor = ({
           label: data.label,
           text: data.text,
           description: data.description,
+          tags: data.tags,
         });
         setCustomTemplateDescription(created.id, "");
+        setTemplateTags(created.id, data.tags);
       } else {
         const t = modalMode.template;
         await updateTemplate(t.id, {
           label: data.label,
           text: data.text,
           description: data.description,
+          tags: data.tags,
         });
         setCustomTemplateDescription(t.id, "");
+        setTemplateTags(t.id, data.tags);
       }
       await refreshTemplates();
       setModalMode(null);
@@ -197,6 +303,7 @@ const TaskEditor = ({
     try {
       await deleteTemplate(id);
       removeCustomTemplateDescription(id);
+      removeTemplateTags(id);
       setDeleteConfirmId(null);
       await refreshTemplates();
     } catch (err) {
@@ -348,82 +455,171 @@ const TaskEditor = ({
                   <i className="ri-inbox-2-line text-2xl text-rose-300/50 block"></i>
                   <p className="text-rose-500/80 font-medium">还没有任何 Prompt 模板</p>
                   <p className="text-rose-300/70 leading-relaxed max-w-xs mx-auto">
-                    可点击右上角「新建模板」添加常用修补说明；有模板后会在此列出，一键填入 Prompt。
+                    可点击右上角「新建模板」添加常用修补说明；有模板后会在此列出，在查看弹窗中选用模板填入 Prompt。
                   </p>
                 </div>
               ) : (
-                templates.map((tpl) => (
-                  <div
-                    key={tpl.id}
-                    className="group flex items-start gap-2 px-3 py-2.5 border-b border-pink-50/60 last:border-0 hover:bg-pink-50/50 transition-colors"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => applyTemplate(tpl.text)}
-                      className="flex-1 text-left min-w-0 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                        <span className="font-semibold text-xs text-rose-600/80">{tpl.label}</span>
-                        {tpl.description ? (
-                          <span className="text-rose-400/55 text-xs line-clamp-1 min-w-0">{tpl.description}</span>
-                        ) : null}
-                      </div>
-                      <p className="text-xs text-rose-400/50 line-clamp-2 leading-relaxed">{tpl.text}</p>
-                    </button>
-
-                    {!tpl.is_builtin && (
-                      <div className="flex items-center gap-1 shrink-0 pt-0.5">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setModalMode({ type: "edit", template: tpl });
-                          }}
-                          title="修改模板"
-                          className="w-6 h-6 flex items-center justify-center rounded-lg text-rose-300/70 hover:text-pink-500 hover:bg-pink-50 transition-all cursor-pointer"
-                        >
-                          <i className="ri-edit-2-line text-xs"></i>
-                        </button>
-                        {deleteConfirmId === tpl.id ? (
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void handleDeleteTemplate(tpl.id);
-                              }}
-                              className="px-1.5 py-0.5 rounded-md text-xs text-white bg-rose-400 hover:bg-rose-500 cursor-pointer whitespace-nowrap transition-colors"
-                            >
-                              确认
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDeleteConfirmId(null);
-                              }}
-                              className="px-1.5 py-0.5 rounded-md text-xs text-rose-400/70 hover:text-rose-500 cursor-pointer whitespace-nowrap transition-colors"
-                            >
-                              取消
-                            </button>
-                          </div>
-                        ) : (
+                <>
+                  {allTags.length > 0 ? (
+                    <div className="px-3 pt-3 pb-2 border-b border-pink-50/60">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-[11px] font-semibold text-rose-500/70 tracking-wide">按标签筛选</span>
+                        {selectedFilterTags.length > 0 ? (
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteConfirmId(tpl.id);
-                            }}
-                            title="删除模板"
-                            className="w-6 h-6 flex items-center justify-center rounded-lg text-rose-300/70 hover:text-rose-500 hover:bg-rose-50 transition-all cursor-pointer"
+                            onClick={clearFilterTags}
+                            className="text-[11px] text-pink-500/90 hover:text-pink-600 cursor-pointer shrink-0"
                           >
-                            <i className="ri-delete-bin-6-line text-xs"></i>
+                            清除筛选
                           </button>
-                        )}
+                        ) : null}
                       </div>
-                    )}
-                  </div>
-                ))
+                      <div className="flex flex-wrap gap-1.5">
+                        {allTags.map((tag) => {
+                          const on = selectedFilterTags.includes(tag);
+                          return (
+                            <button
+                              key={tag}
+                              type="button"
+                              onClick={() => toggleFilterTag(tag)}
+                              className={[
+                                "px-2.5 py-0.5 rounded-full text-[11px] font-medium border transition-all cursor-pointer",
+                                on
+                                  ? "text-white border-transparent"
+                                  : "text-rose-600/75 border-rose-100/90 bg-white/70 hover:border-pink-200/80",
+                              ].join(" ")}
+                              style={
+                                on
+                                  ? {
+                                      background: "linear-gradient(135deg, #f472b6, #fb7185)",
+                                      boxShadow: "0 1px 6px rgba(251, 113, 133, 0.3)",
+                                    }
+                                  : undefined
+                              }
+                            >
+                              {tag}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {filteredTemplates.length === 0 ? (
+                    <div className="px-4 py-5 text-center text-xs text-rose-400/70">
+                      当前筛选下没有匹配的模板，请调整标签或
+                      <button type="button" onClick={clearFilterTags} className="text-pink-500 ml-1 cursor-pointer">
+                        清除筛选
+                      </button>
+                    </div>
+                  ) : (
+                    paginatedTemplates.map((tpl) => (
+                      <div
+                        key={tpl.id}
+                        className="group flex items-start gap-2 px-3 py-2.5 border-b border-pink-50/60 last:border-0 hover:bg-pink-50/50 transition-colors"
+                      >
+                        <div className="flex-1 text-left min-w-0">
+                          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                            <span className="font-semibold text-xs text-rose-600/80">{tpl.label}</span>
+                          </div>
+                          {tpl.description ? (
+                            <p className="text-rose-400/60 text-[11px] line-clamp-2 leading-relaxed mb-1">
+                              {tpl.description}
+                            </p>
+                          ) : null}
+                          {tpl.tags.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {tpl.tags.map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="inline-flex px-2 py-0.5 rounded-full text-[10px] text-rose-600/75 border border-pink-100/80 bg-pink-50/40"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-rose-300/60">暂无标签</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-0.5 shrink-0 pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setViewingTemplate(tpl)}
+                            title="查看模板"
+                            className="w-7 h-7 flex items-center justify-center rounded-lg text-rose-300/70 hover:text-pink-500 hover:bg-pink-50 transition-all cursor-pointer"
+                          >
+                            <i className="ri-eye-line text-sm"></i>
+                          </button>
+                          {!tpl.is_builtin ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setModalMode({ type: "edit", template: tpl })}
+                                title="修改模板"
+                                className="w-7 h-7 flex items-center justify-center rounded-lg text-rose-300/70 hover:text-pink-500 hover:bg-pink-50 transition-all cursor-pointer"
+                              >
+                                <i className="ri-edit-2-line text-sm"></i>
+                              </button>
+                              {deleteConfirmId === tpl.id ? (
+                                <div className="flex items-center gap-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDeleteTemplate(tpl.id)}
+                                    className="px-1.5 py-0.5 rounded-md text-[10px] text-white bg-rose-400 hover:bg-rose-500 cursor-pointer whitespace-nowrap transition-colors"
+                                  >
+                                    确认
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeleteConfirmId(null)}
+                                    className="px-1.5 py-0.5 rounded-md text-[10px] text-rose-400/70 hover:text-rose-500 cursor-pointer whitespace-nowrap transition-colors"
+                                  >
+                                    取消
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteConfirmId(tpl.id)}
+                                  title="删除模板"
+                                  className="w-7 h-7 flex items-center justify-center rounded-lg text-rose-300/70 hover:text-rose-500 hover:bg-rose-50 transition-all cursor-pointer"
+                                >
+                                  <i className="ri-delete-bin-6-line text-sm"></i>
+                                </button>
+                              )}
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))
+                  )}
+
+                  {filteredTemplates.length > 0 && templateTotalPages > 1 ? (
+                    <div className="flex items-center justify-center gap-3 px-3 py-2.5 border-t border-pink-50/60 bg-pink-50/20">
+                      <button
+                        type="button"
+                        disabled={templatePanelPage <= 1}
+                        onClick={() => setTemplatePanelPage((p) => Math.max(1, p - 1))}
+                        className="px-2 py-1 rounded-lg text-[11px] text-rose-500/80 hover:bg-white/80 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        上一页
+                      </button>
+                      <span className="text-[11px] text-rose-400/80 tabular-nums">
+                        {templatePanelPage} / {templateTotalPages}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={templatePanelPage >= templateTotalPages}
+                        onClick={() => setTemplatePanelPage((p) => Math.min(templateTotalPages, p + 1))}
+                        className="px-2 py-1 rounded-lg text-[11px] text-rose-500/80 hover:bg-white/80 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        下一页
+                      </button>
+                    </div>
+                  ) : null}
+                </>
               )}
             </div>
           )}
@@ -588,10 +784,21 @@ const TaskEditor = ({
         <TemplateModal
           key={modalMode.type === "edit" ? modalMode.template.id : "create"}
           template={modalMode.type === "edit" ? modalMode.template : undefined}
+          availableTags={allTags}
+          onCreateTag={handleCreateCatalogTag}
+          onDeleteTag={handleDeleteCatalogTag}
           onSave={(data) => void handleSaveTemplate(data)}
           onClose={() => setModalMode(null)}
         />
       )}
+
+      {viewingTemplate ? (
+        <TemplateViewModal
+          template={viewingTemplate}
+          onClose={() => setViewingTemplate(null)}
+          onApply={(text) => applyTemplate(text)}
+        />
+      ) : null}
     </>
   );
 };

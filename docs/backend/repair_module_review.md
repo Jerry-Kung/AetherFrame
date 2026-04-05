@@ -64,10 +64,10 @@
 
 ### 1.3 Prompt 模板（与前端对齐）
 
-- **存储**：`prompt_templates` 表（`label`、`text`、`description` 展示用短说明、`is_builtin`、`sort_order`、`created_at`）。**不以** `data/repair/templates/templates.json` 为读写数据源。
-- **迁移**：`app.models.database.init_db()` 在 `create_all` 之后调用 `migrate_prompt_templates_add_description()`，为已存在库自动 `ALTER TABLE` 补充 `description` 列（无 Alembic 场景）。
+- **存储**：`prompt_templates` 表（`label`、`text`、`description`、`tags`（TEXT 存 JSON 数组字符串）、`is_builtin`、`sort_order`、`created_at`）。**不以** `data/repair/templates/templates.json` 为读写数据源。
+- **迁移**：`app.models.database.init_db()` 在 `create_all` 之后依次调用 `migrate_prompt_templates_add_description()`、`migrate_prompt_templates_add_tags()`，为已存在库自动 `ALTER TABLE` 补齐列（无 Alembic 场景）。
 - **默认模板**：**不再**注入任何内置默认模板。`init_prompt_templates()` 仅删除 `is_builtin=True` 的历史种子行（升级时清理旧数据）；用户模板均通过 API 创建（`is_builtin=False`）。
-- **API**：列表与详情响应中的 `description` 与前端 `PromptTemplate` 展示字段一致；创建/更新请求可带可选 `description`（最长 100 字）。
+- **API**：列表与详情响应中的 `description`、`tags` 与前端 `PromptTemplate` 一致；创建/更新可带可选 `description`（最长 100 字）、`tags`（字符串列表，校验规则见 `PromptTemplateBase`）。
 
 ---
 

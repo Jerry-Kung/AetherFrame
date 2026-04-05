@@ -31,6 +31,8 @@ class PromptTemplate(Base):
     label = Column(String(100), nullable=False)
     description = Column(String(100), nullable=False, server_default="")
     text = Column(Text, nullable=False)
+    # JSON 数组字符串，如 ["脸部","皮肤"]；与前端 tags 对齐
+    tags = Column(Text, nullable=False, default="[]")
     is_builtin = Column(Boolean, nullable=False, default=False, index=True)
     sort_order = Column(Integer, nullable=False, default=0, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

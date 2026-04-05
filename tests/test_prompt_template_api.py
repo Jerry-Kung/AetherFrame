@@ -2,6 +2,7 @@
 Prompt 模板 API 测试用例
 包含：模板的创建、读取、更新和删除的完整测试
 """
+import json
 import os
 import tempfile
 import shutil
@@ -88,13 +89,16 @@ class TestPromptTemplateSchemas:
         assert template.label == "测试模板"
         assert template.text == "这是模板内容"
         assert template.description == ""
+        assert template.tags == []
 
         with_desc = PromptTemplateBase(
             label="测试模板",
             text="这是模板内容",
             description="简短说明",
+            tags=["皮肤", " 脸部 "],
         )
         assert with_desc.description == "简短说明"
+        assert with_desc.tags == ["皮肤", "脸部"]
 
     def test_prompt_template_create(self):
         """测试 PromptTemplateCreate"""
@@ -108,6 +112,7 @@ class TestPromptTemplateSchemas:
         assert template.label == "创建测试"
         assert template.text == "创建测试内容"
         assert template.description == ""
+        assert template.tags == []
 
     def test_prompt_template_update(self):
         """测试 PromptTemplateUpdate"""
@@ -123,6 +128,9 @@ class TestPromptTemplateSchemas:
 
         update3 = PromptTemplateUpdate(description="新描述")
         assert update3.description == "新描述"
+
+        update4 = PromptTemplateUpdate(tags=["水印", "背景"])
+        assert update4.tags == ["水印", "背景"]
 
 
 # ==========================================
@@ -152,7 +160,25 @@ class TestRepairServiceTemplateOperations:
         assert template.text == "这是测试模板内容"
         assert template.description == "描述一行"
         assert template.is_builtin is False
+        assert json.loads(template.tags) == []
         logger.info(f"✓ 创建模板测试通过: template_id={template.id}")
+
+    def test_create_template_with_tags(self, db_session):
+        """测试创建模板时写入 tags"""
+        from app.services.repair_service import RepairService
+        from app.schemas.repair import PromptTemplateCreate
+
+        service = RepairService(db_session)
+        template = service.create_template(
+            PromptTemplateCreate(
+                label="带标签",
+                text="内容",
+                tags=["皮肤", "脸部"],
+            )
+        )
+        assert json.loads(template.tags) == ["皮肤", "脸部"]
+        resp = service.build_template_response(template)
+        assert resp.tags == ["皮肤", "脸部"]
 
     def test_get_template(self, db_session):
         """测试获取模板"""
@@ -217,12 +243,14 @@ class TestRepairServiceTemplateOperations:
             label="新标签",
             text="新内容",
             description="更新后的说明",
+            tags=["水印"],
         ))
 
         assert updated is not None
         assert updated.label == "新标签"
         assert updated.text == "新内容"
         assert updated.description == "更新后的说明"
+        assert json.loads(updated.tags) == ["水印"]
         logger.info("✓ 更新自定义模板测试通过")
 
     def test_delete_template(self, db_session):

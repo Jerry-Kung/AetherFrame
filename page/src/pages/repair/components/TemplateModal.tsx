@@ -4,21 +4,45 @@ import type { PromptTemplate } from "@/mocks/repairTasks";
 interface TemplateModalProps {
   /** 传入时为编辑模式 */
   template?: PromptTemplate;
-  onSave: (data: { label: string; description: string; text: string }) => void;
+  availableTags: string[];
+  onCreateTag: (name: string) => void;
+  onDeleteTag: (name: string) => void;
+  onSave: (data: { label: string; description: string; text: string; tags: string[] }) => void;
   onClose: () => void;
 }
 
 const MAX_TITLE = 40;
 const MAX_DESC = 100;
 const MAX_TEXT_LEN = 5000;
+const MAX_TAG_NAME = 20;
 
-const TemplateModal = ({ template, onSave, onClose }: TemplateModalProps) => {
+const pillSelectedClass =
+  "text-white border-transparent shadow-sm";
+const pillSelectedStyle = {
+  background: "linear-gradient(135deg, #f472b6, #fb7185)",
+  boxShadow: "0 2px 8px rgba(251, 113, 133, 0.35)",
+};
+const pillUnselectedClass =
+  "text-rose-600/75 border-rose-100/90 bg-white/70 hover:border-pink-200/80 hover:bg-pink-50/40";
+
+const TemplateModal = ({
+  template,
+  availableTags,
+  onCreateTag,
+  onDeleteTag,
+  onSave,
+  onClose,
+}: TemplateModalProps) => {
   const isEdit = !!template;
 
   const [label, setLabel] = useState(template?.label ?? "");
   const [description, setDescription] = useState(template?.description ?? "");
   const [text, setText] = useState(template?.text ?? "");
+  const [selectedTags, setSelectedTags] = useState<string[]>(template?.tags ?? []);
   const [errors, setErrors] = useState<{ label?: string; text?: string }>({});
+  const [manageOpen, setManageOpen] = useState(false);
+  const [newTagInput, setNewTagInput] = useState("");
+  const [deleteConfirmTag, setDeleteConfirmTag] = useState<string | null>(null);
 
   const backdropRef = useRef<HTMLDivElement>(null);
 
@@ -26,7 +50,11 @@ const TemplateModal = ({ template, onSave, onClose }: TemplateModalProps) => {
     setLabel(template?.label ?? "");
     setDescription(template?.description ?? "");
     setText(template?.text ?? "");
+    setSelectedTags(template?.tags ?? []);
     setErrors({});
+    setManageOpen(false);
+    setNewTagInput("");
+    setDeleteConfirmTag(null);
   }, [template]);
 
   useEffect(() => {
@@ -61,11 +89,43 @@ const TemplateModal = ({ template, onSave, onClose }: TemplateModalProps) => {
       label: label.trim(),
       description: description.trim().slice(0, MAX_DESC),
       text: text.trim(),
+      tags: [...selectedTags],
     });
   };
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === backdropRef.current) onClose();
+  };
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  };
+
+  const tryCreateTag = () => {
+    const name = newTagInput.trim().slice(0, MAX_TAG_NAME);
+    if (!name) return;
+    if (availableTags.includes(name)) {
+      if (!selectedTags.includes(name)) {
+        setSelectedTags((p) => [...p, name]);
+      }
+      setNewTagInput("");
+      return;
+    }
+    onCreateTag(name);
+    setSelectedTags((p) => (p.includes(name) ? p : [...p, name]));
+    setNewTagInput("");
+  };
+
+  const requestDeleteTag = (name: string) => {
+    if (deleteConfirmTag === name) {
+      onDeleteTag(name);
+      setSelectedTags((p) => p.filter((t) => t !== name));
+      setDeleteConfirmTag(null);
+    } else {
+      setDeleteConfirmTag(name);
+    }
   };
 
   return (
@@ -142,7 +202,9 @@ const TemplateModal = ({ template, onSave, onClose }: TemplateModalProps) => {
               ].join(" ")}
             />
             <div className="flex justify-end mt-0.5">
-              <span className="text-xs tabular-nums text-rose-300/60">{label.length} / {MAX_TITLE}</span>
+              <span className="text-xs tabular-nums text-rose-300/60">
+                {label.length} / {MAX_TITLE}
+              </span>
             </div>
             {errors.label && (
               <p className="mt-1 text-xs text-rose-400 flex items-center gap-1">
@@ -169,7 +231,124 @@ const TemplateModal = ({ template, onSave, onClose }: TemplateModalProps) => {
               className="w-full rounded-xl border border-rose-100/80 bg-white/70 px-3.5 py-2.5 text-sm text-rose-900/80 placeholder:text-rose-300/50 focus:outline-none focus:border-pink-300/80 focus:bg-white/90 transition-all"
             />
             <div className="flex justify-end mt-0.5">
-              <span className="text-xs tabular-nums text-rose-300/60">{description.length} / {MAX_DESC}</span>
+              <span className="text-xs tabular-nums text-rose-300/60">
+                {description.length} / {MAX_DESC}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-rose-600/70 mb-1.5 tracking-wide">
+              <span className="w-3.5 h-3.5 flex items-center justify-center">
+                <i className="ri-bookmark-3-line"></i>
+              </span>
+              标签
+              <span className="text-rose-400/50 font-normal">· 点击胶囊多选</span>
+            </label>
+            {availableTags.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {availableTags.map((tag) => {
+                  const on = selectedTags.includes(tag);
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => toggleTag(tag)}
+                      className={[
+                        "px-3 py-1 rounded-full text-xs font-medium border transition-all cursor-pointer",
+                        on ? pillSelectedClass : pillUnselectedClass,
+                      ].join(" ")}
+                      style={on ? pillSelectedStyle : undefined}
+                    >
+                      {tag}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-rose-300/70">暂无可用标签，可在下方「管理标签」中新建。</p>
+            )}
+
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => setManageOpen((o) => !o)}
+                className="text-xs text-pink-500/90 hover:text-pink-600 flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                <i className={manageOpen ? "ri-arrow-up-s-line" : "ri-arrow-down-s-line"} />
+                管理标签
+              </button>
+
+              {manageOpen ? (
+                <div
+                  className="mt-2 rounded-xl border border-pink-100/80 px-3 py-3 space-y-3"
+                  style={{ background: "rgba(255,248,250,0.65)" }}
+                >
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <input
+                      type="text"
+                      value={newTagInput}
+                      onChange={(e) => setNewTagInput(e.target.value.slice(0, MAX_TAG_NAME))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          tryCreateTag();
+                        }
+                      }}
+                      placeholder="新标签名称"
+                      maxLength={MAX_TAG_NAME}
+                      className="flex-1 min-w-[8rem] rounded-lg border border-rose-100/80 bg-white/80 px-2.5 py-1.5 text-xs text-rose-900/80 placeholder:text-rose-300/50 focus:outline-none focus:border-pink-300/80"
+                    />
+                    <button
+                      type="button"
+                      onClick={tryCreateTag}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium text-white cursor-pointer shrink-0"
+                      style={{ background: "linear-gradient(135deg, #f9a8d4, #fb7185)" }}
+                    >
+                      添加
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-rose-400/70">按 Enter 或点击「添加」创建；最多 {MAX_TAG_NAME} 字。</p>
+
+                  <ul className="space-y-1.5 max-h-32 overflow-y-auto">
+                    {availableTags.map((tag) => (
+                      <li
+                        key={tag}
+                        className="flex items-center justify-between gap-2 text-xs text-rose-700/85 py-1 px-1 rounded-lg hover:bg-white/60"
+                      >
+                        <span className="truncate">{tag}</span>
+                        {deleteConfirmTag === tag ? (
+                          <span className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => requestDeleteTag(tag)}
+                              className="px-1.5 py-0.5 rounded-md text-[11px] text-white bg-rose-400 hover:bg-rose-500 cursor-pointer"
+                            >
+                              确认
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmTag(null)}
+                              className="px-1.5 py-0.5 rounded-md text-[11px] text-rose-400/80 hover:text-rose-600 cursor-pointer"
+                            >
+                              取消
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmTag(tag)}
+                            className="w-6 h-6 flex items-center justify-center rounded-lg text-rose-300 hover:text-rose-500 hover:bg-rose-50 cursor-pointer shrink-0"
+                            title="删除标签"
+                          >
+                            <i className="ri-close-line text-sm" />
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -198,7 +377,7 @@ const TemplateModal = ({ template, onSave, onClose }: TemplateModalProps) => {
                 setErrors((p) => ({ ...p, text: undefined }));
               }}
               placeholder="请输入完整的 Prompt 内容，描述修补效果、风格要求、细节处理方式等..."
-              rows={14}
+              rows={10}
               maxLength={MAX_TEXT_LEN}
               className={[
                 "w-full rounded-xl border px-3.5 py-3 text-sm text-rose-900/80 placeholder:text-rose-300/50 focus:outline-none transition-all resize-none bg-white/70 leading-relaxed",

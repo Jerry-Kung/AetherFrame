@@ -40,7 +40,7 @@ async def list_items(db: Session = Depends(get_db)):
 
 #### `init_db()`
 
-初始化数据库，创建所有表；随后执行与模板表相关的轻量迁移（如为已存在库补充 `prompt_templates.description` 列）。
+初始化数据库，创建所有表；随后执行与模板表相关的轻量迁移（如为已存在库补充 `prompt_templates.description`、`prompt_templates.tags` 列）。
 
 **用法：**
 ```python
@@ -61,6 +61,12 @@ init_db()
 #### `migrate_prompt_templates_add_description()`
 
 若数据库文件已存在且 `prompt_templates` 表缺少 `description` 列，则执行 `ALTER TABLE ... ADD COLUMN`。由 `init_db()` 内部调用，无需单独使用。
+
+---
+
+#### `migrate_prompt_templates_add_tags()`
+
+若数据库文件已存在且 `prompt_templates` 表缺少 `tags` 列，则执行 `ALTER TABLE ... ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'`（存 JSON 数组字符串）。由 `init_db()` 内部调用。
 
 ---
 

@@ -1,9 +1,10 @@
 """
 修补任务业务逻辑层
 """
+import json
 import logging
 import os
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, asc
 from fastapi import UploadFile
@@ -22,12 +23,32 @@ from app.schemas.repair import (
     PromptTemplateCreate,
     PromptTemplateUpdate,
     PromptTemplateResponse,
-    PromptTemplateListResponse
+    PromptTemplateListResponse,
+    normalize_prompt_template_tags,
 )
 from . import repair_file_service
 from app.services.file_service import FileValidationError, FileSaveError, FileDeleteError
 
 logger = logging.getLogger(__name__)
+
+
+def _prompt_tags_to_json(tags: List[str]) -> str:
+    return json.dumps(tags, ensure_ascii=False, separators=(",", ":"))
+
+
+def _prompt_tags_from_column(raw: Optional[Any]) -> List[str]:
+    if raw is None or str(raw).strip() == "":
+        return []
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    try:
+        return normalize_prompt_template_tags(data)
+    except ValueError:
+        return []
 
 
 class RepairService:
@@ -613,6 +634,7 @@ class RepairService:
             "label": template_data.label,
             "text": template_data.text,
             "description": (template_data.description or "").strip(),
+            "tags": _prompt_tags_to_json(template_data.tags),
             "is_builtin": False,
         }
 
@@ -670,6 +692,8 @@ class RepairService:
             updates["text"] = template_data.text
         if template_data.description is not None:
             updates["description"] = template_data.description.strip()
+        if template_data.tags is not None:
+            updates["tags"] = _prompt_tags_to_json(template_data.tags)
 
         if not updates:
             logger.warning(f"更新失败，没有提供更新字段: {template_id}")
@@ -730,11 +754,13 @@ class RepairService:
         desc = getattr(template, "description", None)
         if desc is None:
             desc = ""
+        tags_raw = getattr(template, "tags", None)
         return PromptTemplateResponse(
             id=template.id,
             label=template.label,
             description=desc,
             text=template.text,
+            tags=_prompt_tags_from_column(tags_raw),
             is_builtin=template.is_builtin,
             sort_order=template.sort_order,
             created_at=template.created_at

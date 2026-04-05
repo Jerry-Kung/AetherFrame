@@ -78,6 +78,8 @@ export interface PromptTemplate {
   is_builtin: boolean;
   sort_order: number;
   created_at: string;
+  /** 后端未上线时可选缺失，前端 enrich 会兜底为 [] */
+  tags?: string[];
 }
 
 // 模板创建请求
@@ -85,6 +87,7 @@ export interface PromptTemplateCreateRequest {
   label: string;
   text: string;
   description?: string;
+  tags?: string[];
 }
 
 // 模板更新请求
@@ -92,6 +95,7 @@ export interface PromptTemplateUpdateRequest {
   label?: string;
   text?: string;
   description?: string;
+  tags?: string[];
 }
 
 /** 列表接口 data 包裹层 */

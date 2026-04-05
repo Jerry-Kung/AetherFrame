@@ -387,6 +387,7 @@ class TestPromptTemplateRepository:
         assert template.text == "这是模板内容"
         assert template.is_builtin is False
         assert template.sort_order == 10
+        assert getattr(template, "tags", "[]") == "[]"
     
     def test_get_by_id(self, db_session):
         """测试根据ID获取模板"""

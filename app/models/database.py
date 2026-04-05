@@ -88,6 +88,36 @@ def migrate_prompt_templates_add_description() -> None:
         raise
 
 
+def migrate_prompt_templates_add_tags() -> None:
+    """
+    轻量迁移：为已存在的 prompt_templates 表补充 tags 列（JSON 文本，默认 []）。
+    """
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='prompt_templates'"
+                )
+            ).fetchone()
+            if row is None:
+                return
+            cols = conn.execute(text("PRAGMA table_info(prompt_templates)")).fetchall()
+            names = {c[1] for c in cols}
+            if "tags" in names:
+                return
+            conn.execute(
+                text(
+                    "ALTER TABLE prompt_templates ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'"
+                )
+            )
+        logger.info("已迁移: prompt_templates 增加 tags 列")
+    except Exception as e:
+        logger.error(f"迁移 prompt_templates.tags 失败: {e}", exc_info=True)
+        raise
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
@@ -97,6 +127,7 @@ def init_db():
 
         Base.metadata.create_all(bind=engine)
         migrate_prompt_templates_add_description()
+        migrate_prompt_templates_add_tags()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:
