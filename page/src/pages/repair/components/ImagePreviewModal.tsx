@@ -13,7 +13,9 @@ interface ImagePreviewModalProps {
   onClose: () => void;
   onIndexChange: (idx: number) => void;
   onDownload: (url: string, idx: number) => void;
-  onContinueRepair: (url: string) => void;
+  showContinueRepair?: boolean;
+  onContinueRepair?: (url: string) => void;
+  imageAltPrefix?: string;
 }
 
 type ViewTransform = { scale: number; tx: number; ty: number };
@@ -44,7 +46,9 @@ const ImagePreviewModal = ({
   onClose,
   onIndexChange,
   onDownload,
+  showContinueRepair = true,
   onContinueRepair,
+  imageAltPrefix = "修补结果",
 }: ImagePreviewModalProps) => {
   const total = images.length;
   const url = images[currentIndex];
@@ -183,7 +187,7 @@ const ImagePreviewModal = ({
       {/* Modal card */}
       <div
         className="relative flex flex-col items-center"
-        style={{ maxWidth: "min(90vw, 720px)", width: "100%" }}
+        style={{ maxWidth: "min(90vw, 960px)", width: "100%" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Top bar ─── */}
@@ -263,7 +267,7 @@ const ImagePreviewModal = ({
             className="relative w-full select-none touch-none"
             style={{
               cursor: isZoomed ? (isPanning ? "grabbing" : "grab") : "default",
-              maxHeight: "65vh",
+              maxHeight: "75vh",
             }}
             onDoubleClick={handleDoubleClick}
             onMouseDown={handleMouseDown}
@@ -277,10 +281,10 @@ const ImagePreviewModal = ({
             >
               <img
                 src={url}
-                alt={`修补结果 ${currentIndex + 1}`}
+                alt={`${imageAltPrefix} ${currentIndex + 1}`}
                 draggable={false}
                 className="w-full object-contain pointer-events-none block"
-                style={{ maxHeight: "65vh" }}
+                style={{ maxHeight: "75vh" }}
               />
             </div>
           </div>
@@ -349,41 +353,44 @@ const ImagePreviewModal = ({
             下载图片
           </button>
 
-          {/* Continue repair */}
-          <button
-            type="button"
-            onClick={() => {
-              onContinueRepair(url);
-              onClose();
-            }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold cursor-pointer transition-all duration-200 whitespace-nowrap"
-            style={{
-              background: "linear-gradient(135deg, #f472b6, #ec4899)",
-              border: "1px solid rgba(244,114,182,0.4)",
-              color: "#fff",
-              fontFamily: "'ZCOOL KuaiLe', cursive",
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.background =
-                "linear-gradient(135deg, #ec4899, #db2777)";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.background =
-                "linear-gradient(135deg, #f472b6, #ec4899)";
-            }}
-          >
-            <span className="w-4 h-4 flex items-center justify-center">
-              <i className="ri-eraser-line"></i>
-            </span>
-            继续修补
-          </button>
+          {showContinueRepair && onContinueRepair ? (
+            <button
+              type="button"
+              onClick={() => {
+                onContinueRepair(url);
+                onClose();
+              }}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold cursor-pointer transition-all duration-200 whitespace-nowrap"
+              style={{
+                background: "linear-gradient(135deg, #f472b6, #ec4899)",
+                border: "1px solid rgba(244,114,182,0.4)",
+                color: "#fff",
+                fontFamily: "'ZCOOL KuaiLe', cursive",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background =
+                  "linear-gradient(135deg, #ec4899, #db2777)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background =
+                  "linear-gradient(135deg, #f472b6, #ec4899)";
+              }}
+            >
+              <span className="w-4 h-4 flex items-center justify-center">
+                <i className="ri-eraser-line"></i>
+              </span>
+              继续修补
+            </button>
+          ) : null}
         </div>
 
         {/* Hint */}
         <p className="mt-3 text-xs text-white/30 select-none text-center px-2">
           {isZoomed
             ? "滚轮缩放 · 拖拽平移细节 · ESC 先退出缩放"
-            : "按 ← → 切换图片 · ESC 关闭 · 双击图片放大细节"}
+            : total > 1
+              ? "按 ← → 切换图片 · ESC 关闭 · 双击图片放大细节"
+              : "ESC 关闭 · 双击图片放大细节"}
         </p>
       </div>
     </div>

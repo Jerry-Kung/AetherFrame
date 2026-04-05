@@ -12,6 +12,7 @@ import {
   deleteTemplate,
 } from "@/services/repairApi";
 import TemplateModal from "./TemplateModal";
+import ImagePreviewModal from "./ImagePreviewModal";
 
 export interface EditorState {
   mainImage: string;
@@ -61,6 +62,8 @@ const TaskEditor = ({
 
   const [modalMode, setModalMode] = useState<ModalMode | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [mainPreviewOpen, setMainPreviewOpen] = useState(false);
+  const [refPreviewIndex, setRefPreviewIndex] = useState<number | null>(null);
 
   const refreshTemplates = useCallback(async () => {
     setTemplatesLoading(true);
@@ -89,6 +92,8 @@ const TaskEditor = ({
     setShowTemplates(false);
     setDeleteConfirmId(null);
     setModalMode(null);
+    setMainPreviewOpen(false);
+    setRefPreviewIndex(null);
   }, [taskId]);
 
   /* ── File to base64 ─── */
@@ -143,6 +148,17 @@ const TaskEditor = ({
   };
 
   const canAddRef = state.referenceImages.length < 5;
+
+  const handleEditorPreviewDownload = (url: string, idx: number, kind: "main" | "ref") => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = kind === "main" ? "repair-main.png" : `repair-reference-${idx + 1}.png`;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
   /* ── Prompt template ─── */
   const applyTemplate = (text: string) => {
@@ -206,16 +222,44 @@ const TaskEditor = ({
           </label>
 
           {state.mainImage ? (
-            <div className="relative group rounded-2xl overflow-hidden border border-rose-100/80 w-full aspect-video max-h-48">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setMainPreviewOpen(true)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setMainPreviewOpen(true);
+                }
+              }}
+              className="relative group rounded-2xl overflow-hidden border border-rose-100/80 w-full aspect-video max-h-48 cursor-pointer"
+            >
               <img
                 src={state.mainImage}
                 alt="主图预览"
-                className="w-full h-full object-contain bg-rose-50/30"
+                className="w-full h-full object-contain bg-rose-50/30 pointer-events-none"
               />
-              <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <div className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-black/25 text-white/85 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                <i className="ri-zoom-in-line text-sm" />
+              </div>
+              <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                 <button
                   type="button"
-                  onClick={() => onChange({ mainImage: "" })}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMainPreviewOpen(true);
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/90 text-rose-600 text-xs font-medium cursor-pointer hover:bg-white transition-all whitespace-nowrap"
+                >
+                  <i className="ri-zoom-in-line" />
+                  预览
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onChange({ mainImage: "" });
+                  }}
                   className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/90 text-rose-500 text-xs font-medium cursor-pointer hover:bg-white transition-all whitespace-nowrap"
                 >
                   <i className="ri-refresh-line"></i>
@@ -405,11 +449,29 @@ const TaskEditor = ({
 
           <div className="flex items-center gap-2 flex-wrap">
             {state.referenceImages.map((url, idx) => (
-              <div key={idx} className="relative group w-16 h-16 rounded-xl overflow-hidden border border-rose-100/80 shrink-0">
-                <img src={url} alt={`参考图${idx + 1}`} className="w-full h-full object-cover" />
+              <div
+                key={idx}
+                role="button"
+                tabIndex={0}
+                onClick={() => setRefPreviewIndex(idx)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setRefPreviewIndex(idx);
+                  }
+                }}
+                className="relative group w-16 h-16 rounded-xl overflow-hidden border border-rose-100/80 shrink-0 cursor-pointer"
+              >
+                <img src={url} alt={`参考图${idx + 1}`} className="w-full h-full object-cover pointer-events-none" />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/25 text-white/90 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                  <i className="ri-zoom-in-line text-base" />
+                </div>
                 <button
                   type="button"
-                  onClick={() => removeRefImageHandler(idx)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeRefImageHandler(idx);
+                  }}
                   className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-rose-500/80 text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                 >
                   <i className="ri-close-line text-xs leading-none"></i>
@@ -498,6 +560,29 @@ const TaskEditor = ({
           </button>
         </div>
       </div>
+
+      {mainPreviewOpen && state.mainImage ? (
+        <ImagePreviewModal
+          images={[state.mainImage]}
+          currentIndex={0}
+          onClose={() => setMainPreviewOpen(false)}
+          onIndexChange={() => {}}
+          onDownload={(u, i) => handleEditorPreviewDownload(u, i, "main")}
+          showContinueRepair={false}
+          imageAltPrefix="待修补主图"
+        />
+      ) : null}
+      {refPreviewIndex !== null && state.referenceImages.length > 0 ? (
+        <ImagePreviewModal
+          images={state.referenceImages}
+          currentIndex={refPreviewIndex}
+          onClose={() => setRefPreviewIndex(null)}
+          onIndexChange={setRefPreviewIndex}
+          onDownload={(u, i) => handleEditorPreviewDownload(u, i, "ref")}
+          showContinueRepair={false}
+          imageAltPrefix="参考图"
+        />
+      ) : null}
 
       {modalMode && (
         <TemplateModal

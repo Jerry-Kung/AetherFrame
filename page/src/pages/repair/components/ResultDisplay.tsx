@@ -11,8 +11,7 @@ interface ResultDisplayProps {
 const ResultDisplay = ({ results, outputCount, isProcessing, onContinueRepair }: ResultDisplayProps) => {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
-  const gridClass =
-    outputCount === 1 ? "grid-cols-1" : "grid-cols-2";
+  const gridClass = "grid-cols-1";
 
   /* ── Download helper ─── */
   const handleDownload = (url: string, idx: number) => {
