@@ -7,8 +7,8 @@ from sqlalchemy.orm import sessionmaker
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ logger.info(f"数据库连接URL: {SQLALCHEMY_DATABASE_URL}")
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args={"check_same_thread": False},
-    echo=False  # 设置为 True 可以查看 SQL 日志
+    echo=False,  # 设置为 True 可以查看 SQL 日志
 )
 logger.info("数据库引擎创建成功")
 
@@ -124,6 +124,7 @@ def init_db():
     try:
         # 导入所有模型，确保它们被注册
         from app.models.repair import RepairTask, PromptTemplate
+        from app.models.material import MaterialCharacter, MaterialCharacterRawImage
 
         Base.metadata.create_all(bind=engine)
         migrate_prompt_templates_add_description()
@@ -159,8 +160,8 @@ def get_db_info() -> dict:
         "directory_exists": os.path.exists(DB_DIR),
         "database_exists": os.path.exists(DB_PATH),
     }
-    
+
     if os.path.exists(DB_PATH):
         info["database_size_bytes"] = os.path.getsize(DB_PATH)
-    
+
     return info

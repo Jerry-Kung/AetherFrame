@@ -1,26 +1,29 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { CharaRawImage } from "@/mocks/materialChara";
-import { RAW_IMAGE_TAG_PRESETS } from "@/mocks/materialChara";
+import type { CharaRawImage } from "@/types/material";
+import { RAW_IMAGE_TAG_PRESETS } from "@/types/material";
 
-/** 文本文件导入：读取后整段替换当前编辑区（避免与手动编辑内容难以合并） */
 interface RawMaterialTabProps {
+  characterId: string;
   settingText: string;
   onSettingTextChange: (v: string) => void;
+  /** 用户选择 .txt/.md 后由父组件上传并刷新 */
+  onImportSettingFile: (file: File) => void | Promise<void>;
   rawImages: CharaRawImage[];
-  onRawImagesChange: (next: CharaRawImage[]) => void;
-  /** 点击缩略图打开大图预览（由父级统一弹窗） */
+  onUploadRawFiles: (files: File[]) => void | Promise<void>;
+  onRemoveRawImage: (imageId: string) => void | Promise<void>;
+  onUpdateRawImageTags: (imageId: string, tags: string[]) => void | Promise<void>;
   onRawImageClick: (imageId: string) => void;
 }
 
-function newImageId(): string {
-  return `img-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
 const RawMaterialTab = ({
+  characterId: _characterId,
   settingText,
   onSettingTextChange,
+  onImportSettingFile,
   rawImages,
-  onRawImagesChange,
+  onUploadRawFiles,
+  onRemoveRawImage,
+  onUpdateRawImageTags,
   onRawImageClick,
 }: RawMaterialTabProps) => {
   const txtInputRef = useRef<HTMLInputElement>(null);
@@ -37,17 +40,14 @@ const RawMaterialTab = ({
 
   const toggleTagOnImage = useCallback(
     (imageId: string, tag: string) => {
-      onRawImagesChange(
-        rawImages.map((im) => {
-          if (im.id !== imageId) return im;
-          const has = im.tags.includes(tag);
-          const nextTags = has ? im.tags.filter((t) => t !== tag) : [...im.tags, tag];
-          const ensured = nextTags.length === 0 ? ["其他"] : nextTags;
-          return { ...im, tags: ensured };
-        })
-      );
+      const im = rawImages.find((x) => x.id === imageId);
+      if (!im) return;
+      const has = im.tags.includes(tag);
+      const nextTags = has ? im.tags.filter((t) => t !== tag) : [...im.tags, tag];
+      const ensured = nextTags.length === 0 ? ["其他"] : nextTags;
+      void onUpdateRawImageTags(imageId, ensured);
     },
-    [rawImages, onRawImagesChange]
+    [rawImages, onUpdateRawImageTags]
   );
 
   const handleTxtFiles = useCallback(
@@ -62,11 +62,12 @@ const RawMaterialTab = ({
       reader.onload = () => {
         const text = typeof reader.result === "string" ? reader.result : "";
         onSettingTextChange(text);
+        void onImportSettingFile(f);
       };
       reader.readAsText(f, "UTF-8");
       if (txtInputRef.current) txtInputRef.current.value = "";
     },
-    [onSettingTextChange]
+    [onSettingTextChange, onImportSettingFile]
   );
 
   const handleImgFiles = useCallback(
@@ -77,36 +78,21 @@ const RawMaterialTab = ({
         if (imgInputRef.current) imgInputRef.current.value = "";
         return;
       }
-      const slots: (CharaRawImage | null)[] = list.map(() => null);
-      let pending = list.length;
-      list.forEach((file, i) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const url = typeof reader.result === "string" ? reader.result : "";
-          if (url) slots[i] = { id: newImageId(), url, tags: ["其他"] };
-          pending -= 1;
-          if (pending === 0) {
-            const additions = slots.filter((x): x is CharaRawImage => x !== null);
-            if (additions.length) onRawImagesChange([...rawImages, ...additions]);
-          }
-        };
-        reader.readAsDataURL(file);
-      });
+      void onUploadRawFiles(list);
       if (imgInputRef.current) imgInputRef.current.value = "";
     },
-    [rawImages, onRawImagesChange]
+    [onUploadRawFiles]
   );
 
   const removeImage = useCallback(
     (id: string) => {
-      onRawImagesChange(rawImages.filter((im) => im.id !== id));
+      void onRemoveRawImage(id);
     },
-    [rawImages, onRawImagesChange]
+    [onRemoveRawImage]
   );
 
   return (
     <div className="flex flex-col gap-4 min-h-0 h-full overflow-y-auto pr-1">
-      {/* 资料就绪横幅 */}
       <div
         className={[
           "rounded-xl px-4 py-3 flex items-start gap-3 shrink-0 border",
@@ -128,7 +114,6 @@ const RawMaterialTab = ({
         </div>
       </div>
 
-      {/* 设定文本 */}
       <section className="shrink-0">
         <div className="flex items-center justify-between gap-2 mb-2">
           <h3
@@ -164,7 +149,6 @@ const RawMaterialTab = ({
         />
       </section>
 
-      {/* 参考图 */}
       <section className="flex-1 min-h-0 flex flex-col">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <h3
@@ -283,7 +267,6 @@ const RawMaterialTab = ({
         )}
       </section>
 
-      {/* 悬停大图预览 */}
       {hoverPreview && (
         <div
           className="fixed z-40 pointer-events-none rounded-xl overflow-hidden border-2 border-white shadow-2xl bg-black/5"

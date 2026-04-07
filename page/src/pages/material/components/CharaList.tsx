@@ -1,5 +1,5 @@
-import type { CharaProfile } from "@/mocks/materialChara";
-import { STATUS_LABEL, STATUS_STYLE } from "@/mocks/materialChara";
+import type { CharaProfile } from "@/types/material";
+import { STATUS_LABEL, STATUS_STYLE } from "@/types/material";
 
 function formatUpdatedAt(iso: string): string {
   const d = new Date(iso);
@@ -16,11 +16,11 @@ interface CharaListProps {
   charas: CharaProfile[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  onDeleteConfirm: (id: string) => void;
+  onDeleteRequest: (id: string) => void;
   onNew: () => void;
 }
 
-const CharaList = ({ charas, selectedId, onSelect, onDeleteConfirm, onNew }: CharaListProps) => {
+const CharaList = ({ charas, selectedId, onSelect, onDeleteRequest, onNew }: CharaListProps) => {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 pt-4 pb-3 shrink-0 gap-2">
@@ -123,7 +123,7 @@ const CharaList = ({ charas, selectedId, onSelect, onDeleteConfirm, onNew }: Cha
                 title="删除角色"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDeleteConfirm(c.id);
+                  onDeleteRequest(c.id);
                 }}
                 className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-rose-300 hover:text-rose-500 hover:bg-rose-100/80 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
               >

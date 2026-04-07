@@ -1,4 +1,4 @@
-import type { CharaBio } from "@/mocks/materialChara";
+import type { CharaBio } from "@/types/material";
 
 interface OfficialContentTabProps {
   officialPhotos: [string | null, string | null, string | null];

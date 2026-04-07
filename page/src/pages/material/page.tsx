@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { CharaProfile } from "@/mocks/materialChara";
-import { MOCK_CHARAS, createEmptyChara } from "@/mocks/materialChara";
+import type { CharaProfile } from "@/types/material";
+import { DEFAULT_CHARA_AVATAR_PLACEHOLDER, toCharaProfile, summaryToListProfile } from "@/types/material";
+import * as materialApi from "@/services/materialApi";
+import { ApiError } from "@/services/api";
 import CuteConfirmModal from "@/pages/repair/components/CuteConfirmModal";
 import ImagePreviewModal from "@/pages/repair/components/ImagePreviewModal";
+import CreateCharaModal from "./components/CreateCharaModal";
 import CharaList from "./components/CharaList";
 import CharaSidebar from "./components/CharaSidebar";
 import RawMaterialTab from "./components/RawMaterialTab";
@@ -32,9 +35,7 @@ const MAIN_TABS: { id: MainTabId; label: string; icon: string }[] = [
   { id: "official", label: "正式内容", icon: "ri-trophy-line" },
 ];
 
-function nowIso(): string {
-  return new Date().toISOString();
-}
+const SETTING_DEBOUNCE_MS = 600;
 
 function downloadDataUrl(url: string, filename: string) {
   const a = document.createElement("a");
@@ -48,10 +49,12 @@ function downloadDataUrl(url: string, filename: string) {
 
 export default function MaterialPage() {
   const navigate = useNavigate();
-  const [charas, setCharas] = useState<CharaProfile[]>(() => [...MOCK_CHARAS]);
-  const [selectedId, setSelectedId] = useState<string | null>(MOCK_CHARAS[0]?.id ?? null);
+  const [charas, setCharas] = useState<CharaProfile[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [listLoading, setListLoading] = useState(true);
   const [mainTab, setMainTab] = useState<MainTabId>("raw");
   const [processSubTask, setProcessSubTask] = useState<ProcessSubTaskId>("standard");
+  const [createModalOpen, setCreateModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState("");
@@ -61,10 +64,80 @@ export default function MaterialPage() {
     null
   );
 
+  const settingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(null), 3200);
   }, []);
+
+  const mergeChara = useCallback((profile: CharaProfile) => {
+    setCharas((prev) => {
+      const i = prev.findIndex((c) => c.id === profile.id);
+      if (i < 0) return [...prev, profile];
+      const next = [...prev];
+      next[i] = profile;
+      return next;
+    });
+  }, []);
+
+  const patchCharaFields = useCallback((id: string, patch: Partial<CharaProfile>) => {
+    setCharas((prev) =>
+      prev.map((c) =>
+        c.id === id ? { ...c, ...patch, updatedAt: new Date().toISOString() } : c
+      )
+    );
+  }, []);
+
+  const loadCharacterList = useCallback(async () => {
+    setListLoading(true);
+    try {
+      const { characters } = await materialApi.listCharacters(0, 100);
+      const stubs = characters.map(summaryToListProfile);
+      setCharas(stubs);
+      setSelectedId((prev) => {
+        if (stubs.length === 0) return null;
+        if (prev && stubs.some((s) => s.id === prev)) return prev;
+        return stubs[0].id;
+      });
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "加载角色列表失败");
+      setCharas([]);
+      setSelectedId(null);
+    } finally {
+      setListLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    void loadCharacterList();
+  }, [loadCharacterList]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = await materialApi.getCharacter(selectedId);
+        if (cancelled) return;
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        if (!cancelled) {
+          showToast(e instanceof ApiError ? e.message : "加载角色详情失败");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, mergeChara, showToast]);
+
+  useEffect(() => {
+    if (settingDebounceRef.current) {
+      clearTimeout(settingDebounceRef.current);
+      settingDebounceRef.current = null;
+    }
+  }, [selectedId]);
 
   const selected = useMemo(
     () => charas.find((c) => c.id === selectedId) ?? null,
@@ -77,22 +150,34 @@ export default function MaterialPage() {
     }
   }, [charas, selectedId]);
 
-  const patchChara = useCallback((id: string, patch: Partial<CharaProfile>) => {
-    setCharas((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, ...patch, updatedAt: nowIso() } : c))
-    );
-  }, []);
-
   const handleSelect = useCallback((id: string) => setSelectedId(id), []);
 
   const handleNew = useCallback(() => {
-    const next = createEmptyChara(charas.length + 1);
-    setCharas((prev) => [...prev, next]);
-    setSelectedId(next.id);
-    showToast(`已创建「${next.name}」`);
-  }, [charas.length, showToast]);
+    setCreateModalOpen(true);
+  }, []);
 
-  const openDeleteConfirm = useCallback(
+  const handleCreateConfirm = useCallback(
+    async (name: string, avatarFile: File | null) => {
+      try {
+        const d = await materialApi.createCharacter({ name, display_name: name });
+        let p = toCharaProfile(d);
+        if (avatarFile) {
+          await materialApi.postRawImages(p.id, [avatarFile], [["立绘"]]);
+          const d2 = await materialApi.getCharacter(p.id);
+          p = toCharaProfile(d2);
+        }
+        mergeChara(p);
+        setSelectedId(p.id);
+        setCreateModalOpen(false);
+        showToast(`已创建「${p.name}」`);
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "创建角色失败");
+      }
+    },
+    [mergeChara, showToast]
+  );
+
+  const handleDeleteRequest = useCallback(
     (id: string) => {
       const c = charas.find((x) => x.id === id);
       setDeleteTarget({ id, name: c?.name ?? id });
@@ -100,13 +185,20 @@ export default function MaterialPage() {
     [charas]
   );
 
-  const handleDeleteConfirm = useCallback(() => {
+  const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget) return;
     const { id } = deleteTarget;
-    setCharas((prev) => prev.filter((c) => c.id !== id));
-    setDeleteTarget(null);
-    // selectedId 若指向已删项，由下方 useEffect 同步到列表首项或 null
-  }, [deleteTarget]);
+    try {
+      await materialApi.deleteCharacter(id);
+      const nextList = charas.filter((c) => c.id !== id);
+      setCharas(nextList);
+      setDeleteTarget(null);
+      setSelectedId((sel) => (sel === id ? nextList[0]?.id ?? null : sel));
+      showToast("已删除角色");
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "删除失败");
+    }
+  }, [deleteTarget, charas, showToast]);
 
   const openEdit = useCallback(() => {
     if (!selected) return;
@@ -115,17 +207,22 @@ export default function MaterialPage() {
     setEditOpen(true);
   }, [selected]);
 
-  const saveEdit = useCallback(() => {
+  const saveEdit = useCallback(async () => {
     if (!selected) return;
     const name = editName.trim() || selected.name;
     const displayName = editDisplayName.trim() || selected.bio.displayName;
-    patchChara(selected.id, {
-      name,
-      bio: { ...selected.bio, displayName },
-    });
-    setEditOpen(false);
-    showToast("角色信息已更新");
-  }, [selected, editName, editDisplayName, patchChara, showToast]);
+    try {
+      const d = await materialApi.patchCharacter(selected.id, {
+        name,
+        display_name: displayName,
+      });
+      mergeChara(toCharaProfile(d));
+      setEditOpen(false);
+      showToast("角色信息已更新");
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "更新失败");
+    }
+  }, [selected, editName, editDisplayName, mergeChara, showToast]);
 
   const handleStartProcess = useCallback(() => {
     showToast("加工流程将接入后端后在此展开，敬请期待");
@@ -140,6 +237,83 @@ export default function MaterialPage() {
     URL.revokeObjectURL(url);
     showToast("已导出 JSON 档案（本地预览用）");
   }, [selected, showToast]);
+
+  const handleSettingTextChange = useCallback(
+    (v: string) => {
+      if (!selected) return;
+      const id = selected.id;
+      patchCharaFields(id, { settingText: v });
+      if (settingDebounceRef.current) clearTimeout(settingDebounceRef.current);
+      settingDebounceRef.current = setTimeout(() => {
+        settingDebounceRef.current = null;
+        void (async () => {
+          try {
+            const d = await materialApi.putSettingText(id, v);
+            mergeChara(toCharaProfile(d));
+          } catch (e) {
+            showToast(e instanceof ApiError ? e.message : "保存设定失败");
+          }
+        })();
+      }, SETTING_DEBOUNCE_MS);
+    },
+    [selected, patchCharaFields, mergeChara, showToast]
+  );
+
+  const handleImportSettingFile = useCallback(
+    async (file: File) => {
+      if (!selected) return;
+      try {
+        const d = await materialApi.putSettingFile(selected.id, file);
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "上传设定文件失败");
+      }
+    },
+    [selected, mergeChara, showToast]
+  );
+
+  const handleUploadRawFiles = useCallback(
+    async (files: File[]) => {
+      if (!selected || files.length === 0) return;
+      const tags = files.map(() => ["其他"] as string[]);
+      try {
+        await materialApi.postRawImages(selected.id, files, tags);
+        const d = await materialApi.getCharacter(selected.id);
+        mergeChara(toCharaProfile(d));
+        showToast(`已上传 ${files.length} 张参考图`);
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "上传参考图失败");
+      }
+    },
+    [selected, mergeChara, showToast]
+  );
+
+  const handleRemoveRawImage = useCallback(
+    async (imageId: string) => {
+      if (!selected) return;
+      try {
+        await materialApi.deleteRawImage(selected.id, imageId);
+        const d = await materialApi.getCharacter(selected.id);
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "删除图片失败");
+      }
+    },
+    [selected, mergeChara, showToast]
+  );
+
+  const handleUpdateRawImageTags = useCallback(
+    async (imageId: string, tags: string[]) => {
+      if (!selected) return;
+      try {
+        const d = await materialApi.patchRawImageTags(selected.id, imageId, tags);
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "更新标签失败");
+      }
+    },
+    [selected, mergeChara, showToast]
+  );
 
   const handleRawImageClick = useCallback(
     (imageId: string) => {
@@ -288,13 +462,19 @@ export default function MaterialPage() {
               className="w-[13.5rem] shrink-0 border-r border-rose-100/60 flex flex-col min-h-0 pt-1 relative z-0"
               style={{ background: "rgba(255,250,252,0.6)" }}
             >
-              <CharaList
-                charas={charas}
-                selectedId={selectedId}
-                onSelect={handleSelect}
-                onDeleteConfirm={openDeleteConfirm}
-                onNew={handleNew}
-              />
+              {listLoading ? (
+                <div className="flex-1 flex items-center justify-center text-xs text-rose-300/70">
+                  加载中…
+                </div>
+              ) : (
+                <CharaList
+                  charas={charas}
+                  selectedId={selectedId}
+                  onSelect={handleSelect}
+                  onDeleteRequest={handleDeleteRequest}
+                  onNew={handleNew}
+                />
+              )}
             </div>
 
             <div className="flex-1 flex flex-col min-h-0 border-r border-rose-100/60 pt-1 relative z-0" style={{ minWidth: 0 }}>
@@ -338,10 +518,14 @@ export default function MaterialPage() {
                   </div>
                 ) : mainTab === "raw" ? (
                   <RawMaterialTab
+                    characterId={selected.id}
                     settingText={selected.settingText}
-                    onSettingTextChange={(v) => patchChara(selected.id, { settingText: v })}
+                    onSettingTextChange={handleSettingTextChange}
+                    onImportSettingFile={handleImportSettingFile}
                     rawImages={selected.rawImages}
-                    onRawImagesChange={(next) => patchChara(selected.id, { rawImages: next })}
+                    onUploadRawFiles={handleUploadRawFiles}
+                    onRemoveRawImage={handleRemoveRawImage}
+                    onUpdateRawImageTags={handleUpdateRawImageTags}
                     onRawImageClick={handleRawImageClick}
                   />
                 ) : mainTab === "process" ? (
@@ -375,17 +559,24 @@ export default function MaterialPage() {
         </div>
       </div>
 
+      <CreateCharaModal
+        isOpen={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        onConfirm={handleCreateConfirm}
+        defaultAvatarUrl={DEFAULT_CHARA_AVATAR_PLACEHOLDER}
+      />
+
       <CuteConfirmModal
         isOpen={deleteTarget !== null}
         title="确认删除角色？"
         message={
-          deleteTarget ? `将删除「${deleteTarget.name}」及其在本页的本地资料（当前为浏览器内预览数据）。` : ""
+          deleteTarget ? `将删除「${deleteTarget.name}」及服务器上的角色资料与文件。` : ""
         }
         icon="delete"
         confirmText="确认删除"
-        cancelText="取消"
+        cancelText="再想想"
         titleId="material-delete-confirm-title"
-        onConfirm={handleDeleteConfirm}
+        onConfirm={() => void handleDeleteConfirm()}
         onCancel={() => setDeleteTarget(null)}
       />
 
@@ -424,7 +615,7 @@ export default function MaterialPage() {
               </button>
               <button
                 type="button"
-                onClick={saveEdit}
+                onClick={() => void saveEdit()}
                 className="px-4 py-2 rounded-xl text-sm text-white cursor-pointer"
                 style={{ background: "linear-gradient(135deg, #f472b6, #ec4899)" }}
               >

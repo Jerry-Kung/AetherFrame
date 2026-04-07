@@ -1,5 +1,5 @@
-import type { CharaProfile } from "@/mocks/materialChara";
-import { STATUS_LABEL, STATUS_STYLE } from "@/mocks/materialChara";
+import type { CharaProfile } from "@/types/material";
+import { STATUS_LABEL, STATUS_STYLE } from "@/types/material";
 
 interface CharaSidebarProps {
   chara: CharaProfile | null;
