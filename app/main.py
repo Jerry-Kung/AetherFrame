@@ -14,20 +14,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class _SuppressRepairStatusPollAccessLog(logging.Filter):
-    """轮询 GET /api/repair/tasks/*/status 频率极高，默认不写入 uvicorn access 日志"""
+class _SuppressPollAccessLog(logging.Filter):
+    """轮询类 GET 请求频率高，默认不写入 uvicorn access 日志，避免刷屏"""
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:
             msg = record.getMessage()
         except Exception:
             return True
-        if "GET " in msg and "/api/repair/tasks/" in msg and "/status HTTP" in msg:
+        if "GET " not in msg:
+            return True
+        # 修补任务状态轮询
+        if "/api/repair/tasks/" in msg and "/status HTTP" in msg:
+            return False
+        # 素材加工 · 拍摄标准照任务状态轮询
+        if "/standard-photo/status HTTP" in msg:
             return False
         return True
 
 
-logging.getLogger("uvicorn.access").addFilter(_SuppressRepairStatusPollAccessLog())
+logging.getLogger("uvicorn.access").addFilter(_SuppressPollAccessLog())
 
 
 @asynccontextmanager

@@ -362,7 +362,7 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
       }
       timer = window.setTimeout(() => {
         void poll();
-      }, 2500);
+      }, 15000);
     };
     void poll();
     return () => {
