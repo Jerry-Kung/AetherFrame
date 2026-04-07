@@ -38,6 +38,7 @@ from app.schemas.material import (
     RawImagesUploadData,
     SettingTextUpdate,
 )
+from app.repositories.material_repository import SHOT_TYPE_TO_INDEX
 from app.services.material_service import MaterialService
 from app.services.file_service import FileValidationError
 
@@ -439,6 +440,21 @@ async def get_standard_photo_result_image(
     return FileResponse(path=path, media_type=media_type, filename=filename)
 
 
+@router.get("/characters/{character_id}/standard-photo/slot-images/{shot_type}")
+async def get_standard_slot_image(
+    character_id: str,
+    shot_type: str,
+    service: MaterialService = Depends(get_material_service),
+):
+    """已保存的正式标准参考图（按类型槽位存储，与当前生成任务目录无关）。"""
+    if shot_type not in SHOT_TYPE_TO_INDEX:
+        raise HTTPException(status_code=404, detail="标准照类型无效")
+    path = service.get_standard_slot_image_path(character_id, shot_type)
+    if not path:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return FileResponse(path=path, media_type="image/png", filename=f"{shot_type}.png")
+
+
 @router.post("/characters/{character_id}/standard-photo/select", response_model=ApiResponse)
 async def select_standard_photo_result(
     character_id: str,
@@ -466,3 +482,31 @@ async def select_standard_photo_result(
     except Exception as e:
         logger.error(f"API 错误 - 保存标准照结果失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="保存标准照结果失败")
+
+
+@router.delete("/characters/{character_id}/standard-photo/slot/{slot_index}", response_model=ApiResponse)
+async def delete_official_photo_slot(
+    character_id: str,
+    slot_index: int,
+    service: MaterialService = Depends(get_material_service),
+):
+    """清除某一槽位的正式标准参考照（数据库 URL 与槽位文件）。"""
+    if slot_index < 0 or slot_index > 4:
+        raise HTTPException(status_code=400, detail="标准照槽位索引无效")
+    logger.info(f"API 请求 - 删除正式标准照槽位: {character_id} slot={slot_index}")
+    try:
+        char = service.clear_official_photo_slot(character_id, slot_index)
+        detail = service.character_to_detail_dict(char)
+        return ApiResponse(
+            success=True,
+            data=CharacterDetail(**detail).model_dump(mode="json"),
+            message="标准参考照已删除",
+        )
+    except ValueError as e:
+        msg = str(e)
+        if msg == "角色不存在":
+            raise HTTPException(status_code=404, detail=msg) from e
+        raise HTTPException(status_code=400, detail=msg) from e
+    except Exception as e:
+        logger.error(f"API 错误 - 删除正式标准照失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="删除正式标准照失败")

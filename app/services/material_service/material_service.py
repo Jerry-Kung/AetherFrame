@@ -17,7 +17,7 @@ from app.prompts.material.standard_photo import (
     half_front_prompt,
     half_side_prompt,
 )
-from app.repositories.material_repository import MaterialCharacterRepository
+from app.repositories.material_repository import INDEX_TO_SHOT_TYPE, MaterialCharacterRepository
 from app.services.material_service import material_file_service
 from app.services.file_service import FileDeleteError, FileSaveError, FileValidationError
 from app.services.material_service import standard_photo_generation_service
@@ -47,6 +47,10 @@ class MaterialService:
 
     def standard_photo_result_image_url(self, character_id: str, filename: str) -> str:
         return f"/api/material/characters/{character_id}/standard-photo/result-images/{filename}"
+
+    def standard_slot_image_url(self, character_id: str, shot_type: str) -> str:
+        """已写入正式标准参考图的稳定 URL（按槽位/类型分文件）。"""
+        return f"/api/material/characters/{character_id}/standard-photo/slot-images/{shot_type}"
 
     @staticmethod
     def _normalize_official_photos(data: Any) -> List[Optional[str]]:
@@ -517,6 +521,22 @@ class MaterialService:
             return None
         return material_file_service.get_standard_photo_result_image_path(character_id, task.id, filename)
 
+    def get_standard_slot_image_path(self, character_id: str, shot_type: str) -> Optional[str]:
+        return material_file_service.get_standard_slot_image_path(character_id, shot_type)
+
+    def clear_official_photo_slot(self, character_id: str, slot_index: int) -> MaterialCharacter:
+        char = self.repo.get_by_id(character_id)
+        if not char:
+            raise ValueError("角色不存在")
+        shot_type = INDEX_TO_SHOT_TYPE.get(slot_index)
+        if shot_type is None:
+            raise ValueError("标准照槽位索引无效")
+        updated = self.repo.clear_official_photo_at_index(character_id, slot_index)
+        if not updated:
+            raise ValueError("角色不存在")
+        material_file_service.delete_standard_slot_image_file(character_id, shot_type)
+        return updated
+
     def select_standard_photo_result(
         self, character_id: str, selected_result_filename: Optional[str], selected_result_index: Optional[int]
     ) -> MaterialCharacter:
@@ -537,7 +557,14 @@ class MaterialService:
         if not path:
             raise ValueError("所选结果图不存在")
 
-        url = self.standard_photo_result_image_url(character_id, file_name)
+        try:
+            material_file_service.copy_task_result_to_official_slot(
+                character_id, task.id, file_name, task.shot_type
+            )
+        except OSError as e:
+            logger.error(f"复制标准照到正式槽位失败: {e}", exc_info=True)
+            raise ValueError("写入正式标准照失败") from e
+        url = self.standard_slot_image_url(character_id, task.shot_type)
         updated = self.repo.save_official_photo_by_shot_type(character_id, task.shot_type, url)
         if not updated:
             raise ValueError("角色不存在")

@@ -253,6 +253,20 @@ interface CharaProfile {
 - `STATUS_STYLE`：状态值 → 样式配置（圆点、文字、标签）
 - `RAW_IMAGE_TAG_PRESETS`：标签预设列表
 
+### 标准参考照槽位删除（后端 API）
+
+正式内容页「删除标准照」调用素材模块接口，与前端 [`materialApi.deleteOfficialPhotoSlot`](../../page/src/services/materialApi.ts) 一致。
+
+| 项目 | 说明 |
+|------|------|
+| 方法 / 路径 | `DELETE` `/api/material/characters/{character_id}/standard-photo/slot/{slot_index}` |
+| `slot_index` | 整数 `0`–`4`，顺序为：全身正面、全身侧面、半身正面、半身侧面、脸部特写（与加工任务标准照类型一致） |
+| 成功响应 | HTTP `200`，`success: true`，`data` 为完整 `CharacterDetail`（`official_photos` 五元组中对应槽为 `null`） |
+| `404` | 角色不存在（`detail`:「角色不存在」） |
+| `400` | 槽位索引非法（不在 `0`–`4`） |
+| 语义与幂等 | 清空该槽在库中的 URL，并删除槽位 PNG（`standard_photo_slots/{shot_type}.png`）；不删除标准照生成任务记录。槽位已为空时再次删除仍返回成功与最新详情。 |
+| 实现顺序 | 服务端先提交数据库清空，再删除磁盘文件，避免 DB 失败时出现「文件已删但 JSON 仍指向旧 URL」的不一致。 |
+
 ---
 
 ## 六、视觉设计规范

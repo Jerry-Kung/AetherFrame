@@ -288,3 +288,66 @@ class TestMaterialCharacterService:
         detail = material_svc.character_to_detail_dict(updated_char)
         assert len(detail["official_photos"]) == 5
         assert detail["official_photos"][4] is not None
+        assert "slot-images" in (detail["official_photos"][4] or "")
+        assert "face_close" in (detail["official_photos"][4] or "")
+
+    def test_clear_official_photo_slot_clears_json_and_removes_file(self, material_svc, sample_png):
+        char = material_svc.create_character("StdDel")
+        uploaded, _ = material_svc.upload_raw_images(
+            char.id,
+            [UploadFile(filename="official.png", file=BytesIO(sample_png))],
+            [["立绘"]],
+            ["official"],
+        )
+        selected_ids = [uploaded[0]["id"]]
+
+        temp_dir = os.path.join(os.getenv("DATA_DIR", "./data"), "tmp_test_std_del")
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_file = os.path.join(temp_dir, "mock.png")
+        with open(temp_file, "wb") as f:
+            f.write(sample_png)
+
+        with patch(
+            "app.services.material_service.standard_photo_generation_service.generate_standard_photo_images",
+            return_value=([temp_file], None, temp_dir),
+        ):
+            material_svc.start_standard_photo_task(
+                character_id=char.id,
+                shot_type="full_front",
+                aspect_ratio="1:1",
+                output_count=1,
+                selected_raw_image_ids=selected_ids,
+                background_tasks=None,
+            )
+
+        from app.services.material_service import material_file_service
+
+        assert material_svc.get_standard_photo_task_status(char.id)["status"] == "completed"
+        material_svc.select_standard_photo_result(
+            char.id,
+            selected_result_filename="result_0.png",
+            selected_result_index=None,
+        )
+        slot_path = material_file_service.get_standard_slot_image_path(char.id, "full_front")
+        assert slot_path and os.path.isfile(slot_path)
+
+        cleared = material_svc.clear_official_photo_slot(char.id, 0)
+        detail = material_svc.character_to_detail_dict(cleared)
+        assert detail["official_photos"][0] is None
+        assert not os.path.isfile(slot_path)
+
+    def test_clear_official_photo_slot_idempotent_on_empty_slot(self, material_svc):
+        char = material_svc.create_character("StdIdem")
+        d1 = material_svc.character_to_detail_dict(material_svc.clear_official_photo_slot(char.id, 2))
+        d2 = material_svc.character_to_detail_dict(material_svc.clear_official_photo_slot(char.id, 2))
+        assert d1["official_photos"][2] is None
+        assert d2["official_photos"][2] is None
+
+    def test_clear_official_photo_slot_unknown_character_raises(self, material_svc):
+        with pytest.raises(ValueError, match="角色不存在"):
+            material_svc.clear_official_photo_slot("mchar_nonexistent_zz", 0)
+
+    def test_clear_official_photo_slot_invalid_index_raises(self, material_svc):
+        char = material_svc.create_character("StdBadIdx")
+        with pytest.raises(ValueError, match="标准照槽位索引无效"):
+            material_svc.clear_official_photo_slot(char.id, 5)

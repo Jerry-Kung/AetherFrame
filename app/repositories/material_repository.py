@@ -23,6 +23,8 @@ SHOT_TYPE_TO_INDEX = {
     "face_close": 4,
 }
 
+INDEX_TO_SHOT_TYPE = {v: k for k, v in SHOT_TYPE_TO_INDEX.items()}
+
 
 def _normalize_official_photos(photos_json: str) -> List[Optional[str]]:
     try:
@@ -230,6 +232,21 @@ class MaterialCharacterRepository(BaseRepository[MaterialCharacter]):
             raise ValueError(f"不支持的标准照类型: {shot_type}")
         photos = _normalize_official_photos(char.official_photos_json)
         photos[idx] = photo_url
+        char.official_photos_json = json.dumps(photos, ensure_ascii=False)
+        char.updated_at = datetime.now(timezone.utc)
+        self.db.add(char)
+        self.db.commit()
+        self.db.refresh(char)
+        return char
+
+    def clear_official_photo_at_index(self, character_id: str, slot_index: int) -> Optional[MaterialCharacter]:
+        if slot_index < 0 or slot_index > 4:
+            raise ValueError("标准照槽位索引无效")
+        char = self.get_by_id(character_id)
+        if not char:
+            return None
+        photos = _normalize_official_photos(char.official_photos_json)
+        photos[slot_index] = None
         char.official_photos_json = json.dumps(photos, ensure_ascii=False)
         char.updated_at = datetime.now(timezone.utc)
         self.db.add(char)

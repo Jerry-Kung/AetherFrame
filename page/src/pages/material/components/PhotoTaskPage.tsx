@@ -16,6 +16,11 @@ type AspectRatio = "16:9" | "1:1" | "9:16";
 type GenCount = 1 | 2 | 4;
 type PageState = "config" | "generating" | "result";
 
+function normalizeGenCount(n: number): GenCount {
+  if (n === 1 || n === 2 || n === 4) return n;
+  return 2;
+}
+
 const SHOT_TYPES: { id: ShotType; label: string; icon: string; desc: string }[] = [
   { id: "full_front", label: "全身正面", icon: "ri-user-line", desc: "完整全身，正面站姿" },
   { id: "full_side", label: "全身侧面", icon: "ri-user-follow-line", desc: "完整全身，侧面展示" },
@@ -316,6 +321,7 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
   const [savingResult, setSavingResult] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [pollError, setPollError] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   const selectedType = useMemo(() => SHOT_TYPES.find((t) => t.id === shotType), [shotType]);
   const canStart = selectedRefIds.size > 0 && !loadingStart;
@@ -335,6 +341,49 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
     } catch {
       return null;
     }
+  }, [characterId]);
+
+  /** 刷新或重新进入页面时，从后端恢复当前标准照任务阶段（config / generating / result） */
+  useEffect(() => {
+    let cancelled = false;
+    setHydrated(false);
+    void (async () => {
+      try {
+        const status = await materialApi.getStandardPhotoStatus(characterId);
+        if (cancelled) return;
+        setShotType(status.shot_type as ShotType);
+        setAspectRatio(status.aspect_ratio as AspectRatio);
+        setGenCount(normalizeGenCount(status.output_count));
+        setSelectedRefIds(new Set(status.selected_raw_image_ids));
+        setSaveSuccess(false);
+        setPollError(null);
+        if (status.status === "processing" || status.status === "pending") {
+          setPageState("generating");
+        } else if (status.status === "completed") {
+          setResultImages(status.result_images || []);
+          setPageState("result");
+        } else if (status.status === "failed") {
+          setPageState("config");
+          setPollError(status.error_message || "标准照生成失败，请修改参数后重试");
+        } else {
+          setPageState("config");
+        }
+      } catch (e) {
+        if (cancelled) return;
+        if (e instanceof ApiError && e.status === 404) {
+          setPageState("config");
+          setPollError(null);
+        } else {
+          setPageState("config");
+          setPollError(e instanceof ApiError ? e.message : "加载任务状态失败");
+        }
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [characterId]);
 
   useEffect(() => {
@@ -362,7 +411,7 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
       }
       timer = window.setTimeout(() => {
         void poll();
-      }, 15000);
+      }, 2000);
     };
     void poll();
     return () => {
@@ -416,7 +465,7 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
 
   const handleSaveResult = useCallback(
     async (url: string) => {
-      const fileName = url.split("/").pop();
+      const fileName = url.split("/").pop()?.split("?")[0];
       if (!fileName) {
         showToast("结果图路径无效");
         return;
@@ -438,6 +487,15 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
     [characterId, onCharacterUpdated, showToast]
   );
 
+  if (!hydrated) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-6 text-rose-400 text-sm gap-2">
+        <i className="ri-loader-4-line text-2xl animate-spin" aria-hidden />
+        <span style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>加载任务状态…</span>
+      </div>
+    );
+  }
+
   if (pageState === "generating") {
     return <GeneratingView errorMessage={pollError} />;
   }
@@ -456,6 +514,14 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       <div className="flex flex-col gap-5 p-5">
+        {pollError && (
+          <div
+            className="rounded-xl px-4 py-3 text-sm text-rose-600 border border-rose-100 bg-rose-50/90"
+            style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+          >
+            {pollError}
+          </div>
+        )}
         <div
           className="rounded-2xl overflow-hidden"
           style={{ border: "1px solid rgba(253,164,175,0.25)", background: "rgba(255,255,255,0.7)" }}

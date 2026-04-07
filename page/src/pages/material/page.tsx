@@ -341,6 +341,19 @@ export default function MaterialPage() {
     [selected]
   );
 
+  const handleOfficialPhotoDelete = useCallback(
+    async (slotIndex: number) => {
+      if (!selected) return;
+      try {
+        const d = await materialApi.deleteOfficialPhotoSlot(selected.id, slotIndex);
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "删除标准照失败");
+      }
+    },
+    [selected, mergeChara, showToast]
+  );
+
   const onPreviewDownload = useCallback((url: string, idx: number) => {
     const name = `image-${idx + 1}.png`;
     try {
@@ -545,6 +558,7 @@ export default function MaterialPage() {
                     officialPhotos={selected.officialPhotos}
                     bio={selected.bio}
                     onPhotoClick={handleOfficialPhotoClick}
+                    onOfficialPhotoDelete={handleOfficialPhotoDelete}
                   />
                 )}
               </div>

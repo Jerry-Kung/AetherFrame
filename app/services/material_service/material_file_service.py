@@ -6,6 +6,7 @@ from typing import Optional, Tuple, List
 
 from fastapi import UploadFile
 
+from app.repositories.material_repository import SHOT_TYPE_TO_INDEX
 from app.services.directory_service import get_material_characters_dir, ensure_dir_exists
 from app.services.file_service import (
     FileValidationError,
@@ -48,6 +49,48 @@ def get_standard_photo_task_dir(character_id: str, task_id: str) -> str:
 
 def get_standard_photo_task_results_dir(character_id: str, task_id: str) -> str:
     return os.path.join(get_standard_photo_task_dir(character_id, task_id), "results")
+
+
+def get_standard_photo_slot_dir(character_id: str) -> str:
+    """已保存到「正式标准参考图」的稳定文件目录（按 shot_type 分文件，不受新拍摄任务清空影响）。"""
+    return os.path.join(get_character_dir(character_id), "standard_photo_slots")
+
+
+def copy_task_result_to_official_slot(
+    character_id: str, task_id: str, task_result_filename: str, shot_type: str
+) -> None:
+    if shot_type not in SHOT_TYPE_TO_INDEX:
+        raise ValueError(f"不支持的标准照类型: {shot_type}")
+    src = get_standard_photo_result_image_path(character_id, task_id, task_result_filename)
+    if not src:
+        raise FileNotFoundError("所选结果图文件不存在")
+    slot_dir = get_standard_photo_slot_dir(character_id)
+    ensure_dir_exists(slot_dir)
+    dst = os.path.join(slot_dir, f"{shot_type}.png")
+    shutil.copy2(src, dst)
+
+
+def get_standard_slot_image_path(character_id: str, shot_type: str) -> Optional[str]:
+    if shot_type not in SHOT_TYPE_TO_INDEX:
+        return None
+    path = os.path.join(get_standard_photo_slot_dir(character_id), f"{shot_type}.png")
+    if os.path.isfile(path):
+        return path
+    return None
+
+
+def delete_standard_slot_image_file(character_id: str, shot_type: str) -> bool:
+    """删除已保存的正式标准参考图槽位文件。若文件不存在则返回 False。"""
+    if shot_type not in SHOT_TYPE_TO_INDEX:
+        return False
+    path = os.path.join(get_standard_photo_slot_dir(character_id), f"{shot_type}.png")
+    if not os.path.isfile(path):
+        return False
+    try:
+        os.remove(path)
+        return True
+    except OSError:
+        return False
 
 
 def ensure_character_dirs(character_id: str) -> Tuple[str, str]:

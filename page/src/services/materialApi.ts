@@ -351,3 +351,19 @@ export async function selectStandardPhotoResult(
     rethrow(e);
   }
 }
+
+/** 删除某一槽位的正式标准参考照（0–4，与加工任务标准照类型顺序一致） */
+export async function deleteOfficialPhotoSlot(
+  characterId: string,
+  slotIndex: number
+): Promise<ApiCharacterDetail> {
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/standard-photo/slot/${slotIndex}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "DELETE" });
+    const data = await parseJson<ApiCharacterDetail>(response);
+    throwIfError(response, data);
+    return data.data as ApiCharacterDetail;
+  } catch (e) {
+    rethrow(e);
+  }
+}
