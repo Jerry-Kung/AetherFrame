@@ -1,9 +1,13 @@
+import type { CharaProfile } from "@/types/material";
+import PhotoTaskPage from "./PhotoTaskPage";
+
 export type ProcessSubTaskId = "standard" | "profile";
 
 interface ProcessTaskTabProps {
   subTask: ProcessSubTaskId;
   onSubTaskChange: (id: ProcessSubTaskId) => void;
   charaName: string;
+  chara?: CharaProfile;
 }
 
 const SUB_TASKS: { id: ProcessSubTaskId; label: string; icon: string; desc: string }[] = [
@@ -21,7 +25,7 @@ const SUB_TASKS: { id: ProcessSubTaskId; label: string; icon: string; desc: stri
   },
 ];
 
-const ProcessTaskTab = ({ subTask, onSubTaskChange, charaName }: ProcessTaskTabProps) => {
+const ProcessTaskTab = ({ subTask, onSubTaskChange, charaName, chara }: ProcessTaskTabProps) => {
   const active = SUB_TASKS.find((s) => s.id === subTask)!;
 
   return (
@@ -50,30 +54,34 @@ const ProcessTaskTab = ({ subTask, onSubTaskChange, charaName }: ProcessTaskTabP
       </div>
 
       <div className="flex-1 min-h-0 mt-4 rounded-2xl border border-dashed border-rose-200/80 bg-gradient-to-br from-white/60 to-pink-50/30 overflow-hidden flex flex-col">
-        <div className="p-6 flex flex-col items-center justify-center flex-1 text-center min-h-[200px]">
-          <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 text-rose-400"
-            style={{
-              background: "linear-gradient(135deg, rgba(244,114,182,0.12), rgba(251,113,133,0.08))",
-              border: "1px solid rgba(251,113,133,0.15)",
-            }}
-          >
-            <i className={`${active.icon} text-2xl`} />
+        {subTask === "standard" && chara ? (
+          <PhotoTaskPage rawImages={chara.rawImages} />
+        ) : (
+          <div className="p-6 flex flex-col items-center justify-center flex-1 text-center min-h-[200px]">
+            <div
+              className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 text-rose-400"
+              style={{
+                background: "linear-gradient(135deg, rgba(244,114,182,0.12), rgba(251,113,133,0.08))",
+                border: "1px solid rgba(251,113,133,0.15)",
+              }}
+            >
+              <i className={`${active.icon} text-2xl`} />
+            </div>
+            <h3
+              className="text-lg font-semibold text-rose-800/80 mb-2"
+              style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+            >
+              {active.label}
+            </h3>
+            <p className="text-sm text-rose-500/70 max-w-md leading-relaxed mb-2">
+              正在为 <span className="font-medium text-rose-600">{charaName}</span> 准备该流程。
+              {active.desc}
+            </p>
+            <p className="text-xs text-rose-300/80 mt-4 px-4 py-2 rounded-full bg-white/50 border border-rose-100/60">
+              后续将在此接入具体步骤：参数表单、进度与结果预览等
+            </p>
           </div>
-          <h3
-            className="text-lg font-semibold text-rose-800/80 mb-2"
-            style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
-          >
-            {active.label}
-          </h3>
-          <p className="text-sm text-rose-500/70 max-w-md leading-relaxed mb-2">
-            正在为 <span className="font-medium text-rose-600">{charaName}</span> 准备该流程。
-            {active.desc}
-          </p>
-          <p className="text-xs text-rose-300/80 mt-4 px-4 py-2 rounded-full bg-white/50 border border-rose-100/60">
-            后续将在此接入具体步骤：参数表单、进度与结果预览等
-          </p>
-        </div>
+        )}
       </div>
     </div>
   );

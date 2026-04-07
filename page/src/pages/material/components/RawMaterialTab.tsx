@@ -1,6 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { CharaRawImage } from "@/types/material";
-import { RAW_IMAGE_TAG_PRESETS } from "@/types/material";
 
 interface RawMaterialTabProps {
   characterId: string;
@@ -23,32 +22,14 @@ const RawMaterialTab = ({
   rawImages,
   onUploadRawFiles,
   onRemoveRawImage,
-  onUpdateRawImageTags,
+  onUpdateRawImageTags: _onUpdateRawImageTags,
   onRawImageClick,
 }: RawMaterialTabProps) => {
   const txtInputRef = useRef<HTMLInputElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
-  const [filterTag, setFilterTag] = useState<string | "all">("all");
   const [hoverPreview, setHoverPreview] = useState<{ url: string; x: number; y: number } | null>(null);
 
   const ready = settingText.trim().length > 0 && rawImages.length > 0;
-
-  const filteredImages = useMemo(() => {
-    if (filterTag === "all") return rawImages;
-    return rawImages.filter((im) => im.tags.includes(filterTag));
-  }, [rawImages, filterTag]);
-
-  const toggleTagOnImage = useCallback(
-    (imageId: string, tag: string) => {
-      const im = rawImages.find((x) => x.id === imageId);
-      if (!im) return;
-      const has = im.tags.includes(tag);
-      const nextTags = has ? im.tags.filter((t) => t !== tag) : [...im.tags, tag];
-      const ensured = nextTags.length === 0 ? ["其他"] : nextTags;
-      void onUpdateRawImageTags(imageId, ensured);
-    },
-    [rawImages, onUpdateRawImageTags]
-  );
 
   const handleTxtFiles = useCallback(
     (files: FileList | null) => {
@@ -177,43 +158,13 @@ const RawMaterialTab = ({
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 mb-3">
-          <button
-            type="button"
-            onClick={() => setFilterTag("all")}
-            className={[
-              "text-[11px] px-2.5 py-1 rounded-full border transition-colors cursor-pointer",
-              filterTag === "all"
-                ? "bg-rose-500 text-white border-rose-500"
-                : "bg-white/60 text-rose-400 border-rose-100 hover:border-rose-200",
-            ].join(" ")}
-          >
-            全部
-          </button>
-          {RAW_IMAGE_TAG_PRESETS.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              onClick={() => setFilterTag(tag)}
-              className={[
-                "text-[11px] px-2.5 py-1 rounded-full border transition-colors cursor-pointer",
-                filterTag === tag
-                  ? "bg-rose-500 text-white border-rose-500"
-                  : "bg-white/60 text-rose-400 border-rose-100 hover:border-rose-200",
-              ].join(" ")}
-            >
-              {tag}
-            </button>
-          ))}
-        </div>
-
-        {filteredImages.length === 0 ? (
+        {rawImages.length === 0 ? (
           <div className="flex-1 min-h-[120px] rounded-xl border border-dashed border-rose-200/70 flex items-center justify-center text-xs text-rose-300/80">
-            {rawImages.length === 0 ? "暂无图片，点击「多图上传」添加" : "当前标签下没有图片，换个标签试试"}
+            暂无图片，点击「多图上传」添加
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {filteredImages.map((im) => (
+            {rawImages.map((im) => (
               <div
                 key={im.id}
                 className="relative group rounded-xl overflow-hidden border border-rose-100/80 bg-rose-50/30 shadow-sm"
@@ -243,24 +194,6 @@ const RawMaterialTab = ({
                 >
                   <i className="ri-close-line" />
                 </button>
-                <div className="p-1.5 flex flex-wrap gap-0.5 border-t border-rose-100/60 bg-white/80">
-                  {RAW_IMAGE_TAG_PRESETS.map((tag) => {
-                    const on = im.tags.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => toggleTagOnImage(im.id, tag)}
-                        className={[
-                          "text-[9px] px-1 py-0.5 rounded cursor-pointer transition-colors",
-                          on ? "bg-pink-400 text-white" : "bg-rose-50 text-rose-300 hover:bg-rose-100",
-                        ].join(" ")}
-                      >
-                        {tag}
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
             ))}
           </div>

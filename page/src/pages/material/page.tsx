@@ -533,6 +533,7 @@ export default function MaterialPage() {
                     subTask={processSubTask}
                     onSubTaskChange={setProcessSubTask}
                     charaName={selected.name}
+                    chara={selected}
                   />
                 ) : (
                   <OfficialContentTab
