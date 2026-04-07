@@ -42,16 +42,17 @@
 
 ```mermaid
 flowchart TD
-    configPage[ConfigState] -->|"点击开始拍摄标准照"| generatingPage[GeneratingState]
-    generatingPage -->|"固定2.5秒后自动跳转"| resultPage[ResultState]
-    resultPage -->|"点击重新拍摄"| configPage
+    configPage[ConfigState] -->|"开始拍摄标准照"| generatingPage[GeneratingState]
+    generatingPage -->|"轮询任务完成"| resultPage[ResultState]
+    resultPage -->|"继续拍摄"| configPage
+    resultPage -->|"重新拍摄"| generatingPage
 ```
 
 说明：
 
-- 配置完成后进入生成态，不依赖真实后端进度
-- 生成态采用固定 2.5 秒等待
-- 结果态可回到配置态进行二次拍摄
+- 配置完成后进入生成态，由后端任务与前端轮询驱动完成
+- 结果态：**继续拍摄** 回到配置页，可修改参考图/类型/规格后提交下一任务；**重新拍摄** 使用当前任务参数重新生成（不回到配置页）
+- 从结果页进入配置后，使用 `sessionStorage` 门闩（`material_photo_continue_config_{characterId}`），避免刷新页面时被仍为 `completed` 的旧任务再次拉回结果页；用户再次「开始拍摄标准照」并成功提交后清除门闩
 
 ---
 
@@ -123,7 +124,9 @@ flowchart TD
   - 未选中时展示引导文案
   - 选中后激活 `保存为正式标准参考图`
   - 保存后展示绿色成功态
-- `重新拍摄`：返回配置阶段
+- 顶部操作：
+  - **继续拍摄**：回到初始配置页（`config`），可配置并提交**下一**任务；写入 `sessionStorage` 门闩，刷新后仍停留在配置页直至再次成功「开始拍摄」
+  - **重新拍摄**：不回到配置页，直接按**当前任务**参数重新提交生成（与「继续拍摄」区分）
 
 ---
 
@@ -156,7 +159,7 @@ flowchart TD
 
 - 能从 `加工任务 -> 拍摄标准照` 进入完整流程
 - 未选择参考图时“开始拍摄标准照”按钮禁用
-- 生成态不显示进度条与步骤标签，2.5 秒后自动跳转结果页
-- 结果图可选择、预览、保存、重新拍摄
+- 生成态不显示进度条与步骤标签，轮询完成后进入结果页
+- 结果图可选择、预览、保存；支持「继续拍摄」（回配置）与「重新拍摄」（同配置再生）
 - 原始资料页不再出现任何标签过滤与标签徽章
 

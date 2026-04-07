@@ -16,6 +16,26 @@ type AspectRatio = "16:9" | "1:1" | "9:16";
 type GenCount = 1 | 2 | 4;
 type PageState = "config" | "generating" | "result";
 
+/** 用户从结果页点「继续拍摄」后写入，避免刷新时仍被 completed 任务拉回结果页 */
+const CONTINUE_CONFIG_KEY = (characterId: string) => `material_photo_continue_config_${characterId}`;
+
+function setContinueConfigFlag(characterId: string, on: boolean) {
+  try {
+    if (on) window.sessionStorage.setItem(CONTINUE_CONFIG_KEY(characterId), "1");
+    else window.sessionStorage.removeItem(CONTINUE_CONFIG_KEY(characterId));
+  } catch {
+    /* private mode / quota */
+  }
+}
+
+function isContinueConfigFlagSet(characterId: string): boolean {
+  try {
+    return window.sessionStorage.getItem(CONTINUE_CONFIG_KEY(characterId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
 function normalizeGenCount(n: number): GenCount {
   if (n === 1 || n === 2 || n === 4) return n;
   return 2;
@@ -152,12 +172,14 @@ const ResultView = ({
   isSaving,
   onSave,
   onRetry,
+  onContinueShooting,
   saveSuccess,
 }: {
   images: string[];
   isSaving: boolean;
   onSave: (url: string) => void;
   onRetry: () => void;
+  onContinueShooting: () => void;
   saveSuccess: boolean;
 }) => {
   const [selected, setSelected] = useState<string | null>(null);
@@ -171,23 +193,36 @@ const ResultView = ({
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-rose-100/40 shrink-0">
-        <div className="flex items-center gap-2">
-          <i className="ri-gallery-line text-rose-400 text-sm" />
+      <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 border-b border-rose-100/40 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <i className="ri-gallery-line text-rose-400 text-sm shrink-0" />
           <span className="text-sm font-bold text-rose-600" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
             拍摄结果 · 选一张最满意的吧！
           </span>
-          <span className="text-xs text-rose-300/60 bg-rose-50 px-2 py-0.5 rounded-full">共 {images.length} 张候选</span>
+          <span className="text-xs text-rose-300/60 bg-rose-50 px-2 py-0.5 rounded-full shrink-0">
+            共 {images.length} 张候选
+          </span>
         </div>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs cursor-pointer transition-all duration-200 whitespace-nowrap hover:bg-rose-50"
-          style={{ color: "#f472b6", fontFamily: "'ZCOOL KuaiLe', cursive" }}
-        >
-          <i className="ri-refresh-line text-xs" />
-          重新拍摄
-        </button>
+        <div className="flex items-center gap-2 shrink-0 ml-auto">
+          <button
+            type="button"
+            onClick={onContinueShooting}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs cursor-pointer transition-all duration-200 whitespace-nowrap border border-rose-200/80 bg-white/90 hover:bg-rose-50/90"
+            style={{ color: "#f472b6", fontFamily: "'ZCOOL KuaiLe', cursive" }}
+          >
+            <i className="ri-settings-3-line text-xs" />
+            继续拍摄
+          </button>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs cursor-pointer transition-all duration-200 whitespace-nowrap hover:bg-rose-50"
+            style={{ color: "#f472b6", fontFamily: "'ZCOOL KuaiLe', cursive" }}
+          >
+            <i className="ri-refresh-line text-xs" />
+            重新拍摄
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto p-5">
@@ -360,8 +395,13 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
         if (status.status === "processing" || status.status === "pending") {
           setPageState("generating");
         } else if (status.status === "completed") {
-          setResultImages(status.result_images || []);
-          setPageState("result");
+          if (isContinueConfigFlagSet(characterId)) {
+            setResultImages([]);
+            setPageState("config");
+          } else {
+            setResultImages(status.result_images || []);
+            setPageState("result");
+          }
         } else if (status.status === "failed") {
           setPageState("config");
           setPollError(status.error_message || "标准照生成失败，请修改参数后重试");
@@ -431,6 +471,7 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
         output_count: genCount,
         selected_raw_image_ids: Array.from(selectedRefIds),
       });
+      setContinueConfigFlag(characterId, false);
       setPageState("generating");
       showToast("标准照任务已提交，正在生成");
     } catch (e) {
@@ -487,6 +528,14 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
     [characterId, onCharacterUpdated, showToast]
   );
 
+  const handleContinueShooting = useCallback(() => {
+    setContinueConfigFlag(characterId, true);
+    setPageState("config");
+    setResultImages([]);
+    setSaveSuccess(false);
+    setPollError(null);
+  }, [characterId]);
+
   if (!hydrated) {
     return (
       <div className="flex flex-col items-center justify-center py-16 px-6 text-rose-400 text-sm gap-2">
@@ -506,6 +555,7 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
         isSaving={savingResult}
         onSave={handleSaveResult}
         onRetry={handleRetry}
+        onContinueShooting={handleContinueShooting}
         saveSuccess={saveSuccess}
       />
     );
