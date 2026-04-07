@@ -279,10 +279,12 @@ class TestMaterialCharacterService:
         assert status is not None
         assert status["status"] == "completed"
         assert len(status["result_images"]) == 1
+        result_url = status["result_images"][0]
+        result_filename = result_url.rstrip("/").rsplit("/", 1)[-1].split("?")[0]
 
         updated_char = material_svc.select_standard_photo_result(
             char.id,
-            selected_result_filename="result_0.png",
+            selected_result_filename=result_filename,
             selected_result_index=None,
         )
         detail = material_svc.character_to_detail_dict(updated_char)
@@ -323,9 +325,11 @@ class TestMaterialCharacterService:
         from app.services.material_service import material_file_service
 
         assert material_svc.get_standard_photo_task_status(char.id)["status"] == "completed"
+        st = material_svc.get_standard_photo_task_status(char.id)
+        result_filename = st["result_images"][0].rstrip("/").rsplit("/", 1)[-1].split("?")[0]
         material_svc.select_standard_photo_result(
             char.id,
-            selected_result_filename="result_0.png",
+            selected_result_filename=result_filename,
             selected_result_index=None,
         )
         slot_path = material_file_service.get_standard_slot_image_path(char.id, "full_front")

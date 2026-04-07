@@ -2,6 +2,7 @@ import os
 import logging
 import uuid
 import shutil
+from datetime import datetime
 from typing import Optional, Tuple, List
 
 from fastapi import UploadFile
@@ -213,8 +214,10 @@ def ensure_standard_photo_task_dirs(character_id: str, task_id: str) -> str:
 def save_standard_photo_result_bytes(
     character_id: str, task_id: str, image_data: bytes, index: int
 ) -> str:
+    """写入候选图文件名。每次生成使用唯一文件名，避免 API 路径长期为 result_0.png 导致浏览器展示旧缓存。"""
     results_dir = ensure_standard_photo_task_dirs(character_id, task_id)
-    filename = f"result_{index}.png"
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    filename = f"result_{index}_{stamp}.png"
     target_path = os.path.join(results_dir, filename)
     with open(target_path, "wb") as f:
         f.write(image_data)

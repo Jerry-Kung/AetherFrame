@@ -437,7 +437,12 @@ async def get_standard_photo_result_image(
         ".webp": "image/webp",
     }
     media_type = media_type_map.get(ext, "application/octet-stream")
-    return FileResponse(path=path, media_type=media_type, filename=filename)
+    return FileResponse(
+        path=path,
+        media_type=media_type,
+        filename=filename,
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 @router.get("/characters/{character_id}/standard-photo/slot-images/{shot_type}")
