@@ -41,8 +41,11 @@ export const STATUS_STYLE: Record<
 export interface CharaRawImage {
   id: string;
   url: string;
+  type: RawImageType;
   tags: string[];
 }
+
+export type RawImageType = "official" | "fanart";
 
 export interface CharaBio {
   displayName: string;
@@ -61,7 +64,7 @@ export interface CharaProfile {
   updatedAt: string;
   settingText: string;
   rawImages: CharaRawImage[];
-  officialPhotos: [string | null, string | null, string | null];
+  officialPhotos: [string | null, string | null, string | null, string | null, string | null];
   bio: CharaBio;
 }
 
@@ -106,7 +109,7 @@ export interface ApiCharacterDetail {
   status: string;
   updated_at: string;
   setting_text: string;
-  raw_images: { id: string; url: string; tags: string[] }[];
+  raw_images: { id: string; url: string; type: RawImageType; tags: string[] }[];
   official_photos: (string | null)[];
   bio: Record<string, unknown>;
 }
@@ -140,10 +143,12 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
   };
 
   const photos = d.official_photos || [];
-  const officialPhotos: [string | null, string | null, string | null] = [
+  const officialPhotos: [string | null, string | null, string | null, string | null, string | null] = [
     (photos[0] as string | null | undefined) ?? null,
     (photos[1] as string | null | undefined) ?? null,
     (photos[2] as string | null | undefined) ?? null,
+    (photos[3] as string | null | undefined) ?? null,
+    (photos[4] as string | null | undefined) ?? null,
   ];
 
   const avatarUrl =
@@ -159,6 +164,7 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
     rawImages: (d.raw_images || []).map((r) => ({
       id: r.id,
       url: r.url,
+      type: r.type,
       tags: Array.isArray(r.tags) ? r.tags : [],
     })),
     officialPhotos,
@@ -179,7 +185,7 @@ export function summaryToListProfile(s: ApiCharacterSummary): CharaProfile {
       typeof s.updated_at === "string" ? s.updated_at : new Date(s.updated_at).toISOString(),
     settingText: "",
     rawImages: [],
-    officialPhotos: [null, null, null],
+    officialPhotos: [null, null, null, null, null],
     bio: emptyBio(s.display_name),
   };
 }

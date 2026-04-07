@@ -4,6 +4,7 @@
 import logging
 import os
 from io import BytesIO
+from unittest.mock import patch
 
 import pytest
 from starlette.datastructures import UploadFile
@@ -208,3 +209,82 @@ class TestMaterialCharacterService:
         assert material_svc.update_raw_image_tags(char.id, iid, ["表情", "立绘"]) is True
         detail = material_svc.character_to_detail_dict(material_svc.get_character(char.id))
         assert detail["raw_images"][0]["tags"] == ["表情", "立绘"]
+
+    def test_character_detail_official_photos_compat_to_five_slots(self, material_svc):
+        char = material_svc.create_character("Compat")
+        material_svc.repo.update(char.id, {"official_photos_json": "[\"a\",\"b\",\"c\"]"})
+        detail = material_svc.character_to_detail_dict(material_svc.get_character(char.id))
+        assert len(detail["official_photos"]) == 5
+        assert detail["official_photos"][:3] == ["a", "b", "c"]
+        assert detail["official_photos"][3] is None
+        assert detail["official_photos"][4] is None
+
+    def test_standard_photo_task_start_and_select(self, material_svc, sample_png):
+        char = material_svc.create_character("Std")
+        files = [
+            UploadFile(filename="official.png", file=BytesIO(sample_png)),
+            UploadFile(filename="fanart.png", file=BytesIO(sample_png)),
+        ]
+        uploaded, _ = material_svc.upload_raw_images(
+            char.id, files, [["立绘"], ["立绘"]], ["official", "fanart"]
+        )
+        selected_ids = [x["id"] for x in uploaded]
+
+        with patch(
+            "app.services.material_service.standard_photo_generation_service.generate_standard_photo_images",
+            return_value=([], None, None),
+        ):
+            material_svc.start_standard_photo_task(
+                character_id=char.id,
+                shot_type="full_front",
+                aspect_ratio="1:1",
+                output_count=2,
+                selected_raw_image_ids=selected_ids,
+                background_tasks=None,
+            )
+        status = material_svc.get_standard_photo_task_status(char.id)
+        assert status is not None
+        assert status["status"] == "failed"
+
+    def test_standard_photo_execute_and_save(self, material_svc, sample_png):
+        char = material_svc.create_character("Std2")
+        uploaded, _ = material_svc.upload_raw_images(
+            char.id,
+            [UploadFile(filename="official.png", file=BytesIO(sample_png))],
+            [["立绘"]],
+            ["official"],
+        )
+        selected_ids = [uploaded[0]["id"]]
+
+        temp_dir = os.path.join(os.getenv("DATA_DIR", "./data"), "tmp_test_std")
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_file = os.path.join(temp_dir, "mock.png")
+        with open(temp_file, "wb") as f:
+            f.write(sample_png)
+
+        with patch(
+            "app.services.material_service.standard_photo_generation_service.generate_standard_photo_images",
+            return_value=([temp_file], None, temp_dir),
+        ):
+            material_svc.start_standard_photo_task(
+                character_id=char.id,
+                shot_type="face_close",
+                aspect_ratio="9:16",
+                output_count=1,
+                selected_raw_image_ids=selected_ids,
+                background_tasks=None,
+            )
+
+        status = material_svc.get_standard_photo_task_status(char.id)
+        assert status is not None
+        assert status["status"] == "completed"
+        assert len(status["result_images"]) == 1
+
+        updated_char = material_svc.select_standard_photo_result(
+            char.id,
+            selected_result_filename="result_0.png",
+            selected_result_index=None,
+        )
+        detail = material_svc.character_to_detail_dict(updated_char)
+        assert len(detail["official_photos"]) == 5
+        assert detail["official_photos"][4] is not None

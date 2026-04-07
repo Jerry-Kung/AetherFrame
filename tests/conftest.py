@@ -54,7 +54,11 @@ def db_session(temp_data_dir):
 
     from app.models import database
     from app.models.repair import RepairTask, PromptTemplate
-    from app.models.material import MaterialCharacterRawImage, MaterialCharacter
+    from app.models.material import (
+        MaterialCharacterRawImage,
+        MaterialCharacter,
+        MaterialStandardPhotoTask,
+    )
 
     database.init_db()
     db = database.SessionLocal()
@@ -63,6 +67,7 @@ def db_session(temp_data_dir):
 
     try:
         db.query(MaterialCharacterRawImage).delete()
+        db.query(MaterialStandardPhotoTask).delete()
         db.query(MaterialCharacter).delete()
         db.query(RepairTask).delete()
         db.query(PromptTemplate).delete()

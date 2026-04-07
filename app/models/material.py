@@ -1,5 +1,5 @@
 import logging
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -19,7 +19,7 @@ class MaterialCharacter(Base):
     status = Column(String(20), nullable=False, index=True, default="idle")
     setting_text = Column(Text, nullable=False, default="")
     avatar_filename = Column(String(255), nullable=True)
-    official_photos_json = Column(Text, nullable=False, default="[null,null,null]")
+    official_photos_json = Column(Text, nullable=False, default="[null,null,null,null,null]")
     bio_json = Column(Text, nullable=False, default="{}")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -47,6 +47,7 @@ class MaterialCharacterRawImage(Base):
         index=True,
     )
     stored_filename = Column(String(255), nullable=False)
+    type = Column(String(20), nullable=False, index=True, default="official")
     tags_json = Column(Text, nullable=False, default="[]")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -54,3 +55,35 @@ class MaterialCharacterRawImage(Base):
 
     def __repr__(self):
         return f"<MaterialCharacterRawImage(id={self.id!r}, character_id={self.character_id!r})>"
+
+
+class MaterialStandardPhotoTask(Base):
+    """素材加工 — 标准照任务（每角色当前任务）"""
+
+    __tablename__ = "material_standard_photo_tasks"
+
+    id = Column(String, primary_key=True, index=True)
+    character_id = Column(
+        String,
+        ForeignKey("material_characters.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        unique=True,
+    )
+    shot_type = Column(String(20), nullable=False)
+    aspect_ratio = Column(String(10), nullable=False, default="9:16")
+    output_count = Column(Integer, nullable=False, default=2)
+    status = Column(String(20), nullable=False, index=True, default="pending")
+    error_message = Column(Text, nullable=True)
+    selected_raw_image_ids_json = Column(Text, nullable=False, default="[]")
+    result_images_json = Column(Text, nullable=False, default="[]")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    character = relationship("MaterialCharacter")
+
+    def __repr__(self):
+        return (
+            f"<MaterialStandardPhotoTask(id={self.id!r}, character_id={self.character_id!r}, "
+            f"status={self.status!r})>"
+        )

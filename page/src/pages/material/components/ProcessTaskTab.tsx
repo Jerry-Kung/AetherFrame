@@ -1,4 +1,5 @@
 import type { CharaProfile } from "@/types/material";
+import type { ApiCharacterDetail } from "@/types/material";
 import PhotoTaskPage from "./PhotoTaskPage";
 
 export type ProcessSubTaskId = "standard" | "profile";
@@ -8,6 +9,8 @@ interface ProcessTaskTabProps {
   onSubTaskChange: (id: ProcessSubTaskId) => void;
   charaName: string;
   chara?: CharaProfile;
+  onCharacterUpdated: (detail: ApiCharacterDetail) => void;
+  showToast: (msg: string) => void;
 }
 
 const SUB_TASKS: { id: ProcessSubTaskId; label: string; icon: string; desc: string }[] = [
@@ -25,7 +28,14 @@ const SUB_TASKS: { id: ProcessSubTaskId; label: string; icon: string; desc: stri
   },
 ];
 
-const ProcessTaskTab = ({ subTask, onSubTaskChange, charaName, chara }: ProcessTaskTabProps) => {
+const ProcessTaskTab = ({
+  subTask,
+  onSubTaskChange,
+  charaName,
+  chara,
+  onCharacterUpdated,
+  showToast,
+}: ProcessTaskTabProps) => {
   const active = SUB_TASKS.find((s) => s.id === subTask)!;
 
   return (
@@ -55,7 +65,12 @@ const ProcessTaskTab = ({ subTask, onSubTaskChange, charaName, chara }: ProcessT
 
       <div className="flex-1 min-h-0 mt-4 rounded-2xl border border-dashed border-rose-200/80 bg-gradient-to-br from-white/60 to-pink-50/30 overflow-hidden flex flex-col">
         {subTask === "standard" && chara ? (
-          <PhotoTaskPage rawImages={chara.rawImages} />
+          <PhotoTaskPage
+            characterId={chara.id}
+            rawImages={chara.rawImages}
+            onCharacterUpdated={onCharacterUpdated}
+            showToast={showToast}
+          />
         ) : (
           <div className="p-6 flex flex-col items-center justify-center flex-1 text-center min-h-[200px]">
             <div

@@ -185,6 +185,7 @@ export async function putSettingFile(characterId: string, file: File): Promise<A
 export interface RawImageUploaded {
   id: string;
   url: string;
+  type: string;
   tags: string[];
 }
 
@@ -198,13 +199,17 @@ export interface RawImagesUploadResult {
 export async function postRawImages(
   characterId: string,
   files: File[],
-  tagsPerFile?: string[][]
+  tagsPerFile?: string[][],
+  typesPerFile?: string[]
 ): Promise<RawImagesUploadResult> {
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/raw-images`;
   const form = new FormData();
   files.forEach((f) => form.append("files", f));
   if (tagsPerFile && tagsPerFile.length > 0) {
     form.append("tags", JSON.stringify(tagsPerFile));
+  }
+  if (typesPerFile && typesPerFile.length > 0) {
+    form.append("types", JSON.stringify(typesPerFile));
   }
   try {
     const response = await fetchWithTimeout(url, { method: "POST", body: form });
@@ -238,6 +243,106 @@ export async function patchRawImageTags(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tags }),
+    });
+    const data = await parseJson<ApiCharacterDetail>(response);
+    throwIfError(response, data);
+    return data.data as ApiCharacterDetail;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export type StandardShotType =
+  | "full_front"
+  | "full_side"
+  | "half_front"
+  | "half_side"
+  | "face_close";
+export type StandardAspectRatio = "16:9" | "1:1" | "9:16";
+
+export interface StandardPhotoStartResult {
+  task_id: string;
+  status: string;
+  shot_type: StandardShotType;
+  aspect_ratio: StandardAspectRatio;
+  output_count: number;
+}
+
+export interface StandardPhotoStatusResult {
+  task_id: string;
+  character_id: string;
+  shot_type: StandardShotType;
+  aspect_ratio: StandardAspectRatio;
+  output_count: number;
+  status: "pending" | "processing" | "completed" | "failed";
+  error_message: string | null;
+  selected_raw_image_ids: string[];
+  result_images: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export async function startStandardPhotoTask(
+  characterId: string,
+  body: {
+    shot_type: StandardShotType;
+    aspect_ratio: StandardAspectRatio;
+    output_count: number;
+    selected_raw_image_ids: string[];
+  }
+): Promise<StandardPhotoStartResult> {
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/standard-photo/start`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      timeout: 60000,
+    });
+    const data = await parseJson<StandardPhotoStartResult>(response);
+    throwIfError(response, data);
+    return data.data as StandardPhotoStartResult;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function retryStandardPhotoTask(characterId: string): Promise<StandardPhotoStartResult> {
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/standard-photo/retry`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "POST", timeout: 60000 });
+    const data = await parseJson<StandardPhotoStartResult>(response);
+    throwIfError(response, data);
+    return data.data as StandardPhotoStartResult;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function getStandardPhotoStatus(
+  characterId: string
+): Promise<StandardPhotoStatusResult> {
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/standard-photo/status`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<StandardPhotoStatusResult>(response);
+    throwIfError(response, data);
+    return data.data as StandardPhotoStatusResult;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function selectStandardPhotoResult(
+  characterId: string,
+  body: { selected_result_filename?: string; selected_result_index?: number }
+): Promise<ApiCharacterDetail> {
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/standard-photo/select`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     });
     const data = await parseJson<ApiCharacterDetail>(response);
     throwIfError(response, data);

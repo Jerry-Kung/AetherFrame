@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { CharaProfile } from "@/types/material";
+import type { CharaProfile, RawImageType } from "@/types/material";
 import { DEFAULT_CHARA_AVATAR_PLACEHOLDER, toCharaProfile, summaryToListProfile } from "@/types/material";
 import * as materialApi from "@/services/materialApi";
 import { ApiError } from "@/services/api";
@@ -273,11 +273,14 @@ export default function MaterialPage() {
   );
 
   const handleUploadRawFiles = useCallback(
-    async (files: File[]) => {
+    async (files: File[], type: RawImageType) => {
       if (!selected || files.length === 0) return;
-      const tags = files.map(() => ["其他"] as string[]);
+      const tags = files.map(() =>
+        type === "official" ? (["官方形象"] as string[]) : (["同人立绘"] as string[])
+      );
+      const types = files.map(() => type);
       try {
-        await materialApi.postRawImages(selected.id, files, tags);
+        await materialApi.postRawImages(selected.id, files, tags, types);
         const d = await materialApi.getCharacter(selected.id);
         mergeChara(toCharaProfile(d));
         showToast(`已上传 ${files.length} 张参考图`);
@@ -534,6 +537,8 @@ export default function MaterialPage() {
                     onSubTaskChange={setProcessSubTask}
                     charaName={selected.name}
                     chara={selected}
+                    onCharacterUpdated={(detail) => mergeChara(toCharaProfile(detail))}
+                    showToast={showToast}
                   />
                 ) : (
                   <OfficialContentTab

@@ -1,19 +1,38 @@
+import asyncio
 import json
 import logging
 import os
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
+from fastapi import BackgroundTasks
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from app.models.material import MaterialCharacter
+from app.prompts.material.standard_photo import (
+    face_close_prompt,
+    full_front_prompt,
+    full_side_prompt,
+    half_front_prompt,
+    half_side_prompt,
+)
 from app.repositories.material_repository import MaterialCharacterRepository
 from app.services.material_service import material_file_service
 from app.services.file_service import FileDeleteError, FileSaveError, FileValidationError
+from app.services.material_service import standard_photo_generation_service
 
 logger = logging.getLogger(__name__)
 
 ALLOWED_SETTING_EXTENSIONS = {".txt", ".md"}
+RAW_IMAGE_TYPES = {"official", "fanart"}
+SHOT_TYPE_TO_PROMPT = {
+    "full_front": full_front_prompt,
+    "full_side": full_side_prompt,
+    "half_front": half_front_prompt,
+    "half_side": half_side_prompt,
+    "face_close": face_close_prompt,
+}
 
 
 class MaterialService:
@@ -25,6 +44,18 @@ class MaterialService:
 
     def raw_image_url(self, character_id: str, stored_filename: str) -> str:
         return f"/api/material/characters/{character_id}/images/raw/{stored_filename}"
+
+    def standard_photo_result_image_url(self, character_id: str, filename: str) -> str:
+        return f"/api/material/characters/{character_id}/standard-photo/result-images/{filename}"
+
+    @staticmethod
+    def _normalize_official_photos(data: Any) -> List[Optional[str]]:
+        photos = data if isinstance(data, list) else []
+        normalized: List[Optional[str]] = []
+        for i in range(5):
+            value = photos[i] if i < len(photos) else None
+            normalized.append(value if isinstance(value, str) and value.strip() else None)
+        return normalized
 
     def _maybe_promote_draft(self, char: MaterialCharacter) -> None:
         if char.status in ("processing", "done"):
@@ -80,11 +111,12 @@ class MaterialService:
         char = self.repo.get_by_id(character_id)
         if not char:
             raise ValueError("角色不存在")
-        stored = self.repo.delete_raw_image(character_id, image_id)
-        if stored is None:
+        row = self.repo.get_raw_image(character_id, image_id)
+        if row is None:
             return False
-        material_file_service.delete_raw_image_file(character_id, stored)
-        if char.avatar_filename == stored:
+        stored = self.repo.delete_raw_image(character_id, image_id)
+        material_file_service.delete_raw_image_file(character_id, stored, row.type)
+        if char.avatar_filename == row.stored_filename:
             self.repo.update(character_id, {"avatar_filename": None})
         char = self.repo.get_by_id(character_id)
         self._maybe_promote_draft(char)
@@ -176,6 +208,7 @@ class MaterialService:
         character_id: str,
         files: List[UploadFile],
         tags_per_file: Optional[List[List[str]]] = None,
+        types_per_file: Optional[List[str]] = None,
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
         char = self.repo.get_by_id(character_id)
         if not char:
@@ -186,6 +219,8 @@ class MaterialService:
 
         if tags_per_file is None:
             tags_per_file = []
+        if types_per_file is None:
+            types_per_file = []
         for i, file in enumerate(files):
             tags = tags_per_file[i] if i < len(tags_per_file) else ["其他"]
             if not isinstance(tags, list):
@@ -194,15 +229,20 @@ class MaterialService:
             if not tags:
                 tags = ["其他"]
 
+            image_type = types_per_file[i] if i < len(types_per_file) else "official"
+            if image_type not in RAW_IMAGE_TYPES:
+                image_type = "official"
+
             image_id = material_file_service.new_image_id()
             try:
-                stored = material_file_service.save_raw_image(character_id, image_id, file)
-                self.repo.add_raw_image(character_id, image_id, stored, tags)
+                stored = material_file_service.save_raw_image(character_id, image_id, file, image_type)
+                self.repo.add_raw_image(character_id, image_id, stored, image_type, tags)
                 uploaded.append(
                     {
                         "id": image_id,
                         "filename": stored,
                         "url": self.raw_image_url(character_id, stored),
+                        "type": image_type,
                         "tags": tags,
                     }
                 )
@@ -232,7 +272,7 @@ class MaterialService:
         row = self.repo.get_raw_image_by_filename(character_id, filename)
         if not row:
             return None
-        return material_file_service.get_raw_image_path(character_id, filename)
+        return material_file_service.get_raw_image_path(character_id, filename, row.type)
 
     def character_to_detail_dict(self, char: MaterialCharacter) -> Dict[str, Any]:
         from app.models.material import MaterialCharacterRawImage
@@ -255,13 +295,14 @@ class MaterialService:
                 {
                     "id": r.id,
                     "url": self.raw_image_url(char.id, r.stored_filename),
+                    "type": r.type if r.type in RAW_IMAGE_TYPES else "official",
                     "tags": tags,
                 }
             )
         try:
             official_photos = json.loads(char.official_photos_json or "[null,null,null]")
         except json.JSONDecodeError:
-            official_photos = [None, None, None]
+            official_photos = []
         try:
             bio = json.loads(char.bio_json or "{}")
             if not isinstance(bio, dict):
@@ -282,6 +323,222 @@ class MaterialService:
             "updated_at": char.updated_at,
             "setting_text": char.setting_text or "",
             "raw_images": raw_images,
-            "official_photos": official_photos,
+            "official_photos": self._normalize_official_photos(official_photos),
             "bio": bio,
         }
+
+    def start_standard_photo_task(
+        self,
+        character_id: str,
+        shot_type: str,
+        aspect_ratio: str,
+        output_count: int,
+        selected_raw_image_ids: List[str],
+        background_tasks: Optional[BackgroundTasks] = None,
+    ) -> Dict[str, Any]:
+        char = self.repo.get_by_id(character_id)
+        if not char:
+            raise ValueError("角色不存在")
+        if shot_type not in SHOT_TYPE_TO_PROMPT:
+            raise ValueError("不支持的标准照类型")
+        if output_count <= 0:
+            raise ValueError("输出数量必须大于 0")
+
+        selected_rows = []
+        for image_id in selected_raw_image_ids:
+            row = self.repo.get_raw_image(character_id, image_id)
+            if row:
+                selected_rows.append(row)
+        if not selected_rows:
+            raise ValueError("请至少选择一张有效参考图")
+
+        task = self.repo.upsert_standard_photo_task(
+            character_id=character_id,
+            shot_type=shot_type,
+            aspect_ratio=aspect_ratio,
+            output_count=output_count,
+            selected_raw_image_ids=selected_raw_image_ids,
+            status="processing",
+            error_message=None,
+            result_images=[],
+        )
+        material_file_service.clear_standard_photo_task_results(character_id, task.id)
+        if background_tasks:
+            background_tasks.add_task(
+                self._run_standard_photo_task,
+                character_id,
+                task.id,
+            )
+        else:
+            self._run_standard_photo_task_sync(character_id, task.id)
+
+        return {
+            "task_id": task.id,
+            "status": task.status,
+            "shot_type": task.shot_type,
+            "aspect_ratio": task.aspect_ratio,
+            "output_count": task.output_count,
+        }
+
+    async def _run_standard_photo_task(self, character_id: str, task_id: str) -> None:
+        await asyncio.to_thread(self._run_standard_photo_task_sync, character_id, task_id)
+
+    def _run_standard_photo_task_sync(self, character_id: str, task_id: str) -> None:
+        bind = self.db.get_bind()
+        db = Session(bind=bind, autocommit=False, autoflush=False)
+        try:
+            repo = MaterialCharacterRepository(db)
+            task = repo.update_standard_photo_task(task_id, {})
+            if not task:
+                return
+            rows = []
+            selected_ids = json.loads(task.selected_raw_image_ids_json or "[]")
+            if not isinstance(selected_ids, list):
+                selected_ids = []
+            for image_id in selected_ids:
+                row = repo.get_raw_image(character_id, str(image_id))
+                if row:
+                    rows.append(row)
+            if not rows:
+                repo.update_standard_photo_task(
+                    task_id, {"status": "failed", "error_message": "未找到可用参考图"}
+                )
+                return
+
+            official_paths: List[str] = []
+            fanart_paths: List[str] = []
+            for row in rows:
+                image_path = material_file_service.get_raw_image_path(
+                    character_id, row.stored_filename, row.type
+                )
+                if not image_path:
+                    continue
+                if row.type == "fanart":
+                    fanart_paths.append(image_path)
+                else:
+                    official_paths.append(image_path)
+            if not official_paths and not fanart_paths:
+                repo.update_standard_photo_task(
+                    task_id, {"status": "failed", "error_message": "所选参考图文件不存在"}
+                )
+                return
+
+            content = standard_photo_generation_service.build_standard_photo_content(
+                task_prompt=SHOT_TYPE_TO_PROMPT[task.shot_type],
+                official_image_paths=official_paths,
+                fanart_image_paths=fanart_paths,
+            )
+            temp_paths: List[str] = []
+            temp_dir: Optional[str] = None
+            try:
+                temp_paths, err, temp_dir = standard_photo_generation_service.generate_standard_photo_images(
+                    task_id=task.id,
+                    content=content,
+                    output_count=task.output_count,
+                    aspect_ratio=task.aspect_ratio,
+                )
+                if err:
+                    repo.update_standard_photo_task(task_id, {"status": "failed", "error_message": err})
+                    return
+                if not temp_paths:
+                    repo.update_standard_photo_task(
+                        task_id, {"status": "failed", "error_message": "没有生成任何候选图"}
+                    )
+                    return
+                result_files: List[str] = []
+                for i, temp_path in enumerate(temp_paths):
+                    with open(temp_path, "rb") as f:
+                        image_data = f.read()
+                    saved_name = material_file_service.save_standard_photo_result_bytes(
+                        character_id=character_id, task_id=task.id, image_data=image_data, index=i
+                    )
+                    result_files.append(saved_name)
+                if not result_files:
+                    repo.update_standard_photo_task(
+                        task_id, {"status": "failed", "error_message": "候选图保存失败"}
+                    )
+                    return
+                result_urls = [
+                    f"/api/material/characters/{character_id}/standard-photo/result-images/{name}"
+                    for name in result_files
+                ]
+                repo.update_standard_photo_task(
+                    task_id,
+                    {
+                        "status": "completed",
+                        "error_message": None,
+                        "result_images_json": json.dumps(result_urls, ensure_ascii=False),
+                    },
+                )
+            except Exception as e:
+                logger.error(f"标准照任务执行失败: {e}", exc_info=True)
+                repo.update_standard_photo_task(
+                    task_id,
+                    {"status": "failed", "error_message": f"执行任务异常: {e}"},
+                )
+            finally:
+                standard_photo_generation_service.cleanup_temp_images(temp_paths, temp_dir)
+        finally:
+            db.close()
+
+    def get_standard_photo_task_status(self, character_id: str) -> Optional[Dict[str, Any]]:
+        task = self.repo.get_standard_photo_task_by_character_id(character_id)
+        if not task:
+            return None
+        try:
+            selected_raw_image_ids = json.loads(task.selected_raw_image_ids_json or "[]")
+            if not isinstance(selected_raw_image_ids, list):
+                selected_raw_image_ids = []
+        except json.JSONDecodeError:
+            selected_raw_image_ids = []
+        try:
+            result_images = json.loads(task.result_images_json or "[]")
+            if not isinstance(result_images, list):
+                result_images = []
+        except json.JSONDecodeError:
+            result_images = []
+        return {
+            "task_id": task.id,
+            "character_id": task.character_id,
+            "shot_type": task.shot_type,
+            "aspect_ratio": task.aspect_ratio,
+            "output_count": task.output_count,
+            "status": task.status,
+            "error_message": task.error_message,
+            "selected_raw_image_ids": selected_raw_image_ids,
+            "result_images": result_images,
+            "created_at": task.created_at,
+            "updated_at": task.updated_at,
+        }
+
+    def get_standard_photo_result_image_path(self, character_id: str, filename: str) -> Optional[str]:
+        task = self.repo.get_standard_photo_task_by_character_id(character_id)
+        if not task:
+            return None
+        return material_file_service.get_standard_photo_result_image_path(character_id, task.id, filename)
+
+    def select_standard_photo_result(
+        self, character_id: str, selected_result_filename: Optional[str], selected_result_index: Optional[int]
+    ) -> MaterialCharacter:
+        char = self.repo.get_by_id(character_id)
+        if not char:
+            raise ValueError("角色不存在")
+        task = self.repo.get_standard_photo_task_by_character_id(character_id)
+        if not task:
+            raise ValueError("标准照任务不存在")
+        if task.status != "completed":
+            raise ValueError("标准照任务尚未完成")
+        file_name: Optional[str] = selected_result_filename
+        if not file_name and selected_result_index is not None:
+            file_name = f"result_{selected_result_index}.png"
+        if not file_name:
+            raise ValueError("请选择要保存的结果图")
+        path = material_file_service.get_standard_photo_result_image_path(character_id, task.id, file_name)
+        if not path:
+            raise ValueError("所选结果图不存在")
+
+        url = self.standard_photo_result_image_url(character_id, file_name)
+        updated = self.repo.save_official_photo_by_shot_type(character_id, task.shot_type, url)
+        if not updated:
+            raise ValueError("角色不存在")
+        return updated

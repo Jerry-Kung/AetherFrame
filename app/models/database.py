@@ -118,17 +118,58 @@ def migrate_prompt_templates_add_tags() -> None:
         raise
 
 
+def migrate_material_raw_images_add_type() -> None:
+    """
+    轻量迁移：为 material_character_raw_images 表补充 type 列。
+    历史数据默认回填 official。
+    """
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_character_raw_images'"
+                )
+            ).fetchone()
+            if row is None:
+                return
+            cols = conn.execute(text("PRAGMA table_info(material_character_raw_images)")).fetchall()
+            names = {c[1] for c in cols}
+            if "type" not in names:
+                conn.execute(
+                    text(
+                        "ALTER TABLE material_character_raw_images ADD COLUMN type VARCHAR(20) NOT NULL DEFAULT 'official'"
+                    )
+                )
+            conn.execute(
+                text(
+                    "UPDATE material_character_raw_images SET type='official' "
+                    "WHERE type IS NULL OR TRIM(type)=''"
+                )
+            )
+        logger.info("已迁移: material_character_raw_images 增加 type 列并回填历史数据")
+    except Exception as e:
+        logger.error(f"迁移 material_character_raw_images.type 失败: {e}", exc_info=True)
+        raise
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
     try:
         # 导入所有模型，确保它们被注册
         from app.models.repair import RepairTask, PromptTemplate
-        from app.models.material import MaterialCharacter, MaterialCharacterRawImage
+        from app.models.material import (
+            MaterialCharacter,
+            MaterialCharacterRawImage,
+            MaterialStandardPhotoTask,
+        )
 
         Base.metadata.create_all(bind=engine)
         migrate_prompt_templates_add_description()
         migrate_prompt_templates_add_tags()
+        migrate_material_raw_images_add_type()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:

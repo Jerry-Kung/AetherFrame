@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Literal
 
 from pydantic import BaseModel, Field, ConfigDict, model_validator
+
+RawImageType = Literal["official", "fanart"]
+ShotType = Literal["full_front", "full_side", "half_front", "half_side", "face_close"]
 
 
 class CharacterCreate(BaseModel):
@@ -36,6 +39,7 @@ class RawImageTagsUpdate(BaseModel):
 class RawImageItem(BaseModel):
     id: str
     url: str
+    type: RawImageType = Field(..., description="official 或 fanart")
     tags: List[str]
 
 
@@ -73,7 +77,10 @@ class CharacterDetail(BaseModel):
     updated_at: datetime
     setting_text: str
     raw_images: List[RawImageItem]
-    official_photos: List[Optional[str]]
+    official_photos: List[Optional[str]] = Field(
+        default_factory=lambda: [None, None, None, None, None],
+        description="标准照结果槽位，顺序: full_front/full_side/half_front/half_side/face_close",
+    )
     bio: dict
 
     model_config = ConfigDict(from_attributes=True)
@@ -98,3 +105,43 @@ class ApiResponse(BaseModel):
             ]
         }
     )
+
+
+class StandardPhotoStartRequest(BaseModel):
+    shot_type: ShotType
+    aspect_ratio: Literal["16:9", "1:1", "9:16"] = "9:16"
+    output_count: int = Field(2, ge=1, le=8)
+    selected_raw_image_ids: List[str] = Field(default_factory=list, min_length=1)
+
+
+class StandardPhotoStartResponse(BaseModel):
+    task_id: str
+    status: str
+    shot_type: ShotType
+    aspect_ratio: str
+    output_count: int
+
+
+class StandardPhotoStatusResponse(BaseModel):
+    task_id: str
+    character_id: str
+    shot_type: ShotType
+    aspect_ratio: str
+    output_count: int
+    status: str
+    error_message: Optional[str] = None
+    selected_raw_image_ids: List[str] = Field(default_factory=list)
+    result_images: List[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
+class StandardPhotoSelectRequest(BaseModel):
+    selected_result_filename: Optional[str] = None
+    selected_result_index: Optional[int] = Field(None, ge=0)
+
+    @model_validator(mode="after")
+    def check_one_selected(self):
+        if self.selected_result_filename is None and self.selected_result_index is None:
+            raise ValueError("selected_result_filename 或 selected_result_index 至少提供一个")
+        return self

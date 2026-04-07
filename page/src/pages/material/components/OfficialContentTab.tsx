@@ -1,12 +1,18 @@
 import type { CharaBio } from "@/types/material";
 
 interface OfficialContentTabProps {
-  officialPhotos: [string | null, string | null, string | null];
+  officialPhotos: [string | null, string | null, string | null, string | null, string | null];
   bio: CharaBio;
   onPhotoClick: (slotIndex: number) => void;
 }
 
-const PHOTO_LABELS = ["标准参考 1", "标准参考 2", "标准参考 3"] as const;
+const PHOTO_LABELS = [
+  "全身正面",
+  "全身侧面",
+  "半身正面",
+  "半身侧面",
+  "脸部特写",
+] as const;
 
 const BIO_FIELDS: { key: keyof CharaBio; label: string }[] = [
   { key: "displayName", label: "姓名" },
@@ -28,7 +34,7 @@ const OfficialContentTab = ({ officialPhotos, bio, onPhotoClick }: OfficialConte
           <i className="ri-vip-crown-line text-rose-400" />
           标准参考照
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {officialPhotos.map((url, i) => (
             <button
               key={i}

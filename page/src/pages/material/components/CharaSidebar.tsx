@@ -75,7 +75,7 @@ const CharaSidebar = ({ chara, onEdit, onStartProcess, onExport }: CharaSidebarP
           <div className="flex items-center justify-between rounded-lg bg-white/50 px-3 py-2 border border-rose-100/60">
             <span className="text-rose-400/80">标准照</span>
             <span className="font-semibold text-rose-700 tabular-nums">
-              {chara.officialPhotos.filter(Boolean).length} / 3
+              {chara.officialPhotos.filter(Boolean).length} / 5
             </span>
           </div>
         </div>

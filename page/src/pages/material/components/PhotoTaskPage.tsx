@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CharaRawImage } from "@/types/material";
+import type { CharaRawImage, RawImageType } from "@/types/material";
+import type { ApiCharacterDetail } from "@/types/material";
+import { ApiError } from "@/services/api";
+import * as materialApi from "@/services/materialApi";
 
 interface PhotoTaskPageProps {
+  characterId: string;
   rawImages: CharaRawImage[];
+  onCharacterUpdated: (detail: ApiCharacterDetail) => void;
+  showToast: (msg: string) => void;
 }
 
 type ShotType = "full_front" | "full_side" | "half_front" | "half_side" | "face_close";
@@ -30,12 +36,40 @@ const GEN_COUNTS: { value: GenCount; label: string }[] = [
   { value: 4, label: "4 张" },
 ];
 
-const MOCK_RESULT_IMAGES = [
-  "https://readdy.ai/api/search-image?query=cute%20anime%20girl%20full%20body%20front%20view%20standard%20reference%20sheet%2C%20pink%20twin%20tails%20white%20lace%20dress%2C%20clean%20white%20background%2C%20professional%20character%20design%20illustration%2C%20soft%20pastel%20watercolor%20style%2C%20high%20quality%20digital%20art&width=512&height=768&seq=photo_r001&orientation=portrait",
-  "https://readdy.ai/api/search-image?query=cute%20anime%20girl%20standard%20reference%20illustration%2C%20silver%20white%20hair%20gothic%20lolita%20outfit%2C%20clean%20light%20background%2C%20professional%20character%20design%20sheet&width=512&height=768&seq=photo_r002&orientation=portrait",
-  "https://readdy.ai/api/search-image?query=cute%20anime%20girl%20full%20body%20reference%20art%2C%20orange%20yellow%20short%20hair%20idol%20costume%2C%20clean%20pastel%20background%2C%20professional%20character%20design&width=512&height=768&seq=photo_r003&orientation=portrait",
-  "https://readdy.ai/api/search-image?query=cute%20anime%20girl%20reference%20drawing%2C%20light%20blue%20hair%20traditional%20outfit%2C%20clean%20soft%20background%2C%20pastel%20watercolor%20style&width=512&height=768&seq=photo_r004&orientation=portrait",
-];
+const RAW_TYPE_CONFIG: Record<
+  RawImageType,
+  {
+    label: string;
+    icon: string;
+    accentBg: string;
+    accentText: string;
+    normalBorder: string;
+    selectedBorder: string;
+    selectedGlow: string;
+    selectedOverlay: string;
+  }
+> = {
+  official: {
+    label: "官方形象",
+    icon: "ri-award-line",
+    accentBg: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+    accentText: "#f472b6",
+    normalBorder: "1.5px solid rgba(253,164,175,0.2)",
+    selectedBorder: "2.5px solid #f472b6",
+    selectedGlow: "0 0 0 3px rgba(244,114,182,0.15)",
+    selectedOverlay: "rgba(244,114,182,0.15)",
+  },
+  fanart: {
+    label: "同人立绘",
+    icon: "ri-palette-line",
+    accentBg: "linear-gradient(135deg, #c4b5fd 0%, #8b5cf6 100%)",
+    accentText: "#8b5cf6",
+    normalBorder: "1.5px solid rgba(196,181,253,0.28)",
+    selectedBorder: "2.5px solid #8b5cf6",
+    selectedGlow: "0 0 0 3px rgba(139,92,246,0.18)",
+    selectedOverlay: "rgba(139,92,246,0.15)",
+  },
+};
 
 const RatioPreview = ({ ratio }: { ratio: AspectRatio }) => {
   const map: Record<AspectRatio, string> = {
@@ -46,12 +80,7 @@ const RatioPreview = ({ ratio }: { ratio: AspectRatio }) => {
   return <div className={`${map[ratio]} rounded border-2 border-current opacity-70`} />;
 };
 
-const GeneratingView = ({ onDone }: { onDone: () => void }) => {
-  useEffect(() => {
-    const t = setTimeout(onDone, 2500);
-    return () => clearTimeout(t);
-  }, [onDone]);
-
+const GeneratingView = ({ errorMessage }: { errorMessage: string | null }) => {
   return (
     <div className="flex flex-col items-center justify-center h-full py-12 px-8 text-center">
       <div className="relative mb-8">
@@ -89,6 +118,11 @@ const GeneratingView = ({ onDone }: { onDone: () => void }) => {
         <br />
         马上就好，请稍等一下下 ✨
       </p>
+      {errorMessage && (
+        <p className="text-xs text-rose-500 bg-rose-50 rounded-lg px-3 py-2 border border-rose-100">
+          {errorMessage}
+        </p>
+      )}
 
       <style>{`
         @keyframes orbit0 {
@@ -110,24 +144,24 @@ const GeneratingView = ({ onDone }: { onDone: () => void }) => {
 
 const ResultView = ({
   images,
-  count,
+  isSaving,
   onSave,
   onRetry,
+  saveSuccess,
 }: {
   images: string[];
-  count: GenCount;
+  isSaving: boolean;
   onSave: (url: string) => void;
   onRetry: () => void;
+  saveSuccess: boolean;
 }) => {
   const [selected, setSelected] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const displayImages = images.slice(0, count);
+  const displayImages = images;
 
   const handleSave = () => {
     if (!selected) return;
     onSave(selected);
-    setSaved(true);
   };
 
   return (
@@ -138,7 +172,7 @@ const ResultView = ({
           <span className="text-sm font-bold text-rose-600" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
             拍摄结果 · 选一张最满意的吧！
           </span>
-          <span className="text-xs text-rose-300/60 bg-rose-50 px-2 py-0.5 rounded-full">共 {count} 张候选</span>
+          <span className="text-xs text-rose-300/60 bg-rose-50 px-2 py-0.5 rounded-full">共 {images.length} 张候选</span>
         </div>
         <button
           type="button"
@@ -205,7 +239,7 @@ const ResultView = ({
           {selected ? "已选中 1 张候选图" : "点击图片选择最满意的一张"}
         </span>
 
-        {saved ? (
+        {saveSuccess ? (
           <div
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm"
             style={{
@@ -222,7 +256,7 @@ const ResultView = ({
           <button
             type="button"
             onClick={handleSave}
-            disabled={!selected}
+            disabled={!selected || isSaving}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium text-white cursor-pointer transition-all duration-200 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
               background: selected
@@ -233,7 +267,7 @@ const ResultView = ({
             }}
           >
             <i className="ri-save-line text-sm" />
-            保存为正式标准参考图
+            {isSaving ? "保存中..." : "保存为正式标准参考图"}
           </button>
         )}
       </div>
@@ -271,15 +305,20 @@ const ResultView = ({
   );
 };
 
-const PhotoTaskPage = ({ rawImages }: PhotoTaskPageProps) => {
+const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }: PhotoTaskPageProps) => {
   const [selectedRefIds, setSelectedRefIds] = useState<Set<string>>(new Set());
   const [shotType, setShotType] = useState<ShotType>("full_front");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
   const [genCount, setGenCount] = useState<GenCount>(2);
   const [pageState, setPageState] = useState<PageState>("config");
+  const [resultImages, setResultImages] = useState<string[]>([]);
+  const [loadingStart, setLoadingStart] = useState(false);
+  const [savingResult, setSavingResult] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [pollError, setPollError] = useState<string | null>(null);
 
   const selectedType = useMemo(() => SHOT_TYPES.find((t) => t.id === shotType), [shotType]);
-  const canStart = selectedRefIds.size > 0;
+  const canStart = selectedRefIds.size > 0 && !loadingStart;
 
   const toggleRef = useCallback((id: string) => {
     setSelectedRefIds((prev) => {
@@ -290,16 +329,126 @@ const PhotoTaskPage = ({ rawImages }: PhotoTaskPageProps) => {
     });
   }, []);
 
+  const loadStatus = useCallback(async (): Promise<materialApi.StandardPhotoStatusResult | null> => {
+    try {
+      return await materialApi.getStandardPhotoStatus(characterId);
+    } catch {
+      return null;
+    }
+  }, [characterId]);
+
+  useEffect(() => {
+    let alive = true;
+    let timer: number | null = null;
+    if (pageState !== "generating") return;
+    const poll = async () => {
+      try {
+        const status = await materialApi.getStandardPhotoStatus(characterId);
+        if (!alive) return;
+        if (status.status === "completed") {
+          setResultImages(status.result_images || []);
+          setPageState("result");
+          setPollError(null);
+          return;
+        }
+        if (status.status === "failed") {
+          setPollError(status.error_message || "标准照生成失败，请重试");
+          return;
+        }
+      } catch (e) {
+        if (!alive) return;
+        const msg = e instanceof ApiError ? e.message : "获取任务状态失败";
+        setPollError(msg);
+      }
+      timer = window.setTimeout(() => {
+        void poll();
+      }, 2500);
+    };
+    void poll();
+    return () => {
+      alive = false;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [characterId, pageState]);
+
+  const handleStart = useCallback(async () => {
+    setLoadingStart(true);
+    setPollError(null);
+    setSaveSuccess(false);
+    try {
+      await materialApi.startStandardPhotoTask(characterId, {
+        shot_type: shotType,
+        aspect_ratio: aspectRatio,
+        output_count: genCount,
+        selected_raw_image_ids: Array.from(selectedRefIds),
+      });
+      setPageState("generating");
+      showToast("标准照任务已提交，正在生成");
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "启动标准照任务失败");
+    } finally {
+      setLoadingStart(false);
+    }
+  }, [characterId, shotType, aspectRatio, genCount, selectedRefIds, showToast]);
+
+  const handleRetry = useCallback(async () => {
+    setPageState("generating");
+    setPollError(null);
+    setSaveSuccess(false);
+    try {
+      const status = await loadStatus();
+      if (status) {
+        await materialApi.retryStandardPhotoTask(characterId);
+      } else {
+        await materialApi.startStandardPhotoTask(characterId, {
+          shot_type: shotType,
+          aspect_ratio: aspectRatio,
+          output_count: genCount,
+          selected_raw_image_ids: Array.from(selectedRefIds),
+        });
+      }
+      showToast("已重新提交标准照任务");
+    } catch (e) {
+      setPageState("config");
+      showToast(e instanceof ApiError ? e.message : "重试失败");
+    }
+  }, [characterId, loadStatus, shotType, aspectRatio, genCount, selectedRefIds, showToast]);
+
+  const handleSaveResult = useCallback(
+    async (url: string) => {
+      const fileName = url.split("/").pop();
+      if (!fileName) {
+        showToast("结果图路径无效");
+        return;
+      }
+      setSavingResult(true);
+      try {
+        const detail = await materialApi.selectStandardPhotoResult(characterId, {
+          selected_result_filename: fileName,
+        });
+        onCharacterUpdated(detail);
+        setSaveSuccess(true);
+        showToast("标准照已保存到正式内容");
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "保存标准照失败");
+      } finally {
+        setSavingResult(false);
+      }
+    },
+    [characterId, onCharacterUpdated, showToast]
+  );
+
   if (pageState === "generating") {
-    return <GeneratingView onDone={() => setPageState("result")} />;
+    return <GeneratingView errorMessage={pollError} />;
   }
   if (pageState === "result") {
     return (
       <ResultView
-        images={MOCK_RESULT_IMAGES}
-        count={genCount}
-        onSave={(_url) => undefined}
-        onRetry={() => setPageState("config")}
+        images={resultImages}
+        isSaving={savingResult}
+        onSave={handleSaveResult}
+        onRetry={handleRetry}
+        saveSuccess={saveSuccess}
       />
     );
   }
@@ -341,33 +490,64 @@ const PhotoTaskPage = ({ rawImages }: PhotoTaskPageProps) => {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-6 gap-2.5">
-                {rawImages.map((img) => {
-                  const isSelected = selectedRefIds.has(img.id);
+              <div className="flex flex-col gap-4">
+                {(["official", "fanart"] as RawImageType[]).map((type) => {
+                  const images = rawImages.filter((img) => img.type === type);
+                  if (images.length === 0) return null;
+                  const cfg = RAW_TYPE_CONFIG[type];
                   return (
-                    <button
-                      key={img.id}
-                      type="button"
-                      className="relative rounded-xl overflow-hidden cursor-pointer transition-all duration-200 group"
-                      style={{
-                        aspectRatio: "1",
-                        border: isSelected ? "2.5px solid #f472b6" : "1.5px solid rgba(253,164,175,0.2)",
-                        boxShadow: isSelected ? "0 0 0 3px rgba(244,114,182,0.15)" : "none",
-                      }}
-                      onClick={() => toggleRef(img.id)}
-                    >
-                      <img src={img.url} alt="参考图" className="w-full h-full object-cover object-top" />
-                      {isSelected && (
-                        <div className="absolute inset-0 bg-rose-500/15 flex items-start justify-end p-1">
-                          <div
-                            className="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs"
-                            style={{ background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)" }}
-                          >
-                            <i className="ri-check-line text-xs" />
-                          </div>
-                        </div>
-                      )}
-                    </button>
+                    <div key={type}>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span
+                          className="w-4 h-4 rounded-md flex items-center justify-center text-white"
+                          style={{ background: cfg.accentBg, fontSize: 10 }}
+                        >
+                          <i className={cfg.icon} />
+                        </span>
+                        <span
+                          className="text-xs font-bold"
+                          style={{ color: cfg.accentText, fontFamily: "'ZCOOL KuaiLe', cursive" }}
+                        >
+                          {cfg.label}
+                        </span>
+                        <span className="text-xs" style={{ color: `${cfg.accentText}99` }}>
+                          {images.length} 张
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-6 gap-2.5">
+                        {images.map((img) => {
+                          const isSelected = selectedRefIds.has(img.id);
+                          return (
+                            <button
+                              key={img.id}
+                              type="button"
+                              className="relative rounded-xl overflow-hidden cursor-pointer transition-all duration-200 group"
+                              style={{
+                                aspectRatio: "1",
+                                border: isSelected ? cfg.selectedBorder : cfg.normalBorder,
+                                boxShadow: isSelected ? cfg.selectedGlow : "none",
+                              }}
+                              onClick={() => toggleRef(img.id)}
+                            >
+                              <img src={img.url} alt="参考图" className="w-full h-full object-cover object-top" />
+                              {isSelected && (
+                                <div
+                                  className="absolute inset-0 flex items-start justify-end p-1"
+                                  style={{ background: cfg.selectedOverlay }}
+                                >
+                                  <div
+                                    className="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs"
+                                    style={{ background: cfg.accentBg }}
+                                  >
+                                    <i className="ri-check-line text-xs" />
+                                  </div>
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   );
                 })}
               </div>
@@ -501,7 +681,7 @@ const PhotoTaskPage = ({ rawImages }: PhotoTaskPageProps) => {
           )}
           <button
             type="button"
-            onClick={() => setPageState("generating")}
+            onClick={() => void handleStart()}
             disabled={!canStart}
             className="flex items-center gap-2.5 px-8 py-3.5 rounded-2xl text-base font-bold text-white cursor-pointer transition-all duration-200 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
@@ -513,7 +693,7 @@ const PhotoTaskPage = ({ rawImages }: PhotoTaskPageProps) => {
             }}
           >
             <i className="ri-camera-fill text-lg" />
-            开始拍摄标准照
+            {loadingStart ? "提交中..." : "开始拍摄标准照"}
             {canStart && (
               <span className="text-sm opacity-80">
                 · {selectedRefIds.size} 张参考 · {selectedType?.label} · {genCount} 张

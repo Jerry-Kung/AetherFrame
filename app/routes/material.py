@@ -8,6 +8,7 @@ from typing import List, Optional
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -27,6 +28,10 @@ from app.schemas.material import (
     CharacterListData,
     CharacterSummary,
     CharacterUpdate,
+    StandardPhotoSelectRequest,
+    StandardPhotoStartRequest,
+    StandardPhotoStartResponse,
+    StandardPhotoStatusResponse,
     RawImageItem,
     RawImageTagsUpdate,
     RawImageUploadFail,
@@ -195,10 +200,12 @@ async def upload_raw_images(
     character_id: str,
     files: List[UploadFile] = File(...),
     tags: Optional[str] = Form(None),
+    types: Optional[str] = Form(None),
     service: MaterialService = Depends(get_material_service),
 ):
     logger.info(f"API 请求 - 上传参考图: {character_id}, count={len(files)}")
     tags_per_file: Optional[List[List[str]]] = None
+    types_per_file: Optional[List[str]] = None
     if tags:
         try:
             parsed = json.loads(tags)
@@ -215,8 +222,26 @@ async def upload_raw_images(
         except (json.JSONDecodeError, ValueError) as e:
             raise HTTPException(status_code=400, detail=f"tags 格式无效: {e}") from e
 
+    if types:
+        try:
+            parsed_types = json.loads(types)
+            if not isinstance(parsed_types, list):
+                raise ValueError("types 须为 JSON 数组")
+            if len(parsed_types) > len(files):
+                raise ValueError("types 长度不能大于 files 数量")
+            types_per_file = []
+            for item in parsed_types:
+                if not isinstance(item, str):
+                    raise ValueError("types 项须为字符串")
+                v = item.strip()
+                if v not in ("official", "fanart"):
+                    raise ValueError(f"不支持的类型: {v}")
+                types_per_file.append(v)
+        except (json.JSONDecodeError, ValueError) as e:
+            raise HTTPException(status_code=400, detail=f"types 格式无效: {e}") from e
+
     try:
-        uploaded, failed = service.upload_raw_images(character_id, files, tags_per_file)
+        uploaded, failed = service.upload_raw_images(character_id, files, tags_per_file, types_per_file)
     except ValueError as e:
         if str(e) == "角色不存在":
             raise HTTPException(status_code=404, detail="角色不存在") from e
@@ -227,7 +252,7 @@ async def upload_raw_images(
 
     data = RawImagesUploadData(
         uploaded=[
-            RawImageItem(id=x["id"], url=x["url"], tags=x["tags"]) for x in uploaded
+            RawImageItem(id=x["id"], url=x["url"], type=x["type"], tags=x["tags"]) for x in uploaded
         ],
         failed=[
             RawImageUploadFail(original_filename=x["original_filename"], error=x["error"])
@@ -314,3 +339,130 @@ async def get_raw_image(
     }
     media_type = media_type_map.get(ext, "application/octet-stream")
     return FileResponse(path=path, media_type=media_type, filename=filename)
+
+
+@router.post("/characters/{character_id}/standard-photo/start", response_model=ApiResponse)
+async def start_standard_photo(
+    character_id: str,
+    body: StandardPhotoStartRequest,
+    background_tasks: BackgroundTasks,
+    service: MaterialService = Depends(get_material_service),
+):
+    logger.info(f"API 请求 - 启动标准照任务: {character_id}, shot_type={body.shot_type}")
+    try:
+        data = service.start_standard_photo_task(
+            character_id=character_id,
+            shot_type=body.shot_type,
+            aspect_ratio=body.aspect_ratio,
+            output_count=body.output_count,
+            selected_raw_image_ids=body.selected_raw_image_ids,
+            background_tasks=background_tasks,
+        )
+        return ApiResponse(
+            success=True,
+            data=StandardPhotoStartResponse(**data).model_dump(mode="json"),
+            message="标准照任务已启动",
+        )
+    except ValueError as e:
+        msg = str(e)
+        if msg == "角色不存在":
+            raise HTTPException(status_code=404, detail=msg) from e
+        raise HTTPException(status_code=400, detail=msg) from e
+    except Exception as e:
+        logger.error(f"API 错误 - 启动标准照任务失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="启动标准照任务失败")
+
+
+@router.post("/characters/{character_id}/standard-photo/retry", response_model=ApiResponse)
+async def retry_standard_photo(
+    character_id: str,
+    background_tasks: BackgroundTasks,
+    service: MaterialService = Depends(get_material_service),
+):
+    logger.info(f"API 请求 - 重试标准照任务: {character_id}")
+    task = service.get_standard_photo_task_status(character_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="标准照任务不存在")
+    try:
+        data = service.start_standard_photo_task(
+            character_id=character_id,
+            shot_type=task["shot_type"],
+            aspect_ratio=task["aspect_ratio"],
+            output_count=task["output_count"],
+            selected_raw_image_ids=task["selected_raw_image_ids"],
+            background_tasks=background_tasks,
+        )
+        return ApiResponse(
+            success=True,
+            data=StandardPhotoStartResponse(**data).model_dump(mode="json"),
+            message="标准照任务已重新提交",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"API 错误 - 重试标准照任务失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="重试标准照任务失败")
+
+
+@router.get("/characters/{character_id}/standard-photo/status", response_model=ApiResponse)
+async def get_standard_photo_status(
+    character_id: str,
+    service: MaterialService = Depends(get_material_service),
+):
+    task = service.get_standard_photo_task_status(character_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="标准照任务不存在")
+    return ApiResponse(
+        success=True,
+        data=StandardPhotoStatusResponse(**task).model_dump(mode="json"),
+        message="获取标准照任务状态成功",
+    )
+
+
+@router.get("/characters/{character_id}/standard-photo/result-images/{filename}")
+async def get_standard_photo_result_image(
+    character_id: str,
+    filename: str,
+    service: MaterialService = Depends(get_material_service),
+):
+    path = service.get_standard_photo_result_image_path(character_id, filename)
+    if not path:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    ext = os.path.splitext(filename)[1].lower()
+    media_type_map = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+    }
+    media_type = media_type_map.get(ext, "application/octet-stream")
+    return FileResponse(path=path, media_type=media_type, filename=filename)
+
+
+@router.post("/characters/{character_id}/standard-photo/select", response_model=ApiResponse)
+async def select_standard_photo_result(
+    character_id: str,
+    body: StandardPhotoSelectRequest,
+    service: MaterialService = Depends(get_material_service),
+):
+    logger.info(f"API 请求 - 保存标准照结果: {character_id}")
+    try:
+        char = service.select_standard_photo_result(
+            character_id=character_id,
+            selected_result_filename=body.selected_result_filename,
+            selected_result_index=body.selected_result_index,
+        )
+        detail = service.character_to_detail_dict(char)
+        return ApiResponse(
+            success=True,
+            data=CharacterDetail(**detail).model_dump(mode="json"),
+            message="标准照已保存",
+        )
+    except ValueError as e:
+        msg = str(e)
+        if msg == "角色不存在":
+            raise HTTPException(status_code=404, detail=msg) from e
+        raise HTTPException(status_code=400, detail=msg) from e
+    except Exception as e:
+        logger.error(f"API 错误 - 保存标准照结果失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="保存标准照结果失败")
