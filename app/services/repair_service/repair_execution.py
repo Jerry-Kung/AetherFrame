@@ -11,6 +11,8 @@ from . import image_generation_service
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_PIPELINE_ASPECT_RATIO = image_generation_service.DEFAULT_REPAIR_ASPECT_RATIO
+
 # (task_id, status, error_message)
 UpdateTaskStatusFn = Callable[[str, str, Optional[str]], None]
 
@@ -22,6 +24,7 @@ def run_repair_generation_pipeline(
     reference_image_paths: List[str],
     output_count: int,
     update_status: UpdateTaskStatusFn,
+    aspect_ratio: str = DEFAULT_PIPELINE_ASPECT_RATIO,
 ) -> None:
     """
     同步执行修补：调用模型生成、保存结果图、更新任务状态，并清理临时文件。
@@ -33,8 +36,11 @@ def run_repair_generation_pipeline(
         reference_image_paths: 参考图绝对路径列表
         output_count: 生成张数
         update_status: 写入任务状态（completed / failed 及错误信息）
+        aspect_ratio: 输出图片宽高比（与任务存储及 nano_banana_pro 一致）
     """
-    logger.info(f"开始执行修补流水线: task_id={task_id}, output_count={output_count}")
+    logger.info(
+        f"开始执行修补流水线: task_id={task_id}, output_count={output_count}, aspect_ratio={aspect_ratio}"
+    )
 
     temp_image_paths: List[str] = []
     temp_dir: Optional[str] = None
@@ -45,6 +51,7 @@ def run_repair_generation_pipeline(
             main_image_path=main_image_path,
             reference_image_paths=reference_image_paths,
             output_count=output_count,
+            aspect_ratio=aspect_ratio,
         )
 
         temp_image_paths = result_image_paths

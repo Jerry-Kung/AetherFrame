@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from "react";
-import type { TaskStatus, EditorState } from "@/types/repair";
+import type { AspectRatio, EditorState, TaskStatus } from "@/types/repair";
 import type { PromptTemplate } from "@/repair/repairTemplateUtils";
 import {
   DEFAULT_TAGS,
@@ -46,6 +46,20 @@ interface TaskEditorProps {
 
 const OUTPUT_OPTIONS: (1 | 2 | 4)[] = [1, 2, 4];
 const TEMPLATE_PAGE_SIZE = 10;
+
+const ASPECT_RATIO_OPTIONS: {
+  value: AspectRatio;
+  label: string;
+  hint: string;
+  w: number;
+  h: number;
+}[] = [
+  { value: "16:9", label: "16:9", hint: "横版宽屏", w: 16, h: 9 },
+  { value: "4:3", label: "4:3", hint: "传统横版", w: 4, h: 3 },
+  { value: "1:1", label: "1:1", hint: "正方形", w: 1, h: 1 },
+  { value: "3:4", label: "3:4", hint: "竖版常规", w: 3, h: 4 },
+  { value: "9:16", label: "9:16", hint: "竖版全屏", w: 9, h: 16 },
+];
 
 type ModalMode = { type: "create" } | { type: "edit"; template: PromptTemplate };
 
@@ -700,7 +714,70 @@ const TaskEditor = ({
           />
         </section>
 
-        {/* ── 4. Output count ─── */}
+        {/* ── 4. Aspect ratio ─── */}
+        <section>
+          <label className="flex items-center gap-1.5 text-xs font-semibold text-rose-600/70 mb-2 tracking-wide">
+            <span className="w-3.5 h-3.5 flex items-center justify-center">
+              <i className="ri-aspect-ratio-line"></i>
+            </span>
+            图片长宽比
+          </label>
+          <div className="flex flex-wrap items-stretch gap-2">
+            {ASPECT_RATIO_OPTIONS.map((opt) => {
+              const isActive = state.aspectRatio === opt.value;
+              const previewH = 14;
+              const scale = Math.min(opt.w, opt.h);
+              const previewW = Math.round((opt.w / scale) * previewH);
+              const previewHScaled = Math.round((opt.h / scale) * previewH);
+              const maxDim = Math.max(previewW, previewHScaled);
+              const factor = maxDim > 28 ? 28 / maxDim : 1;
+              const finalW = Math.round(previewW * factor);
+              const finalH = Math.round(previewHScaled * factor);
+
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => onChange({ aspectRatio: opt.value })}
+                  title={`${opt.label} · ${opt.hint}`}
+                  className={[
+                    "flex-1 min-w-[4.5rem] flex flex-col items-center justify-center gap-1 py-2.5 px-1 rounded-xl text-xs font-medium cursor-pointer transition-all duration-200",
+                    isActive
+                      ? "text-white shadow-sm"
+                      : "bg-rose-50/60 text-rose-400/60 hover:bg-rose-100/50 hover:text-rose-500",
+                  ].join(" ")}
+                  style={
+                    isActive
+                      ? {
+                          background: "linear-gradient(145deg, #f472b6 0%, #fb7185 45%, #f43f5e 100%)",
+                          boxShadow: "0 2px 12px rgba(244, 114, 182, 0.35)",
+                        }
+                      : undefined
+                  }
+                >
+                  <span
+                    className={[
+                      "rounded-sm border shrink-0",
+                      isActive ? "border-white/50 bg-white/20" : "border-rose-300/45 bg-rose-100/45",
+                    ].join(" ")}
+                    style={{ width: finalW, height: finalH, display: "block" }}
+                  />
+                  <span className="text-[11px] font-semibold leading-none">{opt.label}</span>
+                  <span
+                    className={[
+                      "text-[9px] leading-tight text-center px-0.5",
+                      isActive ? "text-white/85" : "text-rose-400/55",
+                    ].join(" ")}
+                  >
+                    {opt.hint}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* ── 5. Output count ─── */}
         <section>
           <label className="flex items-center gap-1.5 text-xs font-semibold text-rose-600/70 mb-2 tracking-wide">
             <span className="w-3.5 h-3.5 flex items-center justify-center">
@@ -728,7 +805,7 @@ const TaskEditor = ({
           </div>
         </section>
 
-        {/* ── 5. Submit ─── */}
+        {/* ── 6. Submit ─── */}
         <div className="pt-1 pb-2">
           <button
             type="button"

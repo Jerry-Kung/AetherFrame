@@ -89,6 +89,7 @@ class TestSchemas:
         assert task_data.name == "测试任务"
         assert task_data.prompt == "这是测试描述"
         assert task_data.output_count == 2
+        assert task_data.aspect_ratio == "16:9"
 
     def test_task_create_invalid_output_count(self):
         """测试 TaskCreate 验证 - 无效的 output_count"""
@@ -121,6 +122,7 @@ class TestSchemas:
         task_data = TaskCreate(name="新任务 #1")
         assert task_data.prompt == ""
         assert task_data.output_count == 2
+        assert task_data.aspect_ratio == "16:9"
 
     def test_task_update_partial(self):
         """测试 TaskUpdate - 部分更新"""
@@ -130,6 +132,7 @@ class TestSchemas:
         assert update_data.name == "新名称"
         assert update_data.prompt is None
         assert update_data.output_count is None
+        assert update_data.aspect_ratio is None
 
 
 # ==========================================
@@ -158,6 +161,7 @@ class TestRepairService:
         assert task.name == "测试任务"
         assert task.prompt == "这是测试描述"
         assert task.output_count == 2
+        assert getattr(task, "aspect_ratio", None) == "16:9"
         assert task.status == "pending"
         logger.info(f"✓ 创建任务测试通过: task_id={task.id}")
 
@@ -374,7 +378,32 @@ class TestRepairService:
         assert task_simple.has_main_image is False
         assert task_simple.reference_image_count == 0
         assert task_simple.result_image_count == 0
+        assert task_simple.aspect_ratio == "16:9"
         logger.info("✓ 构建任务简要信息测试通过")
+
+    def test_update_task_aspect_ratio(self, db_session):
+        """更新任务长宽比"""
+        from app.services.repair_service import RepairService
+        from app.schemas.repair import TaskCreate, TaskUpdate
+
+        service = RepairService(db_session)
+        task = service.create_task(
+            TaskCreate(name="比例测试", prompt="x", output_count=1, aspect_ratio="16:9")
+        )
+        updated = service.update_task(task.id, TaskUpdate(aspect_ratio="9:16"))
+        assert updated is not None
+        assert updated.aspect_ratio == "9:16"
+        simple = service.build_task_simple_response(updated)
+        assert simple.aspect_ratio == "9:16"
+        logger.info("✓ 更新 aspect_ratio 测试通过")
+
+    def test_task_create_invalid_aspect_ratio(self):
+        """TaskCreate 非法 aspect_ratio 应失败"""
+        from app.schemas.repair import TaskCreate
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            TaskCreate(name="x", prompt="y", output_count=2, aspect_ratio="2:1")
 
 
 # ==========================================

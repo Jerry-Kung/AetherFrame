@@ -169,6 +169,45 @@ class TestImageGenerationService:
         finally:
             os.unlink(main_image)
 
+    @patch('app.services.repair_service.image_generation_service.generate_image_with_nano_banana_pro')
+    def test_generate_repair_images_passes_aspect_ratio_to_nano(self, mock_generate, temp_data_dir):
+        """generate_repair_images 将 aspect_ratio 原样传给 nano_banana_pro"""
+        from app.services.repair_service import image_generation_service
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+            main_image = f.name
+
+        temp_dir = None
+        try:
+            seen = {}
+
+            def side_effect(Content, output_path, file_name, aspect_ratio):
+                seen["aspect_ratio"] = aspect_ratio
+                os.makedirs(output_path, exist_ok=True)
+                with open(os.path.join(output_path, file_name), 'wb') as fp:
+                    fp.write(b'test')
+                return True
+
+            mock_generate.side_effect = side_effect
+
+            result_paths, error_msg, temp_dir = image_generation_service.generate_repair_images(
+                task_id="test-task-ar",
+                prompt_template="修复图片",
+                main_image_path=main_image,
+                reference_image_paths=[],
+                output_count=1,
+                aspect_ratio="9:16",
+            )
+
+            assert error_msg is None
+            assert len(result_paths) == 1
+            assert seen.get("aspect_ratio") == "9:16"
+        finally:
+            os.unlink(main_image)
+            if temp_dir and os.path.isdir(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
 
 # ==========================================
 # 第二部分：RepairTaskService 启动与流水线（与生产路径一致）

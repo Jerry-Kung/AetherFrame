@@ -154,6 +154,37 @@ def migrate_material_raw_images_add_type() -> None:
         raise
 
 
+def migrate_repair_tasks_add_aspect_ratio() -> None:
+    """
+    轻量迁移：为 repair_tasks 表补充 aspect_ratio 列（与前端 / nano_banana_pro 一致）。
+    新建库由 create_all 直接带列；老库通过 ALTER TABLE 补齐（无 Alembic）。
+    """
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='repair_tasks'"
+                )
+            ).fetchone()
+            if row is None:
+                return
+            cols = conn.execute(text("PRAGMA table_info(repair_tasks)")).fetchall()
+            names = {c[1] for c in cols}
+            if "aspect_ratio" in names:
+                return
+            conn.execute(
+                text(
+                    "ALTER TABLE repair_tasks ADD COLUMN aspect_ratio VARCHAR(20) NOT NULL DEFAULT '16:9'"
+                )
+            )
+        logger.info("已迁移: repair_tasks 增加 aspect_ratio 列")
+    except Exception as e:
+        logger.error(f"迁移 repair_tasks.aspect_ratio 失败: {e}", exc_info=True)
+        raise
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
@@ -170,6 +201,7 @@ def init_db():
         migrate_prompt_templates_add_description()
         migrate_prompt_templates_add_tags()
         migrate_material_raw_images_add_type()
+        migrate_repair_tasks_add_aspect_ratio()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:

@@ -15,6 +15,7 @@ class RepairTask(Base):
     status = Column(String(20), nullable=False, index=True, default="pending")
     prompt = Column(Text, nullable=False)
     output_count = Column(Integer, nullable=False)
+    aspect_ratio = Column(String(20), nullable=False, default="16:9")
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
