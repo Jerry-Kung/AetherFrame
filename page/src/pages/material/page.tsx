@@ -225,9 +225,17 @@ export default function MaterialPage() {
   }, [selected, editName, editDisplayName, mergeChara, showToast]);
 
   const handleStartProcess = useCallback(() => {
-    showToast("加工流程将接入后端后在此展开，敬请期待");
     setMainTab("process");
-  }, [showToast]);
+  }, []);
+
+  const handleGoRaw = useCallback(() => {
+    setMainTab("raw");
+  }, []);
+
+  const handleGoStandard = useCallback(() => {
+    setMainTab("process");
+    setProcessSubTask("standard");
+  }, []);
 
   const handleExport = useCallback(() => {
     if (!selected) return;
@@ -552,6 +560,8 @@ export default function MaterialPage() {
                     chara={selected}
                     onCharacterUpdated={(detail) => mergeChara(toCharaProfile(detail))}
                     showToast={showToast}
+                    onGoRaw={handleGoRaw}
+                    onGoStandard={handleGoStandard}
                   />
                 ) : (
                   <OfficialContentTab

@@ -367,3 +367,43 @@ export async function deleteOfficialPhotoSlot(
     rethrow(e);
   }
 }
+
+/** 保存角色小档案 */
+export async function saveCharaProfile(
+  characterId: string,
+  charaProfile: string
+): Promise<ApiCharacterDetail> {
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/bio`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chara_profile: charaProfile }),
+    });
+    const data = await parseJson<ApiCharacterDetail>(response);
+    throwIfError(response, data);
+    return data.data as ApiCharacterDetail;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+/** 保存角色创作建议 */
+export async function saveCreativeAdvice(
+  characterId: string,
+  creativeAdvice: string
+): Promise<ApiCharacterDetail> {
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/bio`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ creative_advice: creativeAdvice }),
+    });
+    const data = await parseJson<ApiCharacterDetail>(response);
+    throwIfError(response, data);
+    return data.data as ApiCharacterDetail;
+  } catch (e) {
+    rethrow(e);
+  }
+}

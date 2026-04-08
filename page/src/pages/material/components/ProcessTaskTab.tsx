@@ -1,6 +1,7 @@
 import type { CharaProfile } from "@/types/material";
 import type { ApiCharacterDetail } from "@/types/material";
 import PhotoTaskPage from "./PhotoTaskPage";
+import CharaProfilePage from "./CharaProfilePage";
 
 export type ProcessSubTaskId = "standard" | "profile";
 
@@ -11,6 +12,8 @@ interface ProcessTaskTabProps {
   chara?: CharaProfile;
   onCharacterUpdated: (detail: ApiCharacterDetail) => void;
   showToast: (msg: string) => void;
+  onGoRaw: () => void;
+  onGoStandard: () => void;
 }
 
 const SUB_TASKS: { id: ProcessSubTaskId; label: string; icon: string; desc: string }[] = [
@@ -70,6 +73,15 @@ const ProcessTaskTab = ({
             rawImages={chara.rawImages}
             onCharacterUpdated={onCharacterUpdated}
             showToast={showToast}
+          />
+        ) : subTask === "profile" && chara ? (
+          <CharaProfilePage
+            characterId={chara.id}
+            chara={chara}
+            onCharacterUpdated={onCharacterUpdated}
+            showToast={showToast}
+            onGoRaw={onGoRaw}
+            onGoPhoto={onGoStandard}
           />
         ) : (
           <div className="p-6 flex flex-col items-center justify-center flex-1 text-center min-h-[200px]">

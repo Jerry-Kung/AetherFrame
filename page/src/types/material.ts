@@ -47,6 +47,24 @@ export interface CharaRawImage {
 
 export type RawImageType = "official" | "fanart";
 
+export type StandardPhotoType = "full_front" | "full_side" | "half_front" | "half_side" | "face_close";
+
+export const STANDARD_PHOTO_LABELS: Record<StandardPhotoType, string> = {
+  full_front: "全身正面",
+  full_side: "全身侧面",
+  half_front: "半身正面",
+  half_side: "半身侧面",
+  face_close: "脸部特写",
+};
+
+export const ALL_STANDARD_PHOTO_TYPES: StandardPhotoType[] = [
+  "full_front",
+  "full_side",
+  "half_front",
+  "half_side",
+  "face_close",
+];
+
 export interface CharaBio {
   displayName: string;
   age: string;
@@ -54,6 +72,15 @@ export interface CharaBio {
   personality: string;
   ability: string;
   appearance: string;
+  charaProfile?: string;
+  creativeAdvice?: string;
+}
+
+export interface CharaStandardPhoto {
+  id: string;
+  type: StandardPhotoType;
+  url: string;
+  createdAt: string;
 }
 
 export interface CharaProfile {
@@ -65,6 +92,7 @@ export interface CharaProfile {
   settingText: string;
   rawImages: CharaRawImage[];
   officialPhotos: [string | null, string | null, string | null, string | null, string | null];
+  standardPhotos: CharaStandardPhoto[];
   bio: CharaBio;
 }
 
@@ -111,6 +139,7 @@ export interface ApiCharacterDetail {
   setting_text: string;
   raw_images: { id: string; url: string; type: RawImageType; tags: string[] }[];
   official_photos: (string | null)[];
+  standard_photos?: { id: string; type: StandardPhotoType; url: string; created_at: string }[];
   bio: Record<string, unknown>;
 }
 
@@ -140,6 +169,8 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
     personality: str(b.personality, "待补充"),
     ability: str(b.ability, "待补充"),
     appearance: str(b.appearance, "待补充"),
+    charaProfile: str(b.charaProfile ?? (b as { chara_profile?: unknown }).chara_profile, ""),
+    creativeAdvice: str(b.creativeAdvice ?? (b as { creative_advice?: unknown }).creative_advice, ""),
   };
 
   const photos = d.official_photos || [];
@@ -150,6 +181,13 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
     (photos[3] as string | null | undefined) ?? null,
     (photos[4] as string | null | undefined) ?? null,
   ];
+
+  const standardPhotos: CharaStandardPhoto[] = (d.standard_photos || []).map((sp) => ({
+    id: sp.id,
+    type: sp.type,
+    url: sp.url,
+    createdAt: sp.created_at,
+  }));
 
   const avatarUrl =
     d.avatar_url && d.avatar_url.length > 0 ? d.avatar_url : DEFAULT_CHARA_AVATAR_PLACEHOLDER;
@@ -168,6 +206,7 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
       tags: Array.isArray(r.tags) ? r.tags : [],
     })),
     officialPhotos,
+    standardPhotos,
     bio,
   };
 }
