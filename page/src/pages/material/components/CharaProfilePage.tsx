@@ -839,6 +839,10 @@ const ProfileStage = ({
   );
 
   const runStartTask = useCallback(async () => {
+    if (!characterId || characterId === "undefined" || characterId === "null") {
+      showToast("当前角色ID无效，请重新选择角色后再试");
+      return;
+    }
     const ids = Array.from(selectedFanartIds);
     if (ids.length === 0) return;
     setLoadingStart(true);
@@ -857,6 +861,10 @@ const ProfileStage = ({
   }, [characterId, selectedFanartIds, showToast]);
 
   const handleSave = useCallback(async () => {
+    if (!characterId || characterId === "undefined" || characterId === "null") {
+      showToast("当前角色ID无效，请重新选择角色后再试");
+      return;
+    }
     try {
       const detail = await materialApi.saveCharaProfile(characterId, profileText);
       onCharacterUpdated(detail);

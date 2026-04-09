@@ -40,6 +40,13 @@ async function parseJson<T>(response: Response): Promise<ApiEnvelope<T>> {
   }
 }
 
+function assertValidCharacterId(characterId: string, action: string): void {
+  const id = String(characterId ?? "").trim();
+  if (!id || id === "undefined" || id === "null") {
+    throw new ApiError(`角色ID无效，无法${action}`, 400);
+  }
+}
+
 function throwIfError<T>(response: Response, data: ApiEnvelope<T>): asserts data is ApiEnvelope<T> & { success: true; data: T } {
   if (!response.ok) {
     const detail = data.detail;
@@ -153,6 +160,7 @@ export async function deleteCharacter(id: string): Promise<void> {
 }
 
 export async function putSettingText(characterId: string, settingText: string): Promise<ApiCharacterDetail> {
+  assertValidCharacterId(characterId, "保存角色设定");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/setting`;
   try {
     const response = await fetchWithTimeout(url, {
@@ -169,6 +177,7 @@ export async function putSettingText(characterId: string, settingText: string): 
 }
 
 export async function putSettingFile(characterId: string, file: File): Promise<ApiCharacterDetail> {
+  assertValidCharacterId(characterId, "上传角色设定文件");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/setting`;
   const form = new FormData();
   form.append("file", file);
@@ -202,6 +211,7 @@ export async function postRawImages(
   tagsPerFile?: string[][],
   typesPerFile?: string[]
 ): Promise<RawImagesUploadResult> {
+  assertValidCharacterId(characterId, "上传参考图");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/raw-images`;
   const form = new FormData();
   files.forEach((f) => form.append("files", f));
@@ -222,6 +232,7 @@ export async function postRawImages(
 }
 
 export async function deleteRawImage(characterId: string, imageId: string): Promise<void> {
+  assertValidCharacterId(characterId, "删除参考图");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/raw-images/${encodeURIComponent(imageId)}`;
   try {
     const response = await fetchWithTimeout(url, { method: "DELETE" });
@@ -237,6 +248,7 @@ export async function patchRawImageTags(
   imageId: string,
   tags: string[]
 ): Promise<ApiCharacterDetail> {
+  assertValidCharacterId(characterId, "更新参考图标签");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/raw-images/${encodeURIComponent(imageId)}`;
   try {
     const response = await fetchWithTimeout(url, {
@@ -302,6 +314,7 @@ export async function startCharaProfileTask(
   characterId: string,
   body: { selected_fanart_ids: string[] }
 ): Promise<CharaProfileStartResult> {
+  assertValidCharacterId(characterId, "启动角色小档案任务");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/chara-profile/start`;
   try {
     const response = await fetchWithTimeout(url, {
@@ -321,6 +334,7 @@ export async function startCharaProfileTask(
 export async function getCharaProfileStatus(
   characterId: string
 ): Promise<CharaProfileStatusResult> {
+  assertValidCharacterId(characterId, "查询角色小档案任务状态");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/chara-profile/status`;
   try {
     const response = await fetchWithTimeout(url, {
@@ -344,6 +358,7 @@ export async function startStandardPhotoTask(
     selected_raw_image_ids: string[];
   }
 ): Promise<StandardPhotoStartResult> {
+  assertValidCharacterId(characterId, "启动标准照任务");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/standard-photo/start`;
   try {
     const response = await fetchWithTimeout(url, {
@@ -361,6 +376,7 @@ export async function startStandardPhotoTask(
 }
 
 export async function retryStandardPhotoTask(characterId: string): Promise<StandardPhotoStartResult> {
+  assertValidCharacterId(characterId, "重试标准照任务");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/standard-photo/retry`;
   try {
     const response = await fetchWithTimeout(url, { method: "POST", timeout: 60000 });
@@ -375,6 +391,7 @@ export async function retryStandardPhotoTask(characterId: string): Promise<Stand
 export async function getStandardPhotoStatus(
   characterId: string
 ): Promise<StandardPhotoStatusResult> {
+  assertValidCharacterId(characterId, "查询标准照任务状态");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/standard-photo/status`;
   try {
     const response = await fetchWithTimeout(url, { method: "GET" });
@@ -390,6 +407,7 @@ export async function selectStandardPhotoResult(
   characterId: string,
   body: { selected_result_filename?: string; selected_result_index?: number }
 ): Promise<ApiCharacterDetail> {
+  assertValidCharacterId(characterId, "保存标准照结果");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/standard-photo/select`;
   try {
     const response = await fetchWithTimeout(url, {
@@ -410,6 +428,7 @@ export async function deleteOfficialPhotoSlot(
   characterId: string,
   slotIndex: number
 ): Promise<ApiCharacterDetail> {
+  assertValidCharacterId(characterId, "删除标准参考照");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/standard-photo/slot/${slotIndex}`;
   try {
     const response = await fetchWithTimeout(url, { method: "DELETE" });
@@ -426,6 +445,7 @@ export async function saveCharaProfile(
   characterId: string,
   charaProfile: string
 ): Promise<ApiCharacterDetail> {
+  assertValidCharacterId(characterId, "保存角色小档案");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/bio`;
   try {
     const response = await fetchWithTimeout(url, {
@@ -446,6 +466,7 @@ export async function saveCreativeAdvice(
   characterId: string,
   creativeAdvice: string
 ): Promise<ApiCharacterDetail> {
+  assertValidCharacterId(characterId, "保存创作建议");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/bio`;
   try {
     const response = await fetchWithTimeout(url, {

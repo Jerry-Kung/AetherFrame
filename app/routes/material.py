@@ -55,6 +55,13 @@ def get_material_service(db: Session = Depends(get_db)) -> MaterialService:
     return MaterialService(db)
 
 
+def ensure_valid_character_id(character_id: str) -> str:
+    cid = (character_id or "").strip()
+    if not cid or cid in {"undefined", "null"}:
+        raise HTTPException(status_code=400, detail="character_id 无效")
+    return cid
+
+
 @router.get("/characters", response_model=ApiResponse)
 @router.get("/characters/", response_model=ApiResponse)
 async def list_characters(
@@ -148,6 +155,7 @@ async def patch_character_bio(
     body: BioPatchRequest,
     service: MaterialService = Depends(get_material_service),
 ):
+    character_id = ensure_valid_character_id(character_id)
     logger.info(f"API 请求 - 更新角色 bio: {character_id}")
     try:
         char = service.patch_character_bio(
@@ -460,6 +468,7 @@ async def start_chara_profile(
     background_tasks: BackgroundTasks,
     service: MaterialService = Depends(get_material_service),
 ):
+    character_id = ensure_valid_character_id(character_id)
     logger.info(
         f"API 请求 - 启动角色小档案任务: {character_id}, fanart_count={len(body.selected_fanart_ids)}"
     )
@@ -489,6 +498,7 @@ async def get_chara_profile_status(
     character_id: str,
     service: MaterialService = Depends(get_material_service),
 ):
+    character_id = ensure_valid_character_id(character_id)
     task = service.get_chara_profile_task_status(character_id)
     if not task:
         raise HTTPException(status_code=404, detail="角色小档案任务不存在")
