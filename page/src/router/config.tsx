@@ -3,6 +3,7 @@ import NotFound from "../pages/NotFound";
 import Home from "../pages/home/page";
 import RepairPage from "../pages/repair/page";
 import MaterialPage from "../pages/material/page";
+import CreationPage from "../pages/creation/page";
 
 const routes: RouteObject[] = [
   {
@@ -16,6 +17,10 @@ const routes: RouteObject[] = [
   {
     path: "/repair",
     element: <RepairPage />,
+  },
+  {
+    path: "/creation",
+    element: <CreationPage />,
   },
   {
     path: "*",

@@ -1,0 +1,649 @@
+import { useState, useRef, useEffect } from "react";
+import type { CharaProfile } from "@/types/material";
+import { type PromptCard, MOCK_PROMPT_CARDS } from "@/mocks/promptGen";
+
+interface PromptGenPageProps {
+  charas: CharaProfile[];
+  listLoading?: boolean;
+  listError?: string | null;
+}
+
+type GenState = "idle" | "generating" | "done";
+
+const COUNT_OPTIONS = [2, 3, 4] as const;
+
+const LOADING_TIPS = [
+  "正在阅读角色设定，感受她的灵魂～",
+  "构思画面中，请稍等一下下～",
+  "Prompt 正在从脑海中涌现出来～",
+  "快好了！正在做最后的润色～",
+];
+
+interface DetailPanelProps {
+  card: PromptCard | null;
+  onClose: () => void;
+  onSave: (id: string, newPrompt: string) => void;
+}
+
+const DetailPanel = ({ card, onClose, onSave }: DetailPanelProps) => {
+  const [editText, setEditText] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (card) {
+      setEditText(card.fullPrompt);
+      setSaved(false);
+    }
+  }, [card]);
+
+  const handleSave = () => {
+    if (!card) return;
+    onSave(card.id, editText);
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleCopy = () => {
+    void navigator.clipboard.writeText(editText);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex justify-end"
+      style={{ pointerEvents: card ? "auto" : "none" }}
+    >
+      <div
+        className="absolute inset-0 transition-opacity duration-300"
+        style={{
+          background: "rgba(253,164,175,0.12)",
+          backdropFilter: card ? "blur(4px)" : "none",
+          opacity: card ? 1 : 0,
+        }}
+        onClick={onClose}
+        aria-hidden={!card}
+      />
+
+      <div
+        className="relative w-full max-w-lg h-full flex flex-col transition-transform duration-300"
+        style={{
+          background: "linear-gradient(160deg, #fff8fa 0%, #fffaf5 100%)",
+          borderLeft: "1px solid rgba(253,164,175,0.25)",
+          transform: card ? "translateX(0)" : "translateX(100%)",
+        }}
+      >
+        <div className="h-[3px] w-full shrink-0 bg-gradient-to-r from-rose-300 via-pink-400 to-rose-300 opacity-70" />
+
+        <div className="flex items-center justify-between px-6 py-4 shrink-0 border-b border-rose-100/50">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className="w-8 h-8 shrink-0 flex items-center justify-center rounded-xl"
+              style={{ background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)" }}
+            >
+              <i className="ri-quill-pen-line text-white text-sm"></i>
+            </div>
+            <div className="min-w-0">
+              <h3
+                className="text-sm font-bold text-rose-700 truncate"
+                style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+              >
+                {card?.title ?? ""}
+              </h3>
+              <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                {card?.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="text-xs px-1.5 py-0.5 rounded-full"
+                    style={{
+                      background: "rgba(253,164,175,0.15)",
+                      color: "#f472b6",
+                    }}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 shrink-0 flex items-center justify-center rounded-xl cursor-pointer transition-all duration-200 hover:bg-rose-100/60"
+            style={{ color: "#f472b6" }}
+          >
+            <i className="ri-close-line text-base"></i>
+          </button>
+        </div>
+
+        <div className="flex-1 flex flex-col px-6 py-4 min-h-0">
+          <div className="flex items-center justify-between mb-2">
+            <span
+              className="text-xs font-medium text-rose-500"
+              style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+            >
+              完整 Prompt（可直接编辑修改）
+            </span>
+            <span className="text-xs text-rose-300/60">{editText.length} 字符</span>
+          </div>
+          <textarea
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            className="flex-1 w-full min-h-[200px] resize-none rounded-2xl p-4 text-sm leading-relaxed outline-none transition-all duration-200"
+            style={{
+              background: "rgba(255,255,255,0.8)",
+              border: "1.5px solid rgba(253,164,175,0.25)",
+              color: "#7c3f5e",
+              fontFamily: "monospace",
+              fontSize: "13px",
+            }}
+            onFocus={(e) => {
+              e.target.style.borderColor = "rgba(244,114,182,0.5)";
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = "rgba(253,164,175,0.25)";
+            }}
+          />
+        </div>
+
+        <div className="px-6 pb-6 shrink-0 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm cursor-pointer transition-all duration-200 whitespace-nowrap"
+            style={{
+              background: "rgba(253,164,175,0.12)",
+              border: "1px solid rgba(253,164,175,0.25)",
+              color: "#f472b6",
+              fontFamily: "'ZCOOL KuaiLe', cursive",
+            }}
+          >
+            <i className="ri-file-copy-line text-sm"></i>
+            复制 Prompt
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium cursor-pointer transition-all duration-200 whitespace-nowrap"
+            style={{
+              background: saved
+                ? "linear-gradient(135deg, #6ee7b7 0%, #34d399 100%)"
+                : "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+              color: "white",
+              fontFamily: "'ZCOOL KuaiLe', cursive",
+              boxShadow: "0 2px 8px rgba(244,114,182,0.3)",
+            }}
+          >
+            <i className={saved ? "ri-check-line text-sm" : "ri-save-line text-sm"}></i>
+            {saved ? "已保存！" : "保存修改"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface PromptCardItemProps {
+  card: PromptCard;
+  index: number;
+  onClick: () => void;
+}
+
+const PromptCardItem = ({ card, index, onClick }: PromptCardItemProps) => {
+  const [hovered, setHovered] = useState(false);
+
+  const gradients = [
+    "from-rose-100/60 to-pink-50/60",
+    "from-pink-100/60 to-fuchsia-50/60",
+    "from-fuchsia-100/60 to-rose-50/60",
+    "from-amber-50/60 to-rose-50/60",
+  ];
+
+  const accentColors = ["#f472b6", "#e879f9", "#fb7185", "#f59e0b"];
+
+  return (
+    <div
+      className={`relative rounded-2xl p-4 cursor-pointer transition-all duration-200 bg-gradient-to-br ${gradients[index % gradients.length]}`}
+      style={{
+        border: hovered
+          ? `1.5px solid ${accentColors[index % accentColors.length]}50`
+          : "1.5px solid rgba(253,164,175,0.2)",
+        transform: hovered ? "translateY(-2px)" : "translateY(0)",
+      }}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div
+        className="absolute top-3 right-3 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold text-white"
+        style={{ background: accentColors[index % accentColors.length] }}
+      >
+        {index + 1}
+      </div>
+
+      <h4
+        className="text-sm font-bold text-rose-700 mb-2 pr-8"
+        style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+      >
+        {card.title}
+      </h4>
+
+      <div className="flex items-center gap-1 mb-2.5 flex-wrap">
+        {card.tags.map((tag) => (
+          <span
+            key={tag}
+            className="text-xs px-2 py-0.5 rounded-full"
+            style={{
+              background: "rgba(253,164,175,0.18)",
+              color: "#f472b6",
+            }}
+          >
+            #{tag}
+          </span>
+        ))}
+      </div>
+
+      <p className="text-xs text-rose-500/70 leading-relaxed line-clamp-2 font-mono">{card.preview}</p>
+
+      <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-rose-100/50">
+        <span className="text-xs text-rose-300/60">{card.createdAt}</span>
+        <span
+          className="text-xs flex items-center gap-1 transition-all duration-200"
+          style={{ color: accentColors[index % accentColors.length] }}
+        >
+          点击查看完整 Prompt
+          <i className="ri-arrow-right-line text-xs"></i>
+        </span>
+      </div>
+    </div>
+  );
+};
+
+const PromptGenPage = ({ charas, listLoading, listError }: PromptGenPageProps) => {
+  const [selectedCharaId, setSelectedCharaId] = useState<string>("");
+  const [seedPrompt, setSeedPrompt] = useState("");
+  const [promptCount, setPromptCount] = useState<2 | 3 | 4>(3);
+  const [genState, setGenState] = useState<GenState>("idle");
+  const [cards, setCards] = useState<PromptCard[]>([]);
+  const [tipIndex, setTipIndex] = useState(0);
+  const [detailCard, setDetailCard] = useState<PromptCard | null>(null);
+  const tipTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (charas.length === 0) {
+      setSelectedCharaId("");
+      return;
+    }
+    setSelectedCharaId((prev) => (prev && charas.some((c) => c.id === prev) ? prev : charas[0]!.id));
+  }, [charas]);
+
+  const selectedChara = charas.find((c) => c.id === selectedCharaId) ?? null;
+  const hasCharas = charas.length > 0;
+
+  const startGenerate = () => {
+    if (!selectedCharaId || !seedPrompt.trim()) return;
+    setGenState("generating");
+    setCards([]);
+    setTipIndex(0);
+
+    tipTimerRef.current = setInterval(() => {
+      setTipIndex((prev) => (prev + 1) % LOADING_TIPS.length);
+    }, 900);
+
+    window.setTimeout(() => {
+      if (tipTimerRef.current) clearInterval(tipTimerRef.current);
+      const generated = MOCK_PROMPT_CARDS.slice(0, promptCount).map((c, i) => ({
+        ...c,
+        id: `gen-${Date.now()}-${i}`,
+        createdAt: new Date().toISOString().slice(0, 10),
+      }));
+      setCards(generated);
+      setGenState("done");
+    }, 3200);
+  };
+
+  const handleRegenerate = () => {
+    setGenState("idle");
+    setCards([]);
+  };
+
+  const handleSaveCard = (id: string, newPrompt: string) => {
+    setCards((prev) => prev.map((c) => (c.id === id ? { ...c, fullPrompt: newPrompt } : c)));
+    if (detailCard?.id === id) {
+      setDetailCard((prev) => (prev ? { ...prev, fullPrompt: newPrompt } : prev));
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (tipTimerRef.current) clearInterval(tipTimerRef.current);
+    };
+  }, []);
+
+  const canSubmit = hasCharas && !!selectedCharaId && !!seedPrompt.trim();
+  const submitDisabled = !canSubmit || genState === "generating" || !!listLoading;
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div
+        className="shrink-0 px-6 py-5 border-b border-rose-100/40"
+        style={{ background: "rgba(255,255,255,0.3)" }}
+      >
+        {listError && (
+          <p className="text-xs text-amber-600 mb-3 rounded-xl px-3 py-2 bg-amber-50/80 border border-amber-100">
+            {listError}
+          </p>
+        )}
+        <div className="flex items-start gap-5">
+          <div className="flex flex-col gap-3 w-52 shrink-0">
+            <div>
+              <label
+                className="block text-xs font-medium text-rose-500 mb-1.5"
+                style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+              >
+                <i className="ri-user-heart-line mr-1"></i>选择角色
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedCharaId}
+                  onChange={(e) => setSelectedCharaId(e.target.value)}
+                  disabled={listLoading || !hasCharas}
+                  className="w-full appearance-none rounded-xl px-3 py-2 text-sm outline-none cursor-pointer transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                  style={{
+                    background: "rgba(255,255,255,0.85)",
+                    border: "1.5px solid rgba(253,164,175,0.3)",
+                    color: "#7c3f5e",
+                    fontFamily: "'ZCOOL KuaiLe', cursive",
+                  }}
+                >
+                  {!hasCharas && !listLoading ? (
+                    <option value="">暂无角色，请先在「素材加工」中创建</option>
+                  ) : (
+                    charas.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none w-4 h-4 flex items-center justify-center">
+                  <i className="ri-arrow-down-s-line text-rose-400 text-sm"></i>
+                </div>
+              </div>
+              {listLoading && (
+                <p className="text-xs text-rose-300/70 mt-2">正在加载角色列表…</p>
+              )}
+              {selectedChara && !listLoading && (
+                <div
+                  className="flex items-center gap-2 mt-2 px-2.5 py-1.5 rounded-xl"
+                  style={{
+                    background: "rgba(253,164,175,0.1)",
+                    border: "1px solid rgba(253,164,175,0.2)",
+                  }}
+                >
+                  <div className="w-7 h-7 rounded-lg overflow-hidden shrink-0 border border-rose-100">
+                    {selectedChara.avatarUrl ? (
+                      <img
+                        src={selectedChara.avatarUrl}
+                        alt={selectedChara.name}
+                        className="w-full h-full object-cover object-top"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-rose-50">
+                        <i className="ri-user-heart-line text-rose-300 text-xs"></i>
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p
+                      className="text-xs font-bold text-rose-600 truncate"
+                      style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+                    >
+                      {selectedChara.name}
+                    </p>
+                    <p className="text-xs text-rose-400/60 truncate">
+                      {selectedChara.settingText.trim()
+                        ? `${selectedChara.settingText.slice(0, 18)}${selectedChara.settingText.length > 18 ? "…" : ""}`
+                        : "暂无设定摘要"}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label
+                className="block text-xs font-medium text-rose-500 mb-1.5"
+                style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+              >
+                <i className="ri-stack-line mr-1"></i>生成数量
+              </label>
+              <div className="flex items-center gap-2">
+                {COUNT_OPTIONS.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setPromptCount(n)}
+                    className="flex-1 py-1.5 rounded-xl text-sm font-medium cursor-pointer transition-all duration-200 whitespace-nowrap"
+                    style={{
+                      background:
+                        promptCount === n
+                          ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
+                          : "rgba(255,255,255,0.7)",
+                      border:
+                        promptCount === n
+                          ? "1.5px solid transparent"
+                          : "1.5px solid rgba(253,164,175,0.25)",
+                      color: promptCount === n ? "white" : "#f472b6",
+                      fontFamily: "'ZCOOL KuaiLe', cursive",
+                      boxShadow:
+                        promptCount === n ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
+                    }}
+                  >
+                    {n} 个
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 flex flex-col gap-2 min-w-0">
+            <label
+              className="block text-xs font-medium text-rose-500"
+              style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+            >
+              <i className="ri-seedling-line mr-1"></i>种子提示词 Seed Prompt
+              <span className="ml-2 text-rose-300/60 font-normal">
+                描述你想要的画面氛围、场景、动作等
+              </span>
+            </label>
+            <textarea
+              value={seedPrompt}
+              onChange={(e) => setSeedPrompt(e.target.value)}
+              placeholder="例如：少女在樱花树下弹奏钢琴，阳光透过花瓣洒落，温柔而梦幻的氛围..."
+              rows={4}
+              className="w-full resize-none rounded-2xl px-4 py-3 text-sm leading-relaxed outline-none transition-all duration-200"
+              style={{
+                background: "rgba(255,255,255,0.85)",
+                border: "1.5px solid rgba(253,164,175,0.25)",
+                color: "#7c3f5e",
+                fontFamily: "'ZCOOL KuaiLe', cursive",
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = "rgba(244,114,182,0.5)";
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = "rgba(253,164,175,0.25)";
+              }}
+            />
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-xs text-rose-300/60">
+                角色设定会自动融入，你只需要描述这次的画面想象～
+              </p>
+              <button
+                type="button"
+                onClick={startGenerate}
+                disabled={submitDisabled}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium transition-all duration-200 whitespace-nowrap"
+                style={{
+                  background: submitDisabled
+                    ? "rgba(253,164,175,0.3)"
+                    : "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+                  color: submitDisabled ? "rgba(244,114,182,0.5)" : "white",
+                  fontFamily: "'ZCOOL KuaiLe', cursive",
+                  boxShadow: submitDisabled ? "none" : "0 2px 10px rgba(244,114,182,0.35)",
+                  cursor: submitDisabled ? "not-allowed" : "pointer",
+                }}
+              >
+                <i className="ri-sparkling-line text-sm"></i>
+                {genState === "generating" ? "生成中..." : "开始生成"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5">
+        {genState === "idle" && (
+          <div className="flex flex-col items-center justify-center h-full text-center py-16">
+            <div
+              className="w-20 h-20 flex items-center justify-center rounded-3xl mb-5"
+              style={{
+                background:
+                  "linear-gradient(135deg, rgba(253,164,175,0.12) 0%, rgba(244,114,182,0.08) 100%)",
+                border: "1.5px dashed rgba(244,114,182,0.2)",
+              }}
+            >
+              <i className="ri-sparkling-2-line text-rose-300 text-3xl"></i>
+            </div>
+            <h3
+              className="text-base font-bold text-rose-400/60 mb-2"
+              style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+            >
+              还没有生成任何 Prompt 哦
+            </h3>
+            <p className="text-sm text-rose-300/50 max-w-xs leading-relaxed">
+              选择一位角色，输入你的画面灵感，点击「开始生成」就可以啦～
+            </p>
+          </div>
+        )}
+
+        {genState === "generating" && (
+          <div className="flex flex-col items-center justify-center h-full text-center py-16">
+            <div className="relative mb-6">
+              <div
+                className="w-20 h-20 rounded-full flex items-center justify-center"
+                style={{
+                  background:
+                    "linear-gradient(135deg, rgba(253,164,175,0.15) 0%, rgba(244,114,182,0.1) 100%)",
+                  border: "2px solid rgba(244,114,182,0.2)",
+                }}
+              >
+                <i className="ri-sparkling-line text-rose-400 text-3xl"></i>
+              </div>
+              <div
+                className="absolute inset-0 rounded-full"
+                style={{
+                  border: "2px solid transparent",
+                  borderTopColor: "#f472b6",
+                  borderRightColor: "rgba(244,114,182,0.3)",
+                  animation: "pg-spin 1.2s linear infinite",
+                }}
+              />
+            </div>
+            <h3
+              className="text-base font-bold text-rose-500 mb-2"
+              style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+            >
+              Prompt 生成中～
+            </h3>
+            <p
+              className="text-sm text-rose-400/70 transition-all duration-500"
+              style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+            >
+              {LOADING_TIPS[tipIndex]}
+            </p>
+            <div className="flex items-center gap-1.5 mt-4">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="w-1.5 h-1.5 rounded-full bg-rose-300"
+                  style={{
+                    animation: "pg-bounce 1.2s ease-in-out infinite",
+                    animationDelay: `${i * 0.2}s`,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {genState === "done" && cards.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div
+                  className="w-6 h-6 flex items-center justify-center rounded-lg"
+                  style={{
+                    background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+                  }}
+                >
+                  <i className="ri-sparkling-fill text-white text-xs"></i>
+                </div>
+                <span
+                  className="text-sm font-bold text-rose-600"
+                  style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+                >
+                  生成完成！共 {cards.length} 个 Prompt
+                </span>
+                <span className="text-xs text-rose-300/60">点击卡片查看完整内容</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleRegenerate}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-sm cursor-pointer transition-all duration-200 whitespace-nowrap"
+                style={{
+                  background: "rgba(253,164,175,0.1)",
+                  border: "1px solid rgba(253,164,175,0.25)",
+                  color: "#f472b6",
+                  fontFamily: "'ZCOOL KuaiLe', cursive",
+                }}
+              >
+                <i className="ri-refresh-line text-sm"></i>
+                重新生成
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {cards.map((card, i) => (
+                <PromptCardItem
+                  key={card.id}
+                  card={card}
+                  index={i}
+                  onClick={() => setDetailCard(card)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <DetailPanel
+        card={detailCard}
+        onClose={() => setDetailCard(null)}
+        onSave={handleSaveCard}
+      />
+
+      <style>{`
+        @keyframes pg-spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes pg-bounce {
+          0%, 100% { transform: translateY(0); opacity: 0.5; }
+          50% { transform: translateY(-5px); opacity: 1; }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+export default PromptGenPage;
