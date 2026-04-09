@@ -810,7 +810,7 @@ const ProfileStage = ({
       }
       timer = window.setTimeout(() => {
         void poll();
-      }, 2000);
+      }, 10000);
     };
 
     void poll();

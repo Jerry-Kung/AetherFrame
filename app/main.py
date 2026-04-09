@@ -30,6 +30,9 @@ class _SuppressPollAccessLog(logging.Filter):
         # 素材加工 · 拍摄标准照任务状态轮询
         if "/standard-photo/status HTTP" in msg:
             return False
+        # 素材加工 · 角色小档案任务状态轮询
+        if "/chara-profile/status HTTP" in msg:
+            return False
         return True
 
 
