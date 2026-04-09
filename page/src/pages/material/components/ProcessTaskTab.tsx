@@ -38,6 +38,8 @@ const ProcessTaskTab = ({
   chara,
   onCharacterUpdated,
   showToast,
+  onGoRaw,
+  onGoStandard,
 }: ProcessTaskTabProps) => {
   const active = SUB_TASKS.find((s) => s.id === subTask)!;
 
