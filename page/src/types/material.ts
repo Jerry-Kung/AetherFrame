@@ -128,6 +128,29 @@ function emptyBio(displayName: string): CharaBio {
   };
 }
 
+/**
+ * 后端角色详情只保证 `official_photos` 五槽位（顺序与 ALL_STANDARD_PHOTO_TYPES 一致），
+ * 不一定返回 `standard_photos`。从小档案解锁等逻辑需要按「类型」识别已完成槽位，故从槽位 URL 推导。
+ */
+export function standardPhotosFromOfficialSlots(
+  officialPhotos: [string | null, string | null, string | null, string | null, string | null]
+): CharaStandardPhoto[] {
+  const result: CharaStandardPhoto[] = [];
+  for (let i = 0; i < ALL_STANDARD_PHOTO_TYPES.length; i++) {
+    const url = officialPhotos[i];
+    const type = ALL_STANDARD_PHOTO_TYPES[i];
+    if (typeof url === "string" && url.trim().length > 0) {
+      result.push({
+        id: `official-slot-${i}-${type}`,
+        type,
+        url,
+        createdAt: "",
+      });
+    }
+  }
+  return result;
+}
+
 /** 后端角色详情（snake_case JSON） */
 export interface ApiCharacterDetail {
   id: string;
@@ -182,12 +205,23 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
     (photos[4] as string | null | undefined) ?? null,
   ];
 
-  const standardPhotos: CharaStandardPhoto[] = (d.standard_photos || []).map((sp) => ({
+  const fromApiStandard = (d.standard_photos || []).map((sp) => ({
     id: sp.id,
     type: sp.type,
     url: sp.url,
     createdAt: sp.created_at,
   }));
+  const fromSlots = standardPhotosFromOfficialSlots(officialPhotos);
+  const byType = new Map<StandardPhotoType, CharaStandardPhoto>();
+  for (const p of fromSlots) {
+    byType.set(p.type, p);
+  }
+  for (const p of fromApiStandard) {
+    byType.set(p.type, p);
+  }
+  const standardPhotos: CharaStandardPhoto[] = ALL_STANDARD_PHOTO_TYPES.map((t) => byType.get(t)).filter(
+    (x): x is CharaStandardPhoto => x != null
+  );
 
   const avatarUrl =
     d.avatar_url && d.avatar_url.length > 0 ? d.avatar_url : DEFAULT_CHARA_AVATAR_PLACEHOLDER;
@@ -225,6 +259,7 @@ export function summaryToListProfile(s: ApiCharacterSummary): CharaProfile {
     settingText: "",
     rawImages: [],
     officialPhotos: [null, null, null, null, null],
+    standardPhotos: [],
     bio: emptyBio(s.display_name),
   };
 }
