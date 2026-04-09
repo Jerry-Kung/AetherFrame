@@ -27,6 +27,10 @@ export default function Home() {
   const [activeMode, setActiveMode] = useState<ModeId>("material");
 
   const handleModeSwitch = (id: ModeId) => {
+    if (id === "material") {
+      navigate("/material");
+      return;
+    }
     if (id === "repair") {
       navigate("/repair");
       return;

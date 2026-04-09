@@ -28,6 +28,7 @@ const defaultEditorState = (): EditorState => ({
   prompt: "",
   referenceImages: [],
   outputCount: 1,
+  aspectRatio: "16:9",
 });
 
 const PROMPT_SYNC_DEBOUNCE_MS = 350;
@@ -76,6 +77,7 @@ export default function RepairPage() {
         prompt: currentTask.prompt,
         referenceImages: currentTask.referenceImages,
         outputCount: currentTask.outputCount,
+        aspectRatio: currentTask.aspectRatio,
       });
     } else {
       setEditorState(defaultEditorState());
@@ -166,6 +168,10 @@ export default function RepairPage() {
 
       if (next.outputCount !== undefined) {
         void updateTask({ outputCount: next.outputCount });
+      }
+
+      if (next.aspectRatio !== undefined) {
+        void updateTask({ aspectRatio: next.aspectRatio });
       }
 
       if (next.prompt !== undefined) {
@@ -290,6 +296,7 @@ export default function RepairPage() {
       await updateTask({
         prompt: editorState.prompt,
         outputCount: editorState.outputCount,
+        aspectRatio: editorState.aspectRatio,
       });
       const useReferenceImages = editorState.referenceImages.length > 0;
       await startRepair(useReferenceImages);

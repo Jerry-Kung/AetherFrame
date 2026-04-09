@@ -155,8 +155,8 @@ def generate_repair_images(
     main_image_path: str,
     reference_image_paths: List[str],
     output_count: int = 2,
-    aspect_ratio: str = "1:1"
-) -> Tuple[List[str], Optional[str]]:
+    aspect_ratio: str = "16:9"
+) -> Tuple[List[str], Optional[str], Optional[str]]:
     """
     生成修补图片
     
@@ -179,7 +179,7 @@ def generate_repair_images(
 
 生产路径由 **`RepairTaskService.start_task()`**（[`app/services/repair_service/repair_task_service.py`](../../app/services/repair_service/repair_task_service.py)）处理：校验任务、置为 `processing`、注册 `BackgroundTasks` 或使用 `asyncio.to_thread` 执行同步流水线。
 
-同步生成与落盘逻辑集中在 **`run_repair_generation_pipeline()`**（[`app/services/repair_service/repair_execution.py`](../../app/services/repair_service/repair_execution.py)）：调用 `generate_repair_images`、写入结果目录、通过回调更新任务状态（后台任务使用独立 DB 会话）、最后清理临时文件。
+同步生成与落盘逻辑集中在 **`run_repair_generation_pipeline()`**（[`app/services/repair_service/repair_execution.py`](../../app/services/repair_service/repair_execution.py)）：从任务记录读取 `aspect_ratio`（见下）并传入 `generate_repair_images`、写入结果目录、通过回调更新任务状态（后台任务使用独立 DB 会话）、最后清理临时文件。
 
 `RepairService` 负责任务 CRUD、文件上传与响应组装，**不再**包含启动修补或生成流水线，避免与 `RepairTaskService` 重复实现。
 
@@ -307,7 +307,7 @@ repair_service.upload_reference_images(task.id, ref_files)
 
 ### 图片生成相关
 
-- **宽高比**：`app/services/repair_service/image_generation_service.py` 中的 `DEFAULT_REPAIR_ASPECT_RATIO`，作为 `generate_repair_images(..., aspect_ratio=...)` 的默认值。
+- **宽高比**：修补任务表 `repair_tasks.aspect_ratio` 持久化用户选择（`TaskCreate`/`TaskUpdate` 校验为 `16:9`、`4:3`、`1:1`、`3:4`、`9:16`）；`RepairTaskService.start_task` 将其传入 `run_repair_generation_pipeline` → `generate_repair_images` → `generate_image_with_nano_banana_pro`。未设置时逻辑默认与 `app/services/repair_service/image_generation_service.py` 中的 `DEFAULT_REPAIR_ASPECT_RATIO`（`16:9`）一致。
 - **imageSize（如 2K）与 HTTP 调用**：由 `app/tools/llm/nano_banana_pro.py` 内建；若需可配置或超时/重试，应扩展该工具函数的参数与实现，而非在 service 层保留未使用的字典配置。
 
 ---

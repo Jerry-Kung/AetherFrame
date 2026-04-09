@@ -79,7 +79,8 @@ class RepairService:
         task_dict = {
             "name": task_data.name,
             "prompt": task_data.prompt,
-            "output_count": task_data.output_count
+            "output_count": task_data.output_count,
+            "aspect_ratio": task_data.aspect_ratio,
         }
 
         # 创建任务
@@ -188,6 +189,8 @@ class RepairService:
             updates["prompt"] = task_data.prompt
         if task_data.output_count is not None:
             updates["output_count"] = task_data.output_count
+        if task_data.aspect_ratio is not None:
+            updates["aspect_ratio"] = task_data.aspect_ratio
 
         if not updates:
             logger.warning(f"更新失败，没有提供更新字段: {task_id}")
@@ -281,6 +284,7 @@ class RepairService:
             status=task.status,
             prompt=task.prompt,
             output_count=task.output_count,
+            aspect_ratio=getattr(task, "aspect_ratio", None) or "16:9",
             created_at=task.created_at,
             updated_at=task.updated_at,
             has_main_image=has_main_image,

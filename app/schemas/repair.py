@@ -8,6 +8,18 @@ from typing import Optional, List, Any
 
 logger = logging.getLogger(__name__)
 
+# 与前端修补编辑器、nano_banana_pro imageConfig.aspectRatio 一致
+REPAIR_ASPECT_RATIOS = frozenset({"16:9", "4:3", "1:1", "3:4", "9:16"})
+
+
+def _validate_aspect_ratio_value(v: str) -> str:
+    if v not in REPAIR_ASPECT_RATIOS:
+        raise ValueError(
+            f"aspect_ratio 必须是以下之一: {', '.join(sorted(REPAIR_ASPECT_RATIOS))}"
+        )
+    return v
+
+
 # ============== 基础模型 ==============
 
 class TaskBase(BaseModel):
@@ -19,6 +31,12 @@ class TaskBase(BaseModel):
         description="修补 Prompt（创建时可留空，在编辑区填写后再提交任务）",
     )
     output_count: int = Field(2, ge=1, le=4, description="输出数量 (1/2/4)")
+    aspect_ratio: str = Field(
+        "16:9",
+        min_length=3,
+        max_length=20,
+        description="输出图片长宽比",
+    )
 
     @field_validator('output_count')
     @classmethod
@@ -27,6 +45,11 @@ class TaskBase(BaseModel):
         if v not in {1, 2, 4}:
             raise ValueError('output_count 必须是 1、2 或 4')
         return v
+
+    @field_validator("aspect_ratio")
+    @classmethod
+    def validate_aspect_ratio_create(cls, v: str) -> str:
+        return _validate_aspect_ratio_value(v)
 
 # ============== 创建模型 ==============
 
@@ -41,6 +64,7 @@ class TaskUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     prompt: Optional[str] = Field(None, min_length=1, max_length=2000)
     output_count: Optional[int] = Field(None, ge=1, le=4)
+    aspect_ratio: Optional[str] = Field(None, min_length=3, max_length=20)
 
     @field_validator('output_count')
     @classmethod
@@ -49,6 +73,13 @@ class TaskUpdate(BaseModel):
         if v is not None and v not in {1, 2, 4}:
             raise ValueError('output_count 必须是 1、2 或 4')
         return v
+
+    @field_validator("aspect_ratio")
+    @classmethod
+    def validate_aspect_ratio_update(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        return _validate_aspect_ratio_value(v)
 
 # ============== 响应模型 ==============
 
@@ -64,6 +95,7 @@ class TaskSimple(BaseModel):
     status: str
     prompt: str
     output_count: int
+    aspect_ratio: str
     created_at: datetime
     updated_at: datetime
     has_main_image: bool

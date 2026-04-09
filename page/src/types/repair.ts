@@ -5,6 +5,16 @@
 // 任务状态类型
 export type TaskStatus = "pending" | "processing" | "completed" | "failed";
 
+/** 修补输出图片长宽比（与后端 aspect_ratio 字符串一致） */
+export type AspectRatio = "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
+
+const ASPECT_RATIO_VALUES: readonly AspectRatio[] = ["16:9", "4:3", "1:1", "3:4", "9:16"];
+
+export function normalizeAspectRatio(raw: unknown): AspectRatio {
+  const s = String(raw ?? "").trim();
+  return (ASPECT_RATIO_VALUES as readonly string[]).includes(s) ? (s as AspectRatio) : "16:9";
+}
+
 /** 后端图片字段（任务详情 GET /tasks/:id） */
 export interface BackendImageInfo {
   filename: string;
@@ -21,6 +31,8 @@ export interface BackendTask {
   status: TaskStatus;
   prompt: string;
   output_count: number;
+  /** 后端上线后返回；缺省时前端用 normalizeAspectRatio */
+  aspect_ratio?: string | null;
   created_at: string;
   updated_at: string;
   has_main_image: boolean;
@@ -43,6 +55,7 @@ export interface RepairTask {
   prompt: string;
   referenceImages: string[];
   outputCount: 1 | 2 | 4;
+  aspectRatio: AspectRatio;
   results: string[];
   errorMessage: string | null;
 }
@@ -67,6 +80,7 @@ export interface TaskUpdateRequest {
   name?: string;
   prompt?: string;
   output_count?: number;
+  aspect_ratio?: string;
 }
 
 // Prompt 模板类型（与后端 PromptTemplateResponse 一致，字段名为 text）
@@ -223,6 +237,7 @@ export function backendToFrontendTask(raw: unknown): RepairTask {
     prompt: String(t.prompt ?? ""),
     referenceImages,
     outputCount: normalizeOutputCount(t.output_count),
+    aspectRatio: normalizeAspectRatio(t.aspect_ratio),
     results,
     errorMessage: (t.error_message as string | null) ?? null,
   };
@@ -233,11 +248,13 @@ export function frontendToBackendUpdate(data: {
   name?: string;
   prompt?: string;
   outputCount?: number;
+  aspectRatio?: AspectRatio;
 }): TaskUpdateRequest {
   const result: TaskUpdateRequest = {};
   if (data.name !== undefined) result.name = data.name;
   if (data.prompt !== undefined) result.prompt = data.prompt;
   if (data.outputCount !== undefined) result.output_count = data.outputCount;
+  if (data.aspectRatio !== undefined) result.aspect_ratio = data.aspectRatio;
   return result;
 }
 
@@ -247,4 +264,5 @@ export interface EditorState {
   prompt: string;
   referenceImages: string[];
   outputCount: 1 | 2 | 4;
+  aspectRatio: AspectRatio;
 }

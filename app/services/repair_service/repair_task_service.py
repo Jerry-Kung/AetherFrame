@@ -102,6 +102,8 @@ class RepairTaskService:
         else:
             logger.debug("不使用参考图")
 
+        aspect_ratio = getattr(task, "aspect_ratio", None) or "16:9"
+
         # 6. 添加后台任务
         if background_tasks:
             background_tasks.add_task(
@@ -110,7 +112,8 @@ class RepairTaskService:
                 prompt=task.prompt,
                 main_image_path=main_image_path,
                 reference_image_paths=reference_image_paths,
-                output_count=task.output_count
+                output_count=task.output_count,
+                aspect_ratio=aspect_ratio,
             )
             logger.info(f"已添加后台任务: task_id={task_id}")
         else:
@@ -121,7 +124,8 @@ class RepairTaskService:
                 prompt=task.prompt,
                 main_image_path=main_image_path,
                 reference_image_paths=reference_image_paths,
-                output_count=task.output_count
+                output_count=task.output_count,
+                aspect_ratio=aspect_ratio,
             )
 
         return updated_task
@@ -136,7 +140,8 @@ class RepairTaskService:
         prompt: str,
         main_image_path: str,
         reference_image_paths: List[str],
-        output_count: int
+        output_count: int,
+        aspect_ratio: str = "16:9",
     ) -> None:
         """
         后台执行任务（将阻塞的 LLM/IO 放到线程池，避免占满 asyncio 事件循环导致轮询 API 无响应）
@@ -148,6 +153,7 @@ class RepairTaskService:
             main_image_path,
             reference_image_paths,
             output_count,
+            aspect_ratio,
         )
 
     def _execute_task_sync(
@@ -157,11 +163,14 @@ class RepairTaskService:
         main_image_path: str,
         reference_image_paths: List[str],
         output_count: int,
+        aspect_ratio: str = "16:9",
     ) -> None:
         """
         同步执行修补（在线程池中运行）：生成图、落盘、更新状态。
         """
-        logger.info(f"开始后台执行任务: task_id={task_id}, output_count={output_count}")
+        logger.info(
+            f"开始后台执行任务: task_id={task_id}, output_count={output_count}, aspect_ratio={aspect_ratio}"
+        )
         repair_execution.run_repair_generation_pipeline(
             task_id=task_id,
             prompt=prompt,
@@ -169,6 +178,7 @@ class RepairTaskService:
             reference_image_paths=reference_image_paths,
             output_count=output_count,
             update_status=self._update_task_status,
+            aspect_ratio=aspect_ratio,
         )
 
     # ==========================================
