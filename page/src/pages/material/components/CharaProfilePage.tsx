@@ -252,10 +252,10 @@ const GeneratingView = ({
   label: string;
   onDone: () => void;
 }) => {
-  useState(() => {
+  useEffect(() => {
     const timer = setTimeout(onDone, 2800);
     return () => clearTimeout(timer);
-  });
+  }, [onDone]);
 
   return (
     <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
