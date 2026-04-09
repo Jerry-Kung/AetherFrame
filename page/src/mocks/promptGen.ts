@@ -14,6 +14,13 @@ export interface PromptGenSession {
   cards: PromptCard[];
 }
 
+/** 供「美图创作 → 一键创作」承接的上一轮预生成结果（由 Creation 页持有） */
+export interface CreationPromptSession {
+  charaId: string;
+  cards: PromptCard[];
+  updatedAt: number;
+}
+
 export const MOCK_PROMPT_CARDS: PromptCard[] = [
   {
     id: "p001",

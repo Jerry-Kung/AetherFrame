@@ -1,11 +1,17 @@
 import { useState, useRef, useEffect } from "react";
 import type { CharaProfile } from "@/types/material";
-import { type PromptCard, MOCK_PROMPT_CARDS } from "@/mocks/promptGen";
+import {
+  type PromptCard,
+  type CreationPromptSession,
+  MOCK_PROMPT_CARDS,
+} from "@/mocks/promptGen";
 
 interface PromptGenPageProps {
   charas: CharaProfile[];
   listLoading?: boolean;
   listError?: string | null;
+  /** 同步到美图创作页：生成完成、卡片编辑后推送；清空预生成时传 null */
+  onPromptSessionChange?: (session: CreationPromptSession | null) => void;
 }
 
 type GenState = "idle" | "generating" | "done";
@@ -257,7 +263,7 @@ const PromptCardItem = ({ card, index, onClick }: PromptCardItemProps) => {
   );
 };
 
-const PromptGenPage = ({ charas, listLoading, listError }: PromptGenPageProps) => {
+const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }: PromptGenPageProps) => {
   const [selectedCharaId, setSelectedCharaId] = useState<string>("");
   const [seedPrompt, setSeedPrompt] = useState("");
   const [promptCount, setPromptCount] = useState<2 | 3 | 4>(3);
@@ -266,6 +272,8 @@ const PromptGenPage = ({ charas, listLoading, listError }: PromptGenPageProps) =
   const [tipIndex, setTipIndex] = useState(0);
   const [detailCard, setDetailCard] = useState<PromptCard | null>(null);
   const tipTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** 本轮生成结果对应的角色（避免用户在 done 态切换下拉框后错绑角色） */
+  const sessionCharaIdRef = useRef<string>("");
 
   useEffect(() => {
     if (charas.length === 0) {
@@ -295,18 +303,36 @@ const PromptGenPage = ({ charas, listLoading, listError }: PromptGenPageProps) =
         id: `gen-${Date.now()}-${i}`,
         createdAt: new Date().toISOString().slice(0, 10),
       }));
+      sessionCharaIdRef.current = selectedCharaId;
       setCards(generated);
       setGenState("done");
+      onPromptSessionChange?.({
+        charaId: selectedCharaId,
+        cards: generated,
+        updatedAt: Date.now(),
+      });
     }, 3200);
   };
 
   const handleRegenerate = () => {
+    sessionCharaIdRef.current = "";
     setGenState("idle");
     setCards([]);
+    onPromptSessionChange?.(null);
   };
 
   const handleSaveCard = (id: string, newPrompt: string) => {
-    setCards((prev) => prev.map((c) => (c.id === id ? { ...c, fullPrompt: newPrompt } : c)));
+    setCards((prev) => {
+      const next = prev.map((c) => (c.id === id ? { ...c, fullPrompt: newPrompt } : c));
+      if (genState === "done" && sessionCharaIdRef.current && next.length > 0) {
+        onPromptSessionChange?.({
+          charaId: sessionCharaIdRef.current,
+          cards: next,
+          updatedAt: Date.now(),
+        });
+      }
+      return next;
+    });
     if (detailCard?.id === id) {
       setDetailCard((prev) => (prev ? { ...prev, fullPrompt: newPrompt } : prev));
     }

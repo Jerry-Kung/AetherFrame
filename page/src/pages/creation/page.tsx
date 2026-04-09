@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ApiCharacterSummary, CharaProfile } from "@/types/material";
 import { summaryToListProfile } from "@/types/material";
+import type { CreationPromptSession } from "@/mocks/promptGen";
 import * as materialApi from "@/services/materialApi";
 import { ApiError } from "@/services/api";
 import PromptGenPage from "./components/PromptGenPage";
@@ -52,6 +53,11 @@ export default function CreationPage() {
   const [charas, setCharas] = useState<CharaProfile[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
+  const [promptSession, setPromptSession] = useState<CreationPromptSession | null>(null);
+
+  const handlePromptSessionChange = useCallback((session: CreationPromptSession | null) => {
+    setPromptSession(session);
+  }, []);
 
   const loadCharacters = useCallback(async () => {
     setListLoading(true);
@@ -249,9 +255,12 @@ export default function CreationPage() {
                   charas={charas}
                   listLoading={listLoading}
                   listError={listError}
+                  onPromptSessionChange={handlePromptSessionChange}
                 />
               )}
-              {activeTab === "art" && <ArtCreationPage />}
+              {activeTab === "art" && (
+                <ArtCreationPage charas={charas} promptSession={promptSession} />
+              )}
             </div>
           </div>
         </div>
