@@ -19,6 +19,34 @@ interface CharaProfilePageProps {
   onGoPhoto: () => void;
 }
 
+/** 从结果页返回配置后写入，避免刷新时仍被已完成的任务拉回「仅结果」心智；重新 start 时会清除 */
+const PROFILE_CONTINUE_CFG_KEY = (id: string) => `material_chara_profile_continue_config_${id}`;
+
+function setProfileContinueConfigFlag(characterId: string, on: boolean) {
+  try {
+    if (on) window.sessionStorage.setItem(PROFILE_CONTINUE_CFG_KEY(characterId), "1");
+    else window.sessionStorage.removeItem(PROFILE_CONTINUE_CFG_KEY(characterId));
+  } catch {
+    /* private mode */
+  }
+}
+
+function isProfileContinueConfigFlagSet(characterId: string): boolean {
+  try {
+    return window.sessionStorage.getItem(PROFILE_CONTINUE_CFG_KEY(characterId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+const PROFILE_STEP_LABELS: Record<string, string> = {
+  text_understanding: "正在理解人设文本…",
+  visual_official: "正在分析标准参考图…",
+  visual_fanart: "正在分析同人立绘…",
+  text_integration: "正在整合为小档案…",
+  done: "即将完成…",
+};
+
 type StageTab = "profile" | "advice";
 type GenState = "idle" | "generating" | "done";
 
@@ -244,8 +272,8 @@ const LockedCard = ({
   );
 };
 
-/* ── Generating animation ── */
-const GeneratingView = ({
+/* ── 创作建议占位动画（后端未接时仍用短时动画） ── */
+const TimedGeneratingView = ({
   label,
   onDone,
 }: {
@@ -278,7 +306,7 @@ const GeneratingView = ({
             style={{
               top: "50%",
               left: "50%",
-              animation: `orbit${i} 2s linear infinite`,
+              animation: `profileOrbit${i} 2s linear infinite`,
               animationDelay: `${i * 0.66}s`,
             }}
           >
@@ -296,15 +324,114 @@ const GeneratingView = ({
         AI 正在认真阅读角色资料，马上就好，请稍等一下下 ✨
       </p>
       <style>{`
-        @keyframes orbit0 {
+        @keyframes profileOrbit0 {
           0% { transform: translate(-50%, -50%) rotate(0deg) translateX(46px) rotate(0deg); }
           100% { transform: translate(-50%, -50%) rotate(360deg) translateX(46px) rotate(-360deg); }
         }
-        @keyframes orbit1 {
+        @keyframes profileOrbit1 {
           0% { transform: translate(-50%, -50%) rotate(120deg) translateX(46px) rotate(-120deg); }
           100% { transform: translate(-50%, -50%) rotate(480deg) translateX(46px) rotate(-480deg); }
         }
-        @keyframes orbit2 {
+        @keyframes profileOrbit2 {
+          0% { transform: translate(-50%, -50%) rotate(240deg) translateX(46px) rotate(-240deg); }
+          100% { transform: translate(-50%, -50%) rotate(600deg) translateX(46px) rotate(-600deg); }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+/** 角色小档案：异步任务进行中 / 失败（轮询由父组件负责） */
+const ProfileTaskGeneratingView = ({
+  currentStep,
+  errorMessage,
+  onBackToConfig,
+}: {
+  currentStep: string | null;
+  errorMessage: string | null;
+  onBackToConfig: () => void;
+}) => {
+  if (errorMessage) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-8 text-center max-w-md mx-auto">
+        <div
+          className="rounded-xl px-4 py-3 text-sm text-rose-600 border border-rose-100 bg-rose-50/90 mb-6 w-full"
+          style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+        >
+          {errorMessage}
+        </div>
+        <button
+          type="button"
+          onClick={onBackToConfig}
+          className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all hover:opacity-90"
+          style={{
+            fontFamily: "'ZCOOL KuaiLe', cursive",
+            background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+            color: "white",
+            boxShadow: "0 4px 14px rgba(244,114,182,0.3)",
+          }}
+        >
+          <i className="ri-arrow-go-back-line"></i>
+          返回配置
+        </button>
+      </div>
+    );
+  }
+
+  const stepLabel =
+    (currentStep && PROFILE_STEP_LABELS[currentStep]) || "任务已提交，正在排队处理…";
+
+  return (
+    <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
+      <div className="relative mb-8">
+        <div
+          className="w-20 h-20 rounded-3xl flex items-center justify-center"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(253,164,175,0.2) 0%, rgba(244,114,182,0.15) 100%)",
+            border: "2px solid rgba(244,114,182,0.25)",
+            animation: "pulse 1.5s ease-in-out infinite",
+          }}
+        >
+          <i className="ri-quill-pen-line text-rose-400 text-3xl"></i>
+        </div>
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="absolute w-2.5 h-2.5 flex items-center justify-center text-pink-400"
+            style={{
+              top: "50%",
+              left: "50%",
+              animation: `profileOrbit${i} 2s linear infinite`,
+              animationDelay: `${i * 0.66}s`,
+            }}
+          >
+            <i className="ri-star-fill text-xs"></i>
+          </div>
+        ))}
+      </div>
+      <h3
+        className="text-base font-bold text-rose-600 mb-2"
+        style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+      >
+        正在整理角色小档案～
+      </h3>
+      <p className="text-sm text-rose-500/80 leading-relaxed mb-1" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
+        {stepLabel}
+      </p>
+      <p className="text-xs text-rose-400/60 leading-relaxed">
+        多步推理可能需要数分钟，页面会自动刷新结果，请勿关闭标签页
+      </p>
+      <style>{`
+        @keyframes profileOrbit0 {
+          0% { transform: translate(-50%, -50%) rotate(0deg) translateX(46px) rotate(0deg); }
+          100% { transform: translate(-50%, -50%) rotate(360deg) translateX(46px) rotate(-360deg); }
+        }
+        @keyframes profileOrbit1 {
+          0% { transform: translate(-50%, -50%) rotate(120deg) translateX(46px) rotate(-120deg); }
+          100% { transform: translate(-50%, -50%) rotate(480deg) translateX(46px) rotate(-480deg); }
+        }
+        @keyframes profileOrbit2 {
           0% { transform: translate(-50%, -50%) rotate(240deg) translateX(46px) rotate(-240deg); }
           100% { transform: translate(-50%, -50%) rotate(600deg) translateX(46px) rotate(-600deg); }
         }
@@ -346,7 +473,7 @@ const FanartSelector = ({
         >
           选择同人立绘参考
         </span>
-        <span className="text-xs text-rose-300/60">至少选 1 张</span>
+        <span className="text-xs text-rose-300/60">1–5 张（API 单次上限）</span>
       </div>
       {selectedIds.size > 0 && (
         <span
@@ -577,6 +704,8 @@ const EditableResult = ({
   );
 };
 
+type ProfilePhase = "hydrating" | "config" | "generating" | "done";
+
 /* ── Stage 1: Profile ── */
 const ProfileStage = ({
   chara,
@@ -590,36 +719,142 @@ const ProfileStage = ({
   showToast: (msg: string) => void;
 }) => {
   const fanartImages = chara.rawImages.filter((img) => img.type === "fanart");
+  const [profilePhase, setProfilePhase] = useState<ProfilePhase>("hydrating");
+  const [hydrated, setHydrated] = useState(false);
   const [selectedFanartIds, setSelectedFanartIds] = useState<Set<string>>(new Set());
-  const [genState, setGenState] = useState<GenState>("idle");
   const [profileText, setProfileText] = useState(chara.bio.charaProfile || "");
+  const [pollError, setPollError] = useState<string | null>(null);
+  const [loadingStart, setLoadingStart] = useState(false);
+  const [taskStep, setTaskStep] = useState<string | null>(null);
 
-  const toggleFanart = useCallback((id: string) => {
-    setSelectedFanartIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  useEffect(() => {
+    setProfileText(chara.bio.charaProfile || "");
+  }, [chara.bio.charaProfile]);
 
-  const canStart = selectedFanartIds.size > 0;
+  useEffect(() => {
+    let cancelled = false;
+    setHydrated(false);
+    void (async () => {
+      try {
+        const status = await materialApi.getCharaProfileStatus(characterId);
+        if (cancelled) return;
+        setSelectedFanartIds(new Set(status.selected_fanart_ids || []));
+        setPollError(null);
+        if (status.status === "processing" || status.status === "pending") {
+          setProfilePhase("generating");
+          setTaskStep(status.current_step ?? null);
+        } else if (status.status === "failed") {
+          setProfilePhase("config");
+          setPollError(status.error_message || "角色小档案生成失败");
+        } else if (status.status === "completed") {
+          if (isProfileContinueConfigFlagSet(characterId)) {
+            setProfilePhase("config");
+          } else if ((chara.bio.charaProfile || "").trim()) {
+            setProfilePhase("done");
+          } else {
+            setProfilePhase("config");
+          }
+        } else {
+          setProfilePhase("config");
+        }
+      } catch (e) {
+        if (cancelled) return;
+        if (e instanceof ApiError && e.status === 404) {
+          setProfilePhase("config");
+          setPollError(null);
+        } else {
+          setProfilePhase("config");
+          setPollError(e instanceof ApiError ? e.message : "加载任务状态失败");
+        }
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // chara.bio 仅用于首屏 completed 分支；不把 chara 放入 deps，避免详情刷新打断当前界面
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [characterId]);
 
-  const handleStart = () => {
-    setGenState("generating");
-  };
+  useEffect(() => {
+    let alive = true;
+    let timer: number | null = null;
+    if (profilePhase !== "generating" || pollError) return;
 
-  const handleGenDone = useCallback(async () => {
+    const poll = async () => {
+      try {
+        const status = await materialApi.getCharaProfileStatus(characterId);
+        if (!alive) return;
+        setTaskStep(status.current_step ?? null);
+        if (status.status === "completed") {
+          setProfileContinueConfigFlag(characterId, false);
+          const detail = await materialApi.getCharacter(characterId);
+          if (!alive) return;
+          onCharacterUpdated(detail);
+          const p = toCharaProfile(detail);
+          setProfileText(p.bio.charaProfile || "");
+          setProfilePhase("done");
+          setPollError(null);
+          showToast("角色小档案已生成");
+          return;
+        }
+        if (status.status === "failed") {
+          setPollError(status.error_message || "角色小档案生成失败");
+          return;
+        }
+      } catch (e) {
+        if (!alive) return;
+        setPollError(e instanceof ApiError ? e.message : "获取任务状态失败");
+        return;
+      }
+      timer = window.setTimeout(() => {
+        void poll();
+      }, 2000);
+    };
+
+    void poll();
+    return () => {
+      alive = false;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [characterId, profilePhase, pollError, onCharacterUpdated, showToast]);
+
+  const toggleFanart = useCallback(
+    (id: string) => {
+      setSelectedFanartIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else {
+          if (next.size >= 5) {
+            showToast("最多选择 5 张同人立绘");
+            return prev;
+          }
+          next.add(id);
+        }
+        return next;
+      });
+    },
+    [showToast]
+  );
+
+  const runStartTask = useCallback(async () => {
+    const ids = Array.from(selectedFanartIds);
+    if (ids.length === 0) return;
+    setLoadingStart(true);
+    setPollError(null);
+    setProfileContinueConfigFlag(characterId, false);
     try {
-      const detail = await materialApi.saveCharaProfile(characterId, profileText || generateMockProfile(chara.name));
-      onCharacterUpdated(detail);
-      setGenState("done");
-      showToast("角色小档案已生成");
+      await materialApi.startCharaProfileTask(characterId, { selected_fanart_ids: ids });
+      setTaskStep(null);
+      setProfilePhase("generating");
+      showToast("任务已提交，正在生成角色小档案…");
     } catch (e) {
-      showToast(e instanceof ApiError ? e.message : "生成角色小档案失败");
-      setGenState("idle");
+      showToast(e instanceof ApiError ? e.message : "启动任务失败");
+    } finally {
+      setLoadingStart(false);
     }
-  }, [characterId, chara.name, profileText, onCharacterUpdated, showToast]);
+  }, [characterId, selectedFanartIds, showToast]);
 
   const handleSave = useCallback(async () => {
     try {
@@ -632,31 +867,78 @@ const ProfileStage = ({
   }, [characterId, profileText, onCharacterUpdated, showToast]);
 
   const handleRegenerate = useCallback(() => {
-    setGenState("generating");
+    if (selectedFanartIds.size === 0) {
+      showToast("请先返回配置页选择同人立绘");
+      setProfilePhase("config");
+      return;
+    }
+    void runStartTask();
+  }, [selectedFanartIds.size, runStartTask, showToast]);
+
+  const handleBackToConfigFromDone = useCallback(() => {
+    setProfileContinueConfigFlag(characterId, true);
+    setProfilePhase("config");
+    setPollError(null);
+  }, [characterId]);
+
+  const handleBackFromError = useCallback(() => {
+    setPollError(null);
+    setProfilePhase("config");
   }, []);
 
-  if (genState === "generating") {
-    return <GeneratingView label="正在整理角色小档案～" onDone={handleGenDone} />;
+  if (!hydrated) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-6 text-rose-400 text-sm gap-2">
+        <i className="ri-loader-4-line text-2xl animate-spin" aria-hidden />
+        <span style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>加载任务状态…</span>
+      </div>
+    );
   }
 
-  if (genState === "done") {
+  if (profilePhase === "generating") {
+    return (
+      <ProfileTaskGeneratingView
+        currentStep={taskStep}
+        errorMessage={pollError}
+        onBackToConfig={pollError ? handleBackFromError : () => {}}
+      />
+    );
+  }
+
+  if (profilePhase === "done") {
     return (
       <div className="flex flex-col gap-4 p-5">
-        <div className="flex items-center gap-2">
-          <div
-            className="w-6 h-6 rounded-lg flex items-center justify-center"
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div
+              className="w-6 h-6 rounded-lg flex items-center justify-center"
+              style={{
+                background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+              }}
+            >
+              <i className="ri-checkbox-circle-fill text-white text-xs"></i>
+            </div>
+            <span
+              className="text-sm font-bold text-rose-600"
+              style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+            >
+              角色小档案已生成，可以继续修改哦～
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleBackToConfigFromDone}
+            className="self-start sm:self-auto flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg cursor-pointer transition-all hover:opacity-85 whitespace-nowrap"
             style={{
-              background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+              fontFamily: "'ZCOOL KuaiLe', cursive",
+              background: "rgba(253,164,175,0.12)",
+              color: "#db2777",
+              border: "1px solid rgba(244,114,182,0.25)",
             }}
           >
-            <i className="ri-checkbox-circle-fill text-white text-xs"></i>
-          </div>
-          <span
-            className="text-sm font-bold text-rose-600"
-            style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
-          >
-            角色小档案已生成，可以继续修改哦～
-          </span>
+            <i className="ri-settings-3-line"></i>
+            返回配置重新提交
+          </button>
         </div>
         <EditableResult
           value={profileText}
@@ -674,6 +956,15 @@ const ProfileStage = ({
   return (
     <div className="flex flex-col gap-4 p-5">
       <AutoIncludedCard chara={chara} />
+
+      {pollError && (
+        <div
+          className="rounded-xl px-4 py-3 text-sm text-rose-600 border border-rose-100 bg-rose-50/90"
+          style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+        >
+          {pollError}
+        </div>
+      )}
 
       {chara.bio.charaProfile && (
         <div
@@ -695,7 +986,8 @@ const ProfileStage = ({
             </span>
           </div>
           <button
-            onClick={() => setGenState("done")}
+            type="button"
+            onClick={() => setProfilePhase("done")}
             className="text-xs px-3 py-1 rounded-lg cursor-pointer whitespace-nowrap transition-all hover:opacity-80"
             style={{
               background: "rgba(110,231,183,0.15)",
@@ -716,7 +1008,7 @@ const ProfileStage = ({
       />
 
       <div className="flex flex-col items-center gap-2 pb-2">
-        {!canStart && (
+        {!selectedFanartIds.size && (
           <p
             className="text-xs text-rose-400/50"
             style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
@@ -725,25 +1017,26 @@ const ProfileStage = ({
           </p>
         )}
         <button
-          onClick={handleStart}
-          disabled={!canStart}
+          type="button"
+          onClick={() => void runStartTask()}
+          disabled={!selectedFanartIds.size || loadingStart}
           className="flex items-center gap-2.5 px-8 py-3.5 rounded-2xl text-base font-bold text-white cursor-pointer transition-all duration-200 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
           style={{
             fontFamily: "'ZCOOL KuaiLe', cursive",
-            background: canStart
-              ? "linear-gradient(135deg, #fda4af 0%, #f472b6 50%, #ec4899 100%)"
-              : "rgba(253,164,175,0.3)",
-            boxShadow: canStart ? "0 6px 20px rgba(244,114,182,0.4)" : "none",
+            background:
+              selectedFanartIds.size && !loadingStart
+                ? "linear-gradient(135deg, #fda4af 0%, #f472b6 50%, #ec4899 100%)"
+                : "rgba(253,164,175,0.3)",
+            boxShadow:
+              selectedFanartIds.size && !loadingStart ? "0 6px 20px rgba(244,114,182,0.4)" : "none",
           }}
         >
           <div className="w-5 h-5 flex items-center justify-center">
             <i className="ri-id-card-fill text-lg"></i>
           </div>
-          {chara.bio.charaProfile ? "重新整理角色小档案" : "开始整理角色小档案"}
-          {canStart && (
-            <span className="text-sm opacity-80">
-              · {selectedFanartIds.size} 张同人立绘
-            </span>
+          {loadingStart ? "提交中…" : chara.bio.charaProfile ? "重新整理角色小档案" : "开始整理角色小档案"}
+          {!!selectedFanartIds.size && !loadingStart && (
+            <span className="text-sm opacity-80">· {selectedFanartIds.size} 张同人立绘</span>
           )}
         </button>
       </div>
@@ -761,16 +1054,19 @@ const AdviceStage = ({
   profileUnlocked: boolean;
   onSave: (text: string) => void;
 }) => {
-  // Always start from idle so user sees the start button first
   const [genState, setGenState] = useState<GenState>("idle");
-  const [adviceText, setAdviceText] = useState(chara.creativeAdvice);
+  const [adviceText, setAdviceText] = useState(chara.bio.creativeAdvice || "");
+
+  useEffect(() => {
+    setAdviceText(chara.bio.creativeAdvice || "");
+  }, [chara.bio.creativeAdvice]);
 
   const handleStart = () => {
     setGenState("generating");
   };
 
   const handleGenDone = () => {
-    setAdviceText(chara.creativeAdvice || generateMockAdvice(chara.name));
+    setAdviceText(chara.bio.creativeAdvice || generateMockAdvice(chara.name));
     setGenState("done");
   };
 
@@ -805,7 +1101,7 @@ const AdviceStage = ({
   }
 
   if (genState === "generating") {
-    return <GeneratingView label="正在整理角色创作建议～" onDone={handleGenDone} />;
+    return <TimedGeneratingView label="正在整理角色创作建议～" onDone={handleGenDone} />;
   }
 
   if (genState === "done") {
@@ -863,7 +1159,7 @@ const AdviceStage = ({
       </p>
 
       {/* Already-saved hint */}
-      {chara.creativeAdvice && (
+      {chara.bio.creativeAdvice && (
         <div
           className="flex items-center justify-between px-4 py-3 rounded-2xl mb-5 w-full max-w-sm"
           style={{
@@ -910,24 +1206,22 @@ const AdviceStage = ({
         <div className="w-5 h-5 flex items-center justify-center">
           <i className="ri-lightbulb-fill text-lg"></i>
         </div>
-        {chara.creativeAdvice ? "重新整理创作建议" : "开始整理创作建议"}
+        {chara.bio.creativeAdvice ? "重新整理创作建议" : "开始整理创作建议"}
       </button>
     </div>
   );
 };
 
-/* ── Mock text generators ── */
-const generateMockProfile = (name: string) =>
-  `【角色小档案 · ${name}】\n\n基本信息\n姓名：${name}\n年龄：待补充\n身高：待补充\n\n外观特征\n（根据参考图自动提取）\n\n性格特征\n（根据人设说明自动整理）\n\n能力设定\n（根据人设说明自动整理）\n\n爱好与日常\n（根据人设说明自动整理）`;
-
+/* ── Mock（创作建议后端未接时） ── */
 const generateMockAdvice = (name: string) =>
   `【角色创作建议 · ${name}】\n\n视觉创作方向\n· 根据角色配色和风格，建议使用协调的色调\n· 背景元素可参考角色的世界观设定\n\n场景创作建议\n· 日常场景：结合角色的日常习惯和爱好\n· 特殊场景：展现角色的独特能力和魅力\n\n性格表现技巧\n· 通过细节动作体现角色性格\n· 表情设计要符合角色的情感特征\n\n注意事项\n· 保持角色设定的一致性\n· 适当留白，给观者想象空间`;
 
 /* ── Main component ── */
 const CharaProfilePage = ({
+  characterId,
   chara,
-  onSaveProfile,
-  onSaveAdvice,
+  onCharacterUpdated,
+  showToast,
   onGoRaw,
   onGoPhoto,
 }: CharaProfilePageProps) => {
@@ -938,12 +1232,24 @@ const CharaProfilePage = ({
     hasSettingText && hasOfficialImage && hasFanartImage && hasAllStandardPhotos;
 
   const [activeStage, setActiveStage] = useState<StageTab>("profile");
-  const [profileSaved, setProfileSaved] = useState(!!chara.charaProfile);
+  const [profileSaved, setProfileSaved] = useState(!!chara.bio.charaProfile?.trim());
 
-  const handleSaveProfile = (text: string) => {
-    onSaveProfile(text);
-    setProfileSaved(true);
-  };
+  useEffect(() => {
+    setProfileSaved(!!chara.bio.charaProfile?.trim());
+  }, [chara.bio.charaProfile]);
+
+  const handleSaveAdvice = useCallback(
+    async (text: string) => {
+      try {
+        const d = await materialApi.saveCreativeAdvice(chara.id, text);
+        onCharacterUpdated(d);
+        showToast("创作建议已保存");
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "保存失败");
+      }
+    },
+    [chara.id, onCharacterUpdated, showToast]
+  );
 
   if (!isUnlocked) {
     return (
@@ -1048,12 +1354,17 @@ const CharaProfilePage = ({
       {/* Stage content */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         {activeStage === "profile" ? (
-          <ProfileStage chara={chara} onSave={handleSaveProfile} />
+          <ProfileStage
+            chara={chara}
+            characterId={characterId}
+            onCharacterUpdated={onCharacterUpdated}
+            showToast={showToast}
+          />
         ) : (
           <AdviceStage
             chara={chara}
             profileUnlocked={profileSaved}
-            onSave={onSaveAdvice}
+            onSave={(text) => void handleSaveAdvice(text)}
           />
         )}
       </div>

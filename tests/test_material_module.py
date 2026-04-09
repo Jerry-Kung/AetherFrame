@@ -1,6 +1,7 @@
 """
 素材加工 — 角色 Service 与文件集成测试（使用临时 DATA_DIR + db_session）
 """
+import json
 import logging
 import os
 from io import BytesIO
@@ -355,3 +356,75 @@ class TestMaterialCharacterService:
         char = material_svc.create_character("StdBadIdx")
         with pytest.raises(ValueError, match="标准照槽位索引无效"):
             material_svc.clear_official_photo_slot(char.id, 5)
+
+    def test_chara_profile_task_pipeline_and_artifacts(self, material_svc, sample_png):
+        from app.repositories.material_repository import INDEX_TO_SHOT_TYPE
+        from app.services.material_service import material_file_service
+
+        char = material_svc.create_character("Prof")
+        material_svc.update_setting_text(char.id, "人设说明内容")
+        slot_dir = material_file_service.get_standard_photo_slot_dir(char.id)
+        os.makedirs(slot_dir, exist_ok=True)
+        for i in range(5):
+            st = INDEX_TO_SHOT_TYPE[i]
+            with open(os.path.join(slot_dir, f"{st}.png"), "wb") as f:
+                f.write(sample_png)
+        uploaded, _ = material_svc.upload_raw_images(
+            char.id,
+            [UploadFile(filename="fanart.png", file=BytesIO(sample_png))],
+            [["立绘"]],
+            ["fanart"],
+        )
+        fan_id = uploaded[0]["id"]
+
+        def fake_infer(*_a, **_kw):
+            return "## mock result\n"
+
+        with patch(
+            "app.services.material_service.chara_profile_generation_service.yibu_gemini_infer",
+            side_effect=fake_infer,
+        ):
+            material_svc.start_chara_profile_task(
+                character_id=char.id,
+                selected_fanart_ids=[fan_id],
+                background_tasks=None,
+            )
+
+        st = material_svc.get_chara_profile_task_status(char.id)
+        assert st["status"] == "completed"
+        assert st["current_step"] == "done"
+        cp_dir = material_file_service.get_chara_profile_dir(char.id)
+        for name in material_file_service.CHARA_PROFILE_ARTIFACT_NAMES:
+            assert os.path.isfile(os.path.join(cp_dir, name))
+        char2 = material_svc.get_character(char.id)
+        bio = json.loads(char2.bio_json)
+        assert "## mock" in bio["chara_profile"]
+
+    def test_chara_profile_start_requires_standard_slots(self, material_svc, sample_png):
+        char = material_svc.create_character("Prof2")
+        material_svc.update_setting_text(char.id, "人设")
+        uploaded, _ = material_svc.upload_raw_images(
+            char.id,
+            [UploadFile(filename="fanart.png", file=BytesIO(sample_png))],
+            [["立绘"]],
+            ["fanart"],
+        )
+        with pytest.raises(ValueError, match="标准参考照"):
+            material_svc.start_chara_profile_task(
+                character_id=char.id,
+                selected_fanart_ids=[uploaded[0]["id"]],
+                background_tasks=None,
+            )
+
+    def test_patch_character_bio_merge(self, material_svc):
+        char = material_svc.create_character("BioMerge")
+        material_svc.repo.update(
+            char.id,
+            {"bio_json": '{"chara_profile": "profile_keep", "other": 1}'},
+        )
+        material_svc.patch_character_bio(char.id, creative_advice="advice_only")
+        char2 = material_svc.get_character(char.id)
+        bio = json.loads(char2.bio_json)
+        assert bio["chara_profile"] == "profile_keep"
+        assert bio["creative_advice"] == "advice_only"
+        assert bio["other"] == 1

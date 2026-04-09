@@ -87,3 +87,32 @@ class MaterialStandardPhotoTask(Base):
             f"<MaterialStandardPhotoTask(id={self.id!r}, character_id={self.character_id!r}, "
             f"status={self.status!r})>"
         )
+
+
+class MaterialCharaProfileTask(Base):
+    """素材加工 — 角色小档案生成任务（每角色当前任务）"""
+
+    __tablename__ = "material_chara_profile_tasks"
+
+    id = Column(String, primary_key=True, index=True)
+    character_id = Column(
+        String,
+        ForeignKey("material_characters.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        unique=True,
+    )
+    status = Column(String(20), nullable=False, index=True, default="pending")
+    error_message = Column(Text, nullable=True)
+    selected_fanart_ids_json = Column(Text, nullable=False, default="[]")
+    current_step = Column(String(40), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    character = relationship("MaterialCharacter")
+
+    def __repr__(self):
+        return (
+            f"<MaterialCharaProfileTask(id={self.id!r}, character_id={self.character_id!r}, "
+            f"status={self.status!r})>"
+        )

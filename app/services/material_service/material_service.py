@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import os
-import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import BackgroundTasks
@@ -18,6 +17,7 @@ from app.prompts.material.standard_photo import (
     half_side_prompt,
 )
 from app.repositories.material_repository import INDEX_TO_SHOT_TYPE, MaterialCharacterRepository
+from app.services.material_service import chara_profile_generation_service
 from app.services.material_service import material_file_service
 from app.services.file_service import FileDeleteError, FileSaveError, FileValidationError
 from app.services.material_service import standard_photo_generation_service
@@ -566,6 +566,212 @@ class MaterialService:
             raise ValueError("写入正式标准照失败") from e
         url = self.standard_slot_image_url(character_id, task.shot_type)
         updated = self.repo.save_official_photo_by_shot_type(character_id, task.shot_type, url)
+        if not updated:
+            raise ValueError("角色不存在")
+        return updated
+
+    async def _run_chara_profile_task_async(self, character_id: str, task_id: str) -> None:
+        await asyncio.to_thread(self._run_chara_profile_task_sync, character_id, task_id)
+
+    def start_chara_profile_task(
+        self,
+        character_id: str,
+        selected_fanart_ids: List[str],
+        background_tasks: Optional[BackgroundTasks] = None,
+    ) -> Dict[str, Any]:
+        char = self.repo.get_by_id(character_id)
+        if not char:
+            raise ValueError("角色不存在")
+        if not (char.setting_text or "").strip():
+            raise ValueError("请先填写角色人设说明")
+        official_image_list: List[str] = []
+        for i in range(5):
+            st = INDEX_TO_SHOT_TYPE[i]
+            p = material_file_service.get_standard_slot_image_path(character_id, st)
+            if not p:
+                raise ValueError("请先完成全部5种标准参考照并保存到正式槽位")
+            official_image_list.append(p)
+        if not selected_fanart_ids:
+            raise ValueError("请至少选择一张同人立绘")
+        if len(selected_fanart_ids) > 5:
+            raise ValueError("同人立绘一次最多选择5张")
+        for image_id in selected_fanart_ids:
+            row = self.repo.get_raw_image(character_id, image_id)
+            if not row or row.type != "fanart":
+                raise ValueError("存在无效的同人立绘选择")
+            path = material_file_service.get_raw_image_path(
+                character_id, row.stored_filename, row.type
+            )
+            if not path or not os.path.isfile(path):
+                raise ValueError("同人立绘文件不存在，请重新上传")
+
+        material_file_service.clear_chara_profile_artifacts(character_id)
+        task = self.repo.upsert_chara_profile_task(
+            character_id=character_id,
+            selected_fanart_ids=selected_fanart_ids,
+            status="processing",
+            error_message=None,
+            current_step=None,
+        )
+
+        if background_tasks:
+            background_tasks.add_task(self._run_chara_profile_task_async, character_id, task.id)
+        else:
+            self._run_chara_profile_task_sync(character_id, task.id)
+
+        task = self.repo.get_chara_profile_task_by_id(task.id)
+        return {"task_id": task.id, "status": task.status}
+
+    def _run_chara_profile_task_sync(self, character_id: str, task_id: str) -> None:
+        bind = self.db.get_bind()
+        db = Session(bind=bind, autocommit=False, autoflush=False)
+        try:
+            repo = MaterialCharacterRepository(db)
+            task = repo.get_chara_profile_task_by_id(task_id)
+            if not task:
+                return
+            char = repo.get_by_id(character_id)
+            if not char:
+                repo.update_chara_profile_task(
+                    task_id,
+                    {"status": "failed", "error_message": "角色不存在", "current_step": None},
+                )
+                return
+
+            official_image_list: List[str] = []
+            for i in range(5):
+                st = INDEX_TO_SHOT_TYPE[i]
+                p = material_file_service.get_standard_slot_image_path(character_id, st)
+                if not p:
+                    repo.update_chara_profile_task(
+                        task_id,
+                        {
+                            "status": "failed",
+                            "error_message": "标准参考图槽位文件缺失",
+                            "current_step": None,
+                        },
+                    )
+                    return
+                official_image_list.append(p)
+
+            try:
+                selected_ids = json.loads(task.selected_fanart_ids_json or "[]")
+                if not isinstance(selected_ids, list):
+                    selected_ids = []
+            except json.JSONDecodeError:
+                selected_ids = []
+
+            fanart_image_list: List[str] = []
+            for image_id in selected_ids:
+                row = repo.get_raw_image(character_id, str(image_id))
+                if not row or row.type != "fanart":
+                    repo.update_chara_profile_task(
+                        task_id,
+                        {"status": "failed", "error_message": "同人立绘记录无效", "current_step": None},
+                    )
+                    return
+                path = material_file_service.get_raw_image_path(
+                    character_id, row.stored_filename, row.type
+                )
+                if not path or not os.path.isfile(path):
+                    repo.update_chara_profile_task(
+                        task_id,
+                        {"status": "failed", "error_message": "同人立绘文件缺失", "current_step": None},
+                    )
+                    return
+                fanart_image_list.append(path)
+
+            if not fanart_image_list:
+                repo.update_chara_profile_task(
+                    task_id,
+                    {"status": "failed", "error_message": "没有可用的同人立绘文件", "current_step": None},
+                )
+                return
+
+            def on_step(step: str) -> None:
+                repo.update_chara_profile_task(task_id, {"current_step": step})
+
+            try:
+                final_md = chara_profile_generation_service.run_chara_profile_pipeline(
+                    character_id=character_id,
+                    persona_text=char.setting_text or "",
+                    official_image_list=official_image_list,
+                    fanart_image_list=fanart_image_list,
+                    on_step=on_step,
+                )
+            except Exception as e:
+                logger.error(f"角色小档案任务执行失败: {e}", exc_info=True)
+                repo.update_chara_profile_task(
+                    task_id,
+                    {"status": "failed", "error_message": str(e), "current_step": None},
+                )
+                return
+
+            try:
+                bio = json.loads(char.bio_json or "{}")
+                if not isinstance(bio, dict):
+                    bio = {}
+            except json.JSONDecodeError:
+                bio = {}
+            bio["chara_profile"] = final_md
+            repo.update(character_id, {"bio_json": json.dumps(bio, ensure_ascii=False)})
+            repo.touch_character_updated_at(character_id)
+            repo.update_chara_profile_task(
+                task_id,
+                {
+                    "status": "completed",
+                    "error_message": None,
+                    "current_step": "done",
+                },
+            )
+        finally:
+            db.close()
+
+    def get_chara_profile_task_status(self, character_id: str) -> Optional[Dict[str, Any]]:
+        task = self.repo.get_chara_profile_task_by_character_id(character_id)
+        if not task:
+            return None
+        try:
+            selected_fanart_ids = json.loads(task.selected_fanart_ids_json or "[]")
+            if not isinstance(selected_fanart_ids, list):
+                selected_fanart_ids = []
+        except json.JSONDecodeError:
+            selected_fanart_ids = []
+        return {
+            "task_id": task.id,
+            "character_id": task.character_id,
+            "status": task.status,
+            "error_message": task.error_message,
+            "current_step": task.current_step,
+            "selected_fanart_ids": selected_fanart_ids,
+            "created_at": task.created_at,
+            "updated_at": task.updated_at,
+        }
+
+    def patch_character_bio(
+        self,
+        character_id: str,
+        chara_profile: Optional[str] = None,
+        creative_advice: Optional[str] = None,
+    ) -> MaterialCharacter:
+        char = self.repo.get_by_id(character_id)
+        if not char:
+            raise ValueError("角色不存在")
+        if chara_profile is None and creative_advice is None:
+            raise ValueError("至少提供 chara_profile 或 creative_advice 之一")
+        try:
+            bio = json.loads(char.bio_json or "{}")
+            if not isinstance(bio, dict):
+                bio = {}
+        except json.JSONDecodeError:
+            bio = {}
+        if chara_profile is not None:
+            bio["chara_profile"] = chara_profile
+        if creative_advice is not None:
+            bio["creative_advice"] = creative_advice
+        self.repo.update(character_id, {"bio_json": json.dumps(bio, ensure_ascii=False)})
+        self.repo.touch_character_updated_at(character_id)
+        updated = self.repo.get_by_id(character_id)
         if not updated:
             raise ValueError("角色不存在")
         return updated

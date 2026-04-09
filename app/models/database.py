@@ -194,6 +194,7 @@ def init_db():
         from app.models.material import (
             MaterialCharacter,
             MaterialCharacterRawImage,
+            MaterialCharaProfileTask,
             MaterialStandardPhotoTask,
         )
 

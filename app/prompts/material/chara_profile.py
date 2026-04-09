@@ -34,7 +34,7 @@ text_understanding_prompt = """
 请给出你的输出：
 """
 
-visual_understand_3d_prompt = """
+visual_understand_official_prompt = """
 你现在要执行“角色视觉理解”任务，目标是为后续二次元角色美图创作提炼稳定的视觉锚点。
 
 我会提供同一角色的3D标准图。请不要做泛泛的图像描述，而要提炼“后续生成图片时必须保留的角色识别点”。
@@ -84,7 +84,7 @@ visual_understand_3d_prompt = """
 请综合所有输入图片进行判断，不要被单张图的偶然细节误导。
 """
 
-visual_understand_2d_prompt = """
+visual_understand_fanart_prompt = """
 你现在要基于角色的2D官方立绘与插画，提炼这个角色更深层的“官方视觉意图”。
 
 注意：
@@ -117,7 +117,7 @@ visual_understand_2d_prompt = """
 你的输入包：
 
 角色的3D标准形象图视觉理解结果（供你参考）：
-
+{visual_understand_official_result}
 角色的官方2D插画（见附件）：
 """
 
@@ -159,8 +159,8 @@ text_integration_prompt = """
 {text_understanding}
 
 【3D视觉理解】
-{visual_3d_understanding}
+{visual_understand_official_result}
 
 【2D视觉理解】
-{visual_2d_understanding}
+{visual_understand_fanart_result}
 """

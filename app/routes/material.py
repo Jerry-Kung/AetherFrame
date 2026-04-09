@@ -23,11 +23,15 @@ from sqlalchemy.orm import Session
 from app.models.database import get_db
 from app.schemas.material import (
     ApiResponse,
+    BioPatchRequest,
     CharacterCreate,
     CharacterDetail,
     CharacterListData,
     CharacterSummary,
     CharacterUpdate,
+    CharaProfileStartRequest,
+    CharaProfileStartResponse,
+    CharaProfileStatusResponse,
     StandardPhotoSelectRequest,
     StandardPhotoStartRequest,
     StandardPhotoStartResponse,
@@ -136,6 +140,35 @@ async def get_character(
         data=CharacterDetail(**detail).model_dump(mode="json"),
         message="获取角色成功",
     )
+
+
+@router.patch("/characters/{character_id}/bio", response_model=ApiResponse)
+async def patch_character_bio(
+    character_id: str,
+    body: BioPatchRequest,
+    service: MaterialService = Depends(get_material_service),
+):
+    logger.info(f"API 请求 - 更新角色 bio: {character_id}")
+    try:
+        char = service.patch_character_bio(
+            character_id,
+            chara_profile=body.chara_profile,
+            creative_advice=body.creative_advice,
+        )
+        detail = service.character_to_detail_dict(char)
+        return ApiResponse(
+            success=True,
+            data=CharacterDetail(**detail).model_dump(mode="json"),
+            message="角色档案已更新",
+        )
+    except ValueError as e:
+        msg = str(e)
+        if msg == "角色不存在":
+            raise HTTPException(status_code=404, detail=msg) from e
+        raise HTTPException(status_code=400, detail=msg) from e
+    except Exception as e:
+        logger.error(f"API 错误 - 更新 bio 失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="更新角色档案失败")
 
 
 @router.delete("/characters/{character_id}", response_model=ApiResponse)
@@ -417,6 +450,52 @@ async def get_standard_photo_status(
         success=True,
         data=StandardPhotoStatusResponse(**task).model_dump(mode="json"),
         message="获取标准照任务状态成功",
+    )
+
+
+@router.post("/characters/{character_id}/chara-profile/start", response_model=ApiResponse)
+async def start_chara_profile(
+    character_id: str,
+    body: CharaProfileStartRequest,
+    background_tasks: BackgroundTasks,
+    service: MaterialService = Depends(get_material_service),
+):
+    logger.info(
+        f"API 请求 - 启动角色小档案任务: {character_id}, fanart_count={len(body.selected_fanart_ids)}"
+    )
+    try:
+        data = service.start_chara_profile_task(
+            character_id=character_id,
+            selected_fanart_ids=body.selected_fanart_ids,
+            background_tasks=background_tasks,
+        )
+        return ApiResponse(
+            success=True,
+            data=CharaProfileStartResponse(**data).model_dump(mode="json"),
+            message="角色小档案任务已启动",
+        )
+    except ValueError as e:
+        msg = str(e)
+        if msg == "角色不存在":
+            raise HTTPException(status_code=404, detail=msg) from e
+        raise HTTPException(status_code=400, detail=msg) from e
+    except Exception as e:
+        logger.error(f"API 错误 - 启动角色小档案任务失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="启动角色小档案任务失败")
+
+
+@router.get("/characters/{character_id}/chara-profile/status", response_model=ApiResponse)
+async def get_chara_profile_status(
+    character_id: str,
+    service: MaterialService = Depends(get_material_service),
+):
+    task = service.get_chara_profile_task_status(character_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="角色小档案任务不存在")
+    return ApiResponse(
+        success=True,
+        data=CharaProfileStatusResponse(**task).model_dump(mode="json"),
+        message="获取角色小档案任务状态成功",
     )
 
 

@@ -11,6 +11,7 @@ from app.repositories.base import BaseRepository
 from app.models.material import (
     MaterialCharacter,
     MaterialCharacterRawImage,
+    MaterialCharaProfileTask,
     MaterialStandardPhotoTask,
 )
 
@@ -253,3 +254,61 @@ class MaterialCharacterRepository(BaseRepository[MaterialCharacter]):
         self.db.commit()
         self.db.refresh(char)
         return char
+
+    def get_chara_profile_task_by_character_id(
+        self, character_id: str
+    ) -> Optional[MaterialCharaProfileTask]:
+        return (
+            self.db.query(MaterialCharaProfileTask)
+            .filter(MaterialCharaProfileTask.character_id == character_id)
+            .first()
+        )
+
+    def get_chara_profile_task_by_id(self, task_id: str) -> Optional[MaterialCharaProfileTask]:
+        return self.db.query(MaterialCharaProfileTask).filter_by(id=task_id).first()
+
+    def upsert_chara_profile_task(
+        self,
+        character_id: str,
+        selected_fanart_ids: List[str],
+        status: str = "pending",
+        error_message: Optional[str] = None,
+        current_step: Optional[str] = None,
+    ) -> MaterialCharaProfileTask:
+        task = self.get_chara_profile_task_by_character_id(character_id)
+        ids_json = json.dumps(selected_fanart_ids, ensure_ascii=False)
+        if task is None:
+            task = MaterialCharaProfileTask(
+                id=f"mcprof_{uuid.uuid4().hex[:10]}",
+                character_id=character_id,
+                status=status,
+                error_message=error_message,
+                selected_fanart_ids_json=ids_json,
+                current_step=current_step,
+            )
+            self.db.add(task)
+        else:
+            task.status = status
+            task.error_message = error_message
+            task.selected_fanart_ids_json = ids_json
+            task.current_step = current_step
+        self.db.commit()
+        self.db.refresh(task)
+        return task
+
+    def update_chara_profile_task(
+        self,
+        task_id: str,
+        updates: Dict,
+    ) -> Optional[MaterialCharaProfileTask]:
+        task = self.get_chara_profile_task_by_id(task_id)
+        if not task:
+            return None
+        for key, value in updates.items():
+            if key.endswith("_json") and value is not None and not isinstance(value, str):
+                value = json.dumps(value, ensure_ascii=False)
+            if hasattr(task, key):
+                setattr(task, key, value)
+        self.db.commit()
+        self.db.refresh(task)
+        return task

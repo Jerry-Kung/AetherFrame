@@ -282,6 +282,59 @@ export interface StandardPhotoStatusResult {
   updated_at: string;
 }
 
+export interface CharaProfileStartResult {
+  task_id: string;
+  status: string;
+}
+
+export interface CharaProfileStatusResult {
+  task_id: string;
+  character_id: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  error_message: string | null;
+  current_step: string | null;
+  selected_fanart_ids: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export async function startCharaProfileTask(
+  characterId: string,
+  body: { selected_fanart_ids: string[] }
+): Promise<CharaProfileStartResult> {
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/chara-profile/start`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      timeout: 60000,
+    });
+    const data = await parseJson<CharaProfileStartResult>(response);
+    throwIfError(response, data);
+    return data.data as CharaProfileStartResult;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function getCharaProfileStatus(
+  characterId: string
+): Promise<CharaProfileStatusResult> {
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/chara-profile/status`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "GET",
+      timeout: 20000,
+    });
+    const data = await parseJson<CharaProfileStatusResult>(response);
+    throwIfError(response, data);
+    return data.data as CharaProfileStatusResult;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
 export async function startStandardPhotoTask(
   characterId: string,
   body: {

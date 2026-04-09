@@ -145,3 +145,39 @@ class StandardPhotoSelectRequest(BaseModel):
         if self.selected_result_filename is None and self.selected_result_index is None:
             raise ValueError("selected_result_filename 或 selected_result_index 至少提供一个")
         return self
+
+
+class CharaProfileStartRequest(BaseModel):
+    selected_fanart_ids: List[str] = Field(
+        ...,
+        min_length=1,
+        max_length=5,
+        description="选中的同人立绘 raw image id，1–5 个",
+    )
+
+
+class CharaProfileStartResponse(BaseModel):
+    task_id: str
+    status: str
+
+
+class CharaProfileStatusResponse(BaseModel):
+    task_id: str
+    character_id: str
+    status: str
+    error_message: Optional[str] = None
+    current_step: Optional[str] = None
+    selected_fanart_ids: List[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
+class BioPatchRequest(BaseModel):
+    chara_profile: Optional[str] = Field(None, description="角色小档案全文（Markdown）")
+    creative_advice: Optional[str] = Field(None, description="创作建议全文")
+
+    @model_validator(mode="after")
+    def at_least_one_field(self):
+        if self.chara_profile is None and self.creative_advice is None:
+            raise ValueError("至少提供 chara_profile 或 creative_advice 之一")
+        return self

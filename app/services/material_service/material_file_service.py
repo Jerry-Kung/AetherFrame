@@ -57,6 +57,19 @@ def get_standard_photo_slot_dir(character_id: str) -> str:
     return os.path.join(get_character_dir(character_id), "standard_photo_slots")
 
 
+def get_chara_profile_dir(character_id: str) -> str:
+    """角色小档案流水线产出的 Markdown 与最终档案目录。"""
+    return os.path.join(get_character_dir(character_id), "chara_profile")
+
+
+CHARA_PROFILE_ARTIFACT_NAMES = (
+    "text_understanding.md",
+    "visual_understanding_official.md",
+    "visual_understanding_fanart.md",
+    "chara_profile_final.md",
+)
+
+
 def copy_task_result_to_official_slot(
     character_id: str, task_id: str, task_result_filename: str, shot_type: str
 ) -> None:
@@ -102,6 +115,7 @@ def ensure_character_dirs(character_id: str) -> Tuple[str, str]:
     ensure_dir_exists(get_character_raw_type_dir(character_id, "official"))
     ensure_dir_exists(get_character_raw_type_dir(character_id, "fanart"))
     ensure_dir_exists(get_character_standard_photo_dir(character_id))
+    ensure_dir_exists(get_chara_profile_dir(character_id))
     return char_dir, raw_dir
 
 
@@ -270,3 +284,39 @@ def delete_standard_photo_task_dirs(character_id: str, task_id: str) -> bool:
     except Exception as e:
         logger.error(f"删除标准照任务目录失败: {e}", exc_info=True)
         return False
+
+
+def clear_chara_profile_artifacts(character_id: str) -> None:
+    """删除角色小档案流水线四个固定 Markdown，便于新一轮任务避免与失败态混淆。"""
+    d = get_chara_profile_dir(character_id)
+    if not os.path.isdir(d):
+        return
+    for name in CHARA_PROFILE_ARTIFACT_NAMES:
+        path = os.path.join(d, name)
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError as e:
+                logger.warning(f"删除角色小档案文件失败 {path}: {e}")
+
+
+def write_chara_profile_markdown(character_id: str, filename: str, content: str) -> str:
+    """写入 chara_profile 目录下单个 md，返回绝对路径。"""
+    ensure_character_dirs(character_id)
+    d = get_chara_profile_dir(character_id)
+    ensure_dir_exists(d)
+    if filename not in CHARA_PROFILE_ARTIFACT_NAMES:
+        raise ValueError(f"非法的角色小档案文件名: {filename}")
+    path = os.path.join(d, filename)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return path
+
+
+def read_chara_profile_markdown(character_id: str, filename: str) -> Optional[str]:
+    d = get_chara_profile_dir(character_id)
+    path = os.path.join(d, filename)
+    if filename not in CHARA_PROFILE_ARTIFACT_NAMES or not os.path.isfile(path):
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
