@@ -1,10 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import type { CharaProfile } from "@/types/material";
-import {
-  type PromptCard,
-  type CreationPromptSession,
-  MOCK_PROMPT_CARDS,
-} from "@/mocks/promptGen";
+import type { PromptCard, CreationPromptSession } from "@/types/creation";
+import * as creationApi from "@/services/creationApi";
+import { ApiError } from "@/services/api";
 
 interface PromptGenPageProps {
   charas: CharaProfile[];
@@ -17,6 +15,15 @@ interface PromptGenPageProps {
 type GenState = "idle" | "generating" | "done";
 
 const COUNT_OPTIONS = [2, 3, 4] as const;
+
+const POLL_INTERVAL_MS = 10000;
+
+function stepHintLabel(step: string | null | undefined): string | null {
+  if (!step) return null;
+  if (step === "collecting") return "正在生成备选 Prompt…";
+  if (step === "reviewing") return "正在筛选最优 Prompt…";
+  return null;
+}
 
 const LOADING_TIPS = [
   "正在阅读角色设定，感受她的灵魂～",
@@ -271,9 +278,27 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
   const [cards, setCards] = useState<PromptCard[]>([]);
   const [tipIndex, setTipIndex] = useState(0);
   const [detailCard, setDetailCard] = useState<PromptCard | null>(null);
+  const [genError, setGenError] = useState<string | null>(null);
+  const [statusStep, setStatusStep] = useState<string | null>(null);
   const tipTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelledRef = useRef(false);
   /** 本轮生成结果对应的角色（避免用户在 done 态切换下拉框后错绑角色） */
   const sessionCharaIdRef = useRef<string>("");
+
+  const clearPollTimer = useCallback(() => {
+    if (pollTimerRef.current !== null) {
+      window.clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
+  const clearTipTimer = useCallback(() => {
+    if (tipTimerRef.current !== null) {
+      window.clearInterval(tipTimerRef.current);
+      tipTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (charas.length === 0) {
@@ -286,36 +311,95 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
   const selectedChara = charas.find((c) => c.id === selectedCharaId) ?? null;
   const hasCharas = charas.length > 0;
 
-  const startGenerate = () => {
+  const startGenerate = async () => {
     if (!selectedCharaId || !seedPrompt.trim()) return;
+    setGenError(null);
+    setStatusStep(null);
     setGenState("generating");
     setCards([]);
     setTipIndex(0);
+    cancelledRef.current = false;
+    clearPollTimer();
+    clearTipTimer();
 
-    tipTimerRef.current = setInterval(() => {
+    tipTimerRef.current = window.setInterval(() => {
       setTipIndex((prev) => (prev + 1) % LOADING_TIPS.length);
     }, 900);
 
-    window.setTimeout(() => {
-      if (tipTimerRef.current) clearInterval(tipTimerRef.current);
-      const generated = MOCK_PROMPT_CARDS.slice(0, promptCount).map((c, i) => ({
-        ...c,
-        id: `gen-${Date.now()}-${i}`,
-        createdAt: new Date().toISOString().slice(0, 10),
-      }));
-      sessionCharaIdRef.current = selectedCharaId;
-      setCards(generated);
-      setGenState("done");
-      onPromptSessionChange?.({
-        charaId: selectedCharaId,
-        cards: generated,
-        updatedAt: Date.now(),
+    const charaId = selectedCharaId;
+    const seed = seedPrompt.trim();
+    const count = promptCount;
+
+    const finishWithError = (message: string) => {
+      clearTipTimer();
+      clearPollTimer();
+      setGenError(message);
+      setGenState("idle");
+      setStatusStep(null);
+    };
+
+    try {
+      const { task_id } = await creationApi.startPromptPrecreation(charaId, {
+        seed_prompt: seed,
+        count,
       });
-    }, 3200);
+
+      const schedulePoll = (delayMs: number) => {
+        clearPollTimer();
+        pollTimerRef.current = window.setTimeout(() => {
+          void runPoll();
+        }, delayMs);
+      };
+
+      const runPoll = async () => {
+        if (cancelledRef.current) return;
+        try {
+          const st = await creationApi.getPromptPrecreationTaskStatus(task_id);
+          if (cancelledRef.current) return;
+          setStatusStep(st.current_step ?? null);
+
+          if (st.status === "completed") {
+            clearTipTimer();
+            clearPollTimer();
+            const nextCards = st.cards ?? [];
+            if (nextCards.length === 0) {
+              finishWithError("任务完成但未返回 Prompt 卡片");
+              return;
+            }
+            sessionCharaIdRef.current = charaId;
+            setCards(nextCards);
+            setGenState("done");
+            setStatusStep(null);
+            onPromptSessionChange?.({
+              charaId: charaId,
+              cards: nextCards,
+              updatedAt: Date.now(),
+            });
+            return;
+          }
+
+          if (st.status === "failed") {
+            finishWithError(st.error_message?.trim() || "Prompt 预生成失败");
+            return;
+          }
+
+          schedulePoll(POLL_INTERVAL_MS);
+        } catch (e) {
+          if (cancelledRef.current) return;
+          finishWithError(e instanceof ApiError ? e.message : "获取任务状态失败");
+        }
+      };
+
+      void runPoll();
+    } catch (e) {
+      finishWithError(e instanceof ApiError ? e.message : "启动 Prompt 预生成失败");
+    }
   };
 
   const handleRegenerate = () => {
     sessionCharaIdRef.current = "";
+    setGenError(null);
+    setStatusStep(null);
     setGenState("idle");
     setCards([]);
     onPromptSessionChange?.(null);
@@ -340,12 +424,21 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
 
   useEffect(() => {
     return () => {
-      if (tipTimerRef.current) clearInterval(tipTimerRef.current);
+      cancelledRef.current = true;
+      if (tipTimerRef.current !== null) {
+        window.clearInterval(tipTimerRef.current);
+        tipTimerRef.current = null;
+      }
+      if (pollTimerRef.current !== null) {
+        window.clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
     };
   }, []);
 
   const canSubmit = hasCharas && !!selectedCharaId && !!seedPrompt.trim();
   const submitDisabled = !canSubmit || genState === "generating" || !!listLoading;
+  const stepHint = stepHintLabel(statusStep);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -356,6 +449,11 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
         {listError && (
           <p className="text-xs text-amber-600 mb-3 rounded-xl px-3 py-2 bg-amber-50/80 border border-amber-100">
             {listError}
+          </p>
+        )}
+        {genError && (
+          <p className="text-xs text-rose-700 mb-3 rounded-xl px-3 py-2 bg-rose-50/90 border border-rose-100">
+            {genError}
           </p>
         )}
         <div className="flex items-start gap-5">
@@ -587,6 +685,7 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
             >
               {LOADING_TIPS[tipIndex]}
             </p>
+            {stepHint && <p className="text-xs text-rose-400/55 mt-2">{stepHint}</p>}
             <div className="flex items-center gap-1.5 mt-4">
               {[0, 1, 2].map((i) => (
                 <div

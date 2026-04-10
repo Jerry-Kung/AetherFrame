@@ -58,6 +58,11 @@ def get_beautify_dir() -> str:
     return os.path.join(get_data_dir(), "beautify")
 
 
+def get_prompt_precreation_task_dir(character_id: str, task_id: str) -> str:
+    """Prompt 预生成任务工作目录：data/beautify/prompt_precreation/{character_id}/{task_id}/"""
+    return os.path.join(get_beautify_dir(), "prompt_precreation", character_id, task_id)
+
+
 def get_temp_dir() -> str:
     """获取临时文件目录"""
     return os.path.join(get_data_dir(), "temp")

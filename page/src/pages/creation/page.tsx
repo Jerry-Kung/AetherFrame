@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ApiCharacterSummary, CharaProfile } from "@/types/material";
 import { summaryToListProfile } from "@/types/material";
-import type { CreationPromptSession } from "@/mocks/promptGen";
+import type { CreationPromptSession } from "@/types/creation";
 import * as materialApi from "@/services/materialApi";
 import { ApiError } from "@/services/api";
 import PromptGenPage from "./components/PromptGenPage";

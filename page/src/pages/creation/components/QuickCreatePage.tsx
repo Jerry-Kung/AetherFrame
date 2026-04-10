@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { CreationPromptSession, PromptCard } from "@/mocks/promptGen";
+import type { CreationPromptSession, PromptCard } from "@/types/creation";
 import type { CharaProfile } from "@/types/material";
 import { DEFAULT_CHARA_AVATAR_PLACEHOLDER } from "@/types/material";
 import {

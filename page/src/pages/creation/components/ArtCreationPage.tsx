@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { CharaProfile } from "@/types/material";
-import type { CreationPromptSession } from "@/mocks/promptGen";
+import type { CreationPromptSession } from "@/types/creation";
 import QuickCreatePage from "./QuickCreatePage";
 
 type ArtSubTab = "quick" | "fine";
