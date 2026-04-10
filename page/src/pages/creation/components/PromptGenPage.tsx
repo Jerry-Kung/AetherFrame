@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { CharaProfile } from "@/types/material";
-import type { PromptCard, CreationPromptSession } from "@/types/creation";
+import type { PromptCard, CreationPromptSession, PromptHistoryRecord } from "@/types/creation";
 import * as creationApi from "@/services/creationApi";
 import { ApiError } from "@/services/api";
 
@@ -31,6 +31,268 @@ const LOADING_TIPS = [
   "Prompt 正在从脑海中涌现出来～",
   "快好了！正在做最后的润色～",
 ];
+
+function toPromptHistoryRecord(
+  raw: creationApi.PromptPrecreationHistoryItem | creationApi.PromptPrecreationHistoryDetailResponse,
+  charas: CharaProfile[]
+): PromptHistoryRecord {
+  const chara = charas.find((c) => c.id === raw.character_id) ?? null;
+  return {
+    id: raw.id,
+    taskId: raw.task_id,
+    charaId: raw.character_id,
+    charaName: raw.chara_name,
+    charaAvatar: chara?.avatarUrl || raw.chara_avatar || "",
+    seedPrompt: raw.seed_prompt,
+    promptCount: raw.prompt_count,
+    status: raw.status,
+    errorMessage: raw.error_message ?? null,
+    cards: "cards" in raw ? raw.cards ?? [] : [],
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+  };
+}
+
+interface ConfirmModalProps {
+  visible: boolean;
+  title: string;
+  desc: string;
+  confirmText?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+const ConfirmModal = ({
+  visible,
+  title,
+  desc,
+  confirmText = "确认",
+  onConfirm,
+  onCancel,
+}: ConfirmModalProps) => {
+  if (!visible) return null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <div
+        className="absolute inset-0"
+        style={{ background: "rgba(253,164,175,0.15)", backdropFilter: "blur(6px)" }}
+        onClick={onCancel}
+      />
+      <div
+        className="relative rounded-3xl px-8 py-7 w-80 flex flex-col items-center gap-4"
+        style={{
+          background: "linear-gradient(160deg, #fff8fa 0%, #fffaf5 100%)",
+          border: "1.5px solid rgba(253,164,175,0.3)",
+          boxShadow: "0 8px 32px rgba(244,114,182,0.12)",
+        }}
+      >
+        <div
+          className="w-12 h-12 flex items-center justify-center rounded-2xl"
+          style={{ background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)" }}
+        >
+          <i className="ri-delete-bin-2-line text-white text-xl"></i>
+        </div>
+        <div className="text-center">
+          <h3
+            className="text-base font-bold text-rose-700 mb-1"
+            style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+          >
+            {title}
+          </h3>
+          <p className="text-sm text-rose-400/70 leading-relaxed">{desc}</p>
+        </div>
+        <div className="flex items-center gap-3 w-full">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 py-2 rounded-xl text-sm cursor-pointer transition-all duration-200 whitespace-nowrap"
+            style={{
+              background: "rgba(253,164,175,0.1)",
+              border: "1px solid rgba(253,164,175,0.25)",
+              color: "#f472b6",
+              fontFamily: "'ZCOOL KuaiLe', cursive",
+            }}
+          >
+            再想想
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="flex-1 py-2 rounded-xl text-sm font-medium cursor-pointer transition-all duration-200 whitespace-nowrap"
+            style={{
+              background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+              color: "white",
+              fontFamily: "'ZCOOL KuaiLe', cursive",
+            }}
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface HistorySidebarProps {
+  records: PromptHistoryRecord[];
+  activeId: string | null;
+  onSelect: (record: PromptHistoryRecord) => void;
+  onDelete: (id: string) => void;
+}
+
+const HistorySidebar = ({ records, activeId, onSelect, onDelete }: HistorySidebarProps) => {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+
+  return (
+    <>
+      <div
+        className="w-64 shrink-0 flex flex-col h-full"
+        style={{
+          background: "rgba(255,255,255,0.5)",
+          borderLeft: "1px solid rgba(253,164,175,0.2)",
+        }}
+      >
+        <div
+          className="px-4 py-3.5 shrink-0 border-b border-rose-100/40"
+          style={{ background: "rgba(255,248,250,0.8)" }}
+        >
+          <div className="flex items-center gap-2">
+            <div
+              className="w-6 h-6 flex items-center justify-center rounded-lg"
+              style={{ background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)" }}
+            >
+              <i className="ri-history-line text-white text-xs"></i>
+            </div>
+            <span
+              className="text-sm font-bold text-rose-600"
+              style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+            >
+              历史创作
+            </span>
+            <span
+              className="ml-auto text-xs px-1.5 py-0.5 rounded-full"
+              style={{ background: "rgba(253,164,175,0.15)", color: "#f472b6" }}
+            >
+              {records.length}
+            </span>
+          </div>
+          <p className="text-xs text-rose-300/60 mt-1.5 leading-relaxed">
+            双击记录可以带出当次创作内容
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto py-2 px-2">
+          {records.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center px-3">
+              <i className="ri-inbox-line text-rose-200 text-3xl mb-2"></i>
+              <p
+                className="text-xs text-rose-300/60 leading-relaxed"
+                style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+              >
+                还没有历史记录哦，快去创作吧～
+              </p>
+            </div>
+          ) : (
+            records.map((record) => (
+              <div
+                key={record.id}
+                className="relative rounded-2xl p-3 mb-1.5 cursor-pointer transition-all duration-200"
+                style={{
+                  background:
+                    activeId === record.id
+                      ? "linear-gradient(135deg, rgba(253,164,175,0.18) 0%, rgba(244,114,182,0.1) 100%)"
+                      : hoveredId === record.id
+                        ? "rgba(253,164,175,0.1)"
+                        : "transparent",
+                  border:
+                    activeId === record.id
+                      ? "1.5px solid rgba(244,114,182,0.35)"
+                      : "1.5px solid transparent",
+                }}
+                onDoubleClick={() => onSelect(record)}
+                onMouseEnter={() => setHoveredId(record.id)}
+                onMouseLeave={() => setHoveredId(null)}
+              >
+                {hoveredId === record.id && (
+                  <button
+                    type="button"
+                    className="absolute top-2 right-2 w-5 h-5 flex items-center justify-center rounded-lg cursor-pointer transition-all duration-200 z-10"
+                    style={{
+                      background: "rgba(253,164,175,0.2)",
+                      color: "#f472b6",
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteTargetId(record.id);
+                    }}
+                  >
+                    <i className="ri-close-line text-xs"></i>
+                  </button>
+                )}
+                <div className="flex items-center gap-2 mb-2 pr-5">
+                  <div className="w-7 h-7 rounded-xl overflow-hidden shrink-0 border border-rose-100">
+                    {record.charaAvatar ? (
+                      <img
+                        src={record.charaAvatar}
+                        alt={record.charaName}
+                        className="w-full h-full object-cover object-top"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-rose-50">
+                        <i className="ri-user-heart-line text-rose-300 text-xs"></i>
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p
+                      className="text-xs font-bold text-rose-600 truncate"
+                      style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+                    >
+                      {record.charaName}
+                    </p>
+                    <p className="text-xs text-rose-300/60">{record.createdAt}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-rose-500/60 leading-relaxed line-clamp-2 mb-2">
+                  {record.seedPrompt}
+                </p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span
+                    className="text-xs px-1.5 py-0.5 rounded-full"
+                    style={{ background: "rgba(253,164,175,0.15)", color: "#f472b6" }}
+                  >
+                    {record.promptCount} 个 Prompt
+                  </span>
+                  {activeId === record.id && (
+                    <span
+                      className="text-xs px-1.5 py-0.5 rounded-full"
+                      style={{ background: "rgba(110,231,183,0.2)", color: "#059669" }}
+                    >
+                      当前
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <ConfirmModal
+        visible={deleteTargetId !== null}
+        title="删除这条记录？"
+        desc="删除后无法恢复哦，确定要删掉这次的创作记录吗？"
+        confirmText="确认删除"
+        onConfirm={() => {
+          if (deleteTargetId) onDelete(deleteTargetId);
+          setDeleteTargetId(null);
+        }}
+        onCancel={() => setDeleteTargetId(null)}
+      />
+    </>
+  );
+};
 
 interface DetailPanelProps {
   card: PromptCard | null;
@@ -280,6 +542,9 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
   const [detailCard, setDetailCard] = useState<PromptCard | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
   const [statusStep, setStatusStep] = useState<string | null>(null);
+  const [historyRecords, setHistoryRecords] = useState<PromptHistoryRecord[]>([]);
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const tipTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelledRef = useRef(false);
@@ -311,12 +576,76 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
   const selectedChara = charas.find((c) => c.id === selectedCharaId) ?? null;
   const hasCharas = charas.length > 0;
 
+  const upsertHistoryRecord = useCallback((record: PromptHistoryRecord) => {
+    setHistoryRecords((prev) => {
+      const existed = prev.some((item) => item.id === record.id);
+      if (!existed) return [record, ...prev];
+      const next = prev.map((item) => (item.id === record.id ? record : item));
+      next.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      return next;
+    });
+  }, []);
+
+  const applyHistoryRecordToMain = useCallback(
+    (record: PromptHistoryRecord) => {
+      if (charas.some((item) => item.id === record.charaId)) {
+        setSelectedCharaId(record.charaId);
+      }
+      setSeedPrompt(record.seedPrompt);
+      setPromptCount((record.promptCount === 2 || record.promptCount === 4 ? record.promptCount : 3) as 2 | 3 | 4);
+      setActiveHistoryId(record.id);
+      sessionCharaIdRef.current = record.charaId;
+      setGenError(record.status === "failed" ? record.errorMessage || "Prompt 预生成失败" : null);
+      setStatusStep(null);
+      if (record.status === "completed" && record.cards.length > 0) {
+        setCards(record.cards);
+        setGenState("done");
+        onPromptSessionChange?.({
+          charaId: record.charaId,
+          cards: record.cards,
+          updatedAt: Date.now(),
+        });
+      } else if (record.status === "failed") {
+        setCards([]);
+        setGenState("idle");
+        onPromptSessionChange?.(null);
+      } else {
+        setCards([]);
+        setGenState("generating");
+        onPromptSessionChange?.(null);
+      }
+    },
+    [charas, onPromptSessionChange]
+  );
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [latest, list] = await Promise.all([
+          creationApi.getLatestPromptPrecreationHistory(),
+          creationApi.listPromptPrecreationHistory({ limit: 50, offset: 0 }),
+        ]);
+        const mapped = list.items.map((item) => toPromptHistoryRecord(item, charas));
+        setHistoryRecords(mapped);
+        if (latest) {
+          const latestRecord = toPromptHistoryRecord(latest, charas);
+          upsertHistoryRecord(latestRecord);
+          applyHistoryRecordToMain(latestRecord);
+        }
+      } catch (e) {
+        void e;
+      }
+    };
+    void load();
+  }, [charas, applyHistoryRecordToMain, upsertHistoryRecord]);
+
   const startGenerate = async () => {
     if (!selectedCharaId || !seedPrompt.trim()) return;
     setGenError(null);
     setStatusStep(null);
     setGenState("generating");
     setCards([]);
+    setActiveHistoryId(null);
     setTipIndex(0);
     cancelledRef.current = false;
     clearPollTimer();
@@ -343,6 +672,29 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
         seed_prompt: seed,
         count,
       });
+      const pendingRecord: PromptHistoryRecord = {
+        id: task_id,
+        taskId: task_id,
+        charaId: charaId,
+        charaName: selectedChara?.name ?? "未知角色",
+        charaAvatar: selectedChara?.avatarUrl ?? "",
+        seedPrompt: seed,
+        promptCount: 0,
+        status: "pending",
+        errorMessage: null,
+        cards: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      upsertHistoryRecord(pendingRecord);
+      setActiveHistoryId(task_id);
+
+      try {
+        const detail = await creationApi.getPromptPrecreationHistory(task_id);
+        upsertHistoryRecord(toPromptHistoryRecord(detail, charas));
+      } catch {
+        // keep pending placeholder
+      }
 
       const schedulePoll = (delayMs: number) => {
         clearPollTimer();
@@ -370,6 +722,16 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
             setCards(nextCards);
             setGenState("done");
             setStatusStep(null);
+
+            try {
+              const detail = await creationApi.getPromptPrecreationHistory(task_id);
+              const record = toPromptHistoryRecord(detail, charas);
+              upsertHistoryRecord(record);
+              setActiveHistoryId(record.id);
+            } catch {
+              // ignore; status card already present
+            }
+
             onPromptSessionChange?.({
               charaId: charaId,
               cards: nextCards,
@@ -379,6 +741,14 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
           }
 
           if (st.status === "failed") {
+            try {
+              const detail = await creationApi.getPromptPrecreationHistory(task_id);
+              const record = toPromptHistoryRecord(detail, charas);
+              upsertHistoryRecord(record);
+              setActiveHistoryId(record.id);
+            } catch {
+              // ignore
+            }
             finishWithError(st.error_message?.trim() || "Prompt 预生成失败");
             return;
           }
@@ -402,12 +772,77 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
     setStatusStep(null);
     setGenState("idle");
     setCards([]);
+    setActiveHistoryId(null);
+    onPromptSessionChange?.(null);
+  };
+
+  const handleSelectHistory = async (record: PromptHistoryRecord) => {
+    try {
+      const detail = await creationApi.getPromptPrecreationHistory(record.id);
+      const next = toPromptHistoryRecord(detail, charas);
+      upsertHistoryRecord(next);
+      applyHistoryRecordToMain(next);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setGenError(e.message);
+      }
+    }
+  };
+
+  const handleDeleteHistory = async (id: string) => {
+    try {
+      const result = await creationApi.deletePromptPrecreationHistory(id);
+      setHistoryRecords((prev) => prev.filter((item) => item.id !== id));
+      if (result.latest) {
+        const latestRecord = toPromptHistoryRecord(result.latest, charas);
+        upsertHistoryRecord(latestRecord);
+        applyHistoryRecordToMain(latestRecord);
+      } else {
+        setActiveHistoryId(null);
+        setGenState("idle");
+        setCards([]);
+        setGenError(null);
+        setStatusStep(null);
+        onPromptSessionChange?.(null);
+      }
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setGenError(e.message);
+      }
+    }
+  };
+
+  const handleClearAll = () => {
+    setShowClearConfirm(true);
+  };
+
+  const confirmClearAll = () => {
+    clearTipTimer();
+    clearPollTimer();
+    cancelledRef.current = true;
+    sessionCharaIdRef.current = "";
+    setSeedPrompt("");
+    setPromptCount(3);
+    setCards([]);
+    setDetailCard(null);
+    setGenError(null);
+    setStatusStep(null);
+    setGenState("idle");
+    setActiveHistoryId(null);
+    setShowClearConfirm(false);
     onPromptSessionChange?.(null);
   };
 
   const handleSaveCard = (id: string, newPrompt: string) => {
     setCards((prev) => {
       const next = prev.map((c) => (c.id === id ? { ...c, fullPrompt: newPrompt } : c));
+      if (activeHistoryId) {
+        setHistoryRecords((records) =>
+          records.map((record) =>
+            record.id === activeHistoryId ? { ...record, cards: next, promptCount: next.length } : record
+          )
+        );
+      }
       if (genState === "done" && sessionCharaIdRef.current && next.length > 0) {
         onPromptSessionChange?.({
           charaId: sessionCharaIdRef.current,
@@ -440,9 +875,12 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
   const submitDisabled = !canSubmit || genState === "generating" || !!listLoading;
   const stepHint = stepHintLabel(statusStep);
 
+  const showClearButton = !!seedPrompt.trim() || cards.length > 0;
+
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div
+    <div className="flex h-full overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div
         className="shrink-0 px-6 py-5 border-b border-rose-100/40"
         style={{ background: "rgba(255,255,255,0.3)" }}
       >
@@ -602,24 +1040,42 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
               <p className="text-xs text-rose-300/60">
                 角色设定会自动融入，你只需要描述这次的画面想象～
               </p>
-              <button
-                type="button"
-                onClick={startGenerate}
-                disabled={submitDisabled}
-                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium transition-all duration-200 whitespace-nowrap"
-                style={{
-                  background: submitDisabled
-                    ? "rgba(253,164,175,0.3)"
-                    : "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
-                  color: submitDisabled ? "rgba(244,114,182,0.5)" : "white",
-                  fontFamily: "'ZCOOL KuaiLe', cursive",
-                  boxShadow: submitDisabled ? "none" : "0 2px 10px rgba(244,114,182,0.35)",
-                  cursor: submitDisabled ? "not-allowed" : "pointer",
-                }}
-              >
-                <i className="ri-sparkling-line text-sm"></i>
-                {genState === "generating" ? "生成中..." : "开始生成"}
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {showClearButton && (
+                  <button
+                    type="button"
+                    onClick={handleClearAll}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm cursor-pointer transition-all duration-200 whitespace-nowrap"
+                    style={{
+                      background: "rgba(253,164,175,0.08)",
+                      border: "1.5px solid rgba(253,164,175,0.2)",
+                      color: "#f472b6",
+                      fontFamily: "'ZCOOL KuaiLe', cursive",
+                    }}
+                  >
+                    <i className="ri-eraser-line text-sm"></i>
+                    一键清空
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={startGenerate}
+                  disabled={submitDisabled}
+                  className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium transition-all duration-200 whitespace-nowrap"
+                  style={{
+                    background: submitDisabled
+                      ? "rgba(253,164,175,0.3)"
+                      : "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+                    color: submitDisabled ? "rgba(244,114,182,0.5)" : "white",
+                    fontFamily: "'ZCOOL KuaiLe', cursive",
+                    boxShadow: submitDisabled ? "none" : "0 2px 10px rgba(244,114,182,0.35)",
+                    cursor: submitDisabled ? "not-allowed" : "pointer",
+                  }}
+                >
+                  <i className="ri-sparkling-line text-sm"></i>
+                  {genState === "generating" ? "生成中..." : "开始生成"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -751,10 +1207,28 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
         )}
       </div>
 
+      </div>
+
+      <HistorySidebar
+        records={historyRecords}
+        activeId={activeHistoryId}
+        onSelect={handleSelectHistory}
+        onDelete={handleDeleteHistory}
+      />
+
       <DetailPanel
         card={detailCard}
         onClose={() => setDetailCard(null)}
         onSave={handleSaveCard}
+      />
+
+      <ConfirmModal
+        visible={showClearConfirm}
+        title="一键清空当前内容？"
+        desc="这会清除种子提示词和所有已生成的 Prompt，页面将恢复到初始状态哦～"
+        confirmText="确认清空"
+        onConfirm={confirmClearAll}
+        onCancel={() => setShowClearConfirm(false)}
       />
 
       <style>{`

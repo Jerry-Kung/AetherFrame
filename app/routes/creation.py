@@ -16,9 +16,16 @@ from app.schemas.creation import (
     QuickCreateStartResponse,
     QuickCreateStatusResponse,
     QuickCreatePromptResultItem,
+    QuickCreateHistoryItem,
+    QuickCreateHistoryDetailResponse,
+    QuickCreateHistoryListResponse,
+    QuickCreatePromptInput,
     PromptPrecreationStartRequest,
     PromptPrecreationStartResponse,
     PromptPrecreationStatusResponse,
+    PromptPrecreationHistoryItem,
+    PromptPrecreationHistoryDetailResponse,
+    PromptPrecreationHistoryListResponse,
     PromptCardItem,
 )
 from app.services.creation_service.prompt_precreation_service import PromptPrecreationService
@@ -110,6 +117,95 @@ async def get_prompt_precreation_status(
     )
 
 
+@router.get(
+    "/prompt-precreation/history",
+    response_model=ApiResponse,
+)
+async def list_prompt_precreation_history(
+    limit: int = 50,
+    offset: int = 0,
+    service: PromptPrecreationService = Depends(get_prompt_precreation_service),
+):
+    data = service.list_history(limit=limit, offset=offset)
+    payload = PromptPrecreationHistoryListResponse(
+        items=[PromptPrecreationHistoryItem(**x) for x in data.get("items", [])],
+        total=data.get("total", 0),
+    )
+    return ApiResponse(
+        success=True,
+        data=payload.model_dump(mode="json"),
+        message="获取历史记录成功",
+    )
+
+
+@router.get(
+    "/prompt-precreation/history/latest",
+    response_model=ApiResponse,
+)
+async def get_latest_prompt_precreation_history(
+    service: PromptPrecreationService = Depends(get_prompt_precreation_service),
+):
+    raw = service.get_latest_history()
+    if not raw:
+        return ApiResponse(success=True, data=None, message="暂无历史记录")
+    payload = PromptPrecreationHistoryDetailResponse(
+        **{
+            **raw,
+            "cards": [PromptCardItem(**x) for x in raw.get("cards", [])],
+        }
+    )
+    return ApiResponse(
+        success=True,
+        data=payload.model_dump(mode="json"),
+        message="获取最新历史记录成功",
+    )
+
+
+@router.get(
+    "/prompt-precreation/history/{history_id}",
+    response_model=ApiResponse,
+)
+async def get_prompt_precreation_history_detail(
+    history_id: str,
+    service: PromptPrecreationService = Depends(get_prompt_precreation_service),
+):
+    hid = (history_id or "").strip()
+    if not hid:
+        raise HTTPException(status_code=400, detail="history_id 无效")
+    raw = service.get_history_detail(hid)
+    if not raw:
+        raise HTTPException(status_code=404, detail="历史记录不存在")
+    payload = PromptPrecreationHistoryDetailResponse(
+        **{
+            **raw,
+            "cards": [PromptCardItem(**x) for x in raw.get("cards", [])],
+        }
+    )
+    return ApiResponse(
+        success=True,
+        data=payload.model_dump(mode="json"),
+        message="获取历史详情成功",
+    )
+
+
+@router.delete(
+    "/prompt-precreation/history/{history_id}",
+    response_model=ApiResponse,
+)
+async def delete_prompt_precreation_history(
+    history_id: str,
+    service: PromptPrecreationService = Depends(get_prompt_precreation_service),
+):
+    hid = (history_id or "").strip()
+    if not hid:
+        raise HTTPException(status_code=400, detail="history_id 无效")
+    try:
+        data = service.delete_history(hid)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return ApiResponse(success=True, data=data, message="删除历史记录成功")
+
+
 @router.post(
     "/characters/{character_id}/quick-create/start",
     response_model=ApiResponse,
@@ -187,6 +283,85 @@ async def get_quick_create_status(
         data=payload.model_dump(mode="json"),
         message="获取任务状态成功",
     )
+
+
+@router.get(
+    "/quick-create/history",
+    response_model=ApiResponse,
+)
+async def list_quick_create_history(
+    limit: int = 50,
+    offset: int = 0,
+    service: QuickCreateService = Depends(get_quick_create_service),
+):
+    data = service.list_history(limit=limit, offset=offset)
+    payload = QuickCreateHistoryListResponse(
+        items=[QuickCreateHistoryItem(**x) for x in data.get("items", [])],
+        total=data.get("total", 0),
+    )
+    return ApiResponse(success=True, data=payload.model_dump(mode="json"), message="获取历史记录成功")
+
+
+@router.get(
+    "/quick-create/history/latest",
+    response_model=ApiResponse,
+)
+async def get_latest_quick_create_history(
+    service: QuickCreateService = Depends(get_quick_create_service),
+):
+    raw = service.get_latest_history()
+    if not raw:
+        return ApiResponse(success=True, data=None, message="暂无历史记录")
+    payload = QuickCreateHistoryDetailResponse(
+        **{
+            **raw,
+            "selected_prompts": [QuickCreatePromptInput(**x) for x in raw.get("selected_prompts", [])],
+            "results": [QuickCreatePromptResultItem(**x) for x in raw.get("results", [])],
+        }
+    )
+    return ApiResponse(success=True, data=payload.model_dump(mode="json"), message="获取最新历史记录成功")
+
+
+@router.get(
+    "/quick-create/history/{history_id}",
+    response_model=ApiResponse,
+)
+async def get_quick_create_history_detail(
+    history_id: str,
+    service: QuickCreateService = Depends(get_quick_create_service),
+):
+    hid = (history_id or "").strip()
+    if not hid:
+        raise HTTPException(status_code=400, detail="history_id 无效")
+    raw = service.get_history_detail(hid)
+    if not raw:
+        raise HTTPException(status_code=404, detail="历史记录不存在")
+    payload = QuickCreateHistoryDetailResponse(
+        **{
+            **raw,
+            "selected_prompts": [QuickCreatePromptInput(**x) for x in raw.get("selected_prompts", [])],
+            "results": [QuickCreatePromptResultItem(**x) for x in raw.get("results", [])],
+        }
+    )
+    return ApiResponse(success=True, data=payload.model_dump(mode="json"), message="获取历史详情成功")
+
+
+@router.delete(
+    "/quick-create/history/{history_id}",
+    response_model=ApiResponse,
+)
+async def delete_quick_create_history(
+    history_id: str,
+    service: QuickCreateService = Depends(get_quick_create_service),
+):
+    hid = (history_id or "").strip()
+    if not hid:
+        raise HTTPException(status_code=400, detail="history_id 无效")
+    try:
+        data = service.delete_history(hid)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return ApiResponse(success=True, data=data, message="删除历史记录成功")
 
 
 @router.get("/quick-create/tasks/{task_id}/images/{image_path:path}")

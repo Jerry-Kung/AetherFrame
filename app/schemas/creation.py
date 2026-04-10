@@ -41,6 +41,29 @@ class PromptPrecreationStatusResponse(BaseModel):
     cards: Optional[List[PromptCardItem]] = None
 
 
+class PromptPrecreationHistoryItem(BaseModel):
+    id: str
+    task_id: str
+    character_id: str
+    chara_name: str
+    chara_avatar: str = ""
+    seed_prompt: str
+    prompt_count: int
+    status: str
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PromptPrecreationHistoryDetailResponse(PromptPrecreationHistoryItem):
+    cards: List[PromptCardItem] = Field(default_factory=list)
+
+
+class PromptPrecreationHistoryListResponse(BaseModel):
+    items: List[PromptPrecreationHistoryItem] = Field(default_factory=list)
+    total: int = 0
+
+
 class QuickCreatePromptInput(BaseModel):
     id: str = Field(default="", description="Prompt 卡片 ID")
     fullPrompt: str = Field(default="", description="Prompt 全文")
@@ -79,6 +102,32 @@ class QuickCreateStatusResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     results: Optional[List[QuickCreatePromptResultItem]] = None
+
+
+class QuickCreateHistoryItem(BaseModel):
+    id: str
+    task_id: str
+    character_id: str
+    chara_name: str
+    chara_avatar: str = ""
+    prompt_count: int
+    image_count: int
+    n: int
+    aspect_ratio: str
+    status: str
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuickCreateHistoryDetailResponse(QuickCreateHistoryItem):
+    selected_prompts: List[QuickCreatePromptInput] = Field(default_factory=list)
+    results: List[QuickCreatePromptResultItem] = Field(default_factory=list)
+
+
+class QuickCreateHistoryListResponse(BaseModel):
+    items: List[QuickCreateHistoryItem] = Field(default_factory=list)
+    total: int = 0
 
 
 class ApiResponse(BaseModel):

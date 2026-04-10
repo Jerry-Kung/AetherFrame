@@ -13,11 +13,16 @@ export interface QuickCreateGroup {
 
 export interface QuickCreateRecord {
   id: string;
+  taskId: string;
   charaId: string;
   charaName: string;
   charaAvatar: string;
   promptCount: number;
+  imageCount: number;
   imagesPerPrompt: number;
+  status: "pending" | "running" | "completed" | "failed";
+  errorMessage?: string | null;
   createdAt: string;
+  updatedAt: string;
   groups: QuickCreateGroup[];
 }

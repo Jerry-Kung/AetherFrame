@@ -2,9 +2,10 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import time
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import BackgroundTasks
@@ -27,6 +28,100 @@ from app.tools.llm.yibu_llm_infer import yibu_gemini_infer
 logger = logging.getLogger(__name__)
 
 PREVIEW_MAX_LEN = 160
+DEFAULT_HISTORY_LIMIT = 50
+
+
+def _to_iso(dt: Optional[datetime]) -> str:
+    if dt is None:
+        return ""
+    return dt.isoformat()
+
+
+def _safe_load_json(path: str, default: Any) -> Any:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return default
+    except json.JSONDecodeError:
+        return default
+
+
+def _dump_json_atomic(path: str, payload: Any) -> None:
+    directory_service.ensure_dir_exists(os.path.dirname(path))
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+def _task_cards(task: Any) -> List[Dict[str, Any]]:
+    if not task or not task.result_json:
+        return []
+    try:
+        cards = json.loads(task.result_json)
+        if isinstance(cards, list):
+            return cards
+    except json.JSONDecodeError:
+        return []
+    return []
+
+
+def _sync_history_files_for_task_id(db: Session, task_id: str) -> None:
+    crepo = CreationPromptPrecreationRepository(db)
+    mrepo = MaterialCharacterRepository(db)
+    task = crepo.get_by_id(task_id)
+    if not task:
+        return
+
+    history_dir = directory_service.get_prompt_precreation_history_dir()
+    records_dir = directory_service.get_prompt_precreation_history_records_dir()
+    directory_service.ensure_dir_exists(history_dir)
+    directory_service.ensure_dir_exists(records_dir)
+
+    character = mrepo.get_by_id(task.character_id)
+    chara_name = character.name if character else "未知角色"
+    cards = _task_cards(task)
+    record_payload = {
+        "id": task.id,
+        "task_id": task.id,
+        "character_id": task.character_id,
+        "chara_name": chara_name,
+        "chara_avatar": "",
+        "seed_prompt": task.seed_prompt,
+        "prompt_count": len(cards),
+        "status": task.status,
+        "error_message": task.error_message,
+        "created_at": _to_iso(task.created_at),
+        "updated_at": _to_iso(task.updated_at),
+        "cards": cards,
+    }
+    _dump_json_atomic(directory_service.get_prompt_precreation_history_record_path(task.id), record_payload)
+
+    tasks = crepo.list_history(limit=2000, offset=0)
+    items: List[Dict[str, Any]] = []
+    for t in tasks:
+        c = mrepo.get_by_id(t.character_id)
+        cards = _task_cards(t)
+        items.append(
+            {
+                "id": t.id,
+                "task_id": t.id,
+                "character_id": t.character_id,
+                "chara_name": c.name if c else "未知角色",
+                "chara_avatar": "",
+                "seed_prompt": t.seed_prompt,
+                "prompt_count": len(cards),
+                "status": t.status,
+                "error_message": t.error_message,
+                "created_at": _to_iso(t.created_at),
+                "updated_at": _to_iso(t.updated_at),
+            }
+        )
+    _dump_json_atomic(
+        directory_service.get_prompt_precreation_history_index_path(),
+        {"updated_at": datetime.now().isoformat(), "total": len(items), "items": items},
+    )
 
 
 def resolve_chara_profile_text(character_id: str, bio_json: Optional[str]) -> Optional[str]:
@@ -196,6 +291,7 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
                 task_id,
                 {"status": "failed", "error_message": "角色不存在", "current_step": None},
             )
+            _sync_history_files_for_task_id(db, task_id)
             return
 
         chara_profile = resolve_chara_profile_text(task.character_id, char.bio_json)
@@ -208,9 +304,11 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
                     "current_step": None,
                 },
             )
+            _sync_history_files_for_task_id(db, task_id)
             return
 
         crepo.update(task_id, {"status": "running", "current_step": "collecting", "error_message": None})
+        _sync_history_files_for_task_id(db, task_id)
         n = task.n
         seed_prompt = task.seed_prompt
         work_dir = task.work_dir
@@ -224,6 +322,7 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
         )
 
         crepo.update(task_id, {"current_step": "reviewing"})
+        _sync_history_files_for_task_id(db, task_id)
         input_content = _build_input_content(candidates)
         raw = _run_review(
             input_content=input_content,
@@ -252,6 +351,7 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
                 "result_json": cards,
             },
         )
+        _sync_history_files_for_task_id(db, task_id)
     except Exception as e:
         logger.error("Prompt 预生成任务失败 task_id=%s: %s", task_id, e, exc_info=True)
         msg = str(e) if str(e) else type(e).__name__
@@ -262,6 +362,7 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
                     task_id,
                     {"status": "failed", "error_message": msg, "current_step": None},
                 )
+                _sync_history_files_for_task_id(db, task_id)
         except Exception:
             logger.exception("写入任务失败状态时出错")
     finally:
@@ -273,6 +374,149 @@ class PromptPrecreationService:
         self.db = db
         self.repo = CreationPromptPrecreationRepository(db)
         self.material_repo = MaterialCharacterRepository(db)
+
+    def _parse_cards(self, task: Any) -> List[Dict[str, Any]]:
+        if not task or not task.result_json:
+            return []
+        try:
+            cards = json.loads(task.result_json)
+            if isinstance(cards, list):
+                return cards
+        except json.JSONDecodeError:
+            return []
+        return []
+
+    def _build_history_detail(self, task: Any) -> Optional[Dict[str, Any]]:
+        if not task:
+            return None
+        character = self.material_repo.get_by_id(task.character_id)
+        chara_name = character.name if character else "未知角色"
+        cards = self._parse_cards(task)
+        return {
+            "id": task.id,
+            "task_id": task.id,
+            "character_id": task.character_id,
+            "chara_name": chara_name,
+            "chara_avatar": "",
+            "seed_prompt": task.seed_prompt,
+            "prompt_count": len(cards),
+            "status": task.status,
+            "error_message": task.error_message,
+            "created_at": task.created_at,
+            "updated_at": task.updated_at,
+            "cards": cards,
+        }
+
+    def _build_history_index_item(self, detail: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "id": detail["id"],
+            "task_id": detail["task_id"],
+            "character_id": detail["character_id"],
+            "chara_name": detail["chara_name"],
+            "chara_avatar": detail["chara_avatar"],
+            "seed_prompt": detail["seed_prompt"],
+            "prompt_count": detail["prompt_count"],
+            "status": detail["status"],
+            "error_message": detail.get("error_message"),
+            "created_at": _to_iso(detail.get("created_at")),
+            "updated_at": _to_iso(detail.get("updated_at")),
+        }
+
+    def _sync_history_record_file(self, task: Any) -> None:
+        detail = self._build_history_detail(task)
+        if not detail:
+            return
+        record_path = directory_service.get_prompt_precreation_history_record_path(task.id)
+        record_payload = {
+            **self._build_history_index_item(detail),
+            "cards": detail.get("cards") or [],
+        }
+        _dump_json_atomic(record_path, record_payload)
+
+    def _sync_history_index_file(self) -> None:
+        tasks = self.repo.list_history(limit=2000, offset=0)
+        items: List[Dict[str, Any]] = []
+        for task in tasks:
+            detail = self._build_history_detail(task)
+            if not detail:
+                continue
+            items.append(self._build_history_index_item(detail))
+        payload = {
+            "updated_at": datetime.now().isoformat(),
+            "total": len(items),
+            "items": items,
+        }
+        index_path = directory_service.get_prompt_precreation_history_index_path()
+        _dump_json_atomic(index_path, payload)
+
+    def _sync_history_files_for_task(self, task_id: str) -> None:
+        task = self.repo.get_by_id(task_id)
+        if not task:
+            return
+        history_dir = directory_service.get_prompt_precreation_history_dir()
+        records_dir = directory_service.get_prompt_precreation_history_records_dir()
+        directory_service.ensure_dir_exists(history_dir)
+        directory_service.ensure_dir_exists(records_dir)
+        self._sync_history_record_file(task)
+        self._sync_history_index_file()
+
+    def list_history(self, *, limit: int = DEFAULT_HISTORY_LIMIT, offset: int = 0) -> Dict[str, Any]:
+        lim = max(1, min(int(limit), 200))
+        off = max(0, int(offset))
+        tasks = self.repo.list_history(limit=lim, offset=off)
+        items: List[Dict[str, Any]] = []
+        for task in tasks:
+            detail = self._build_history_detail(task)
+            if not detail:
+                continue
+            item = self._build_history_index_item(detail)
+            items.append(item)
+        return {"items": items, "total": self.repo.count_history()}
+
+    def get_history_detail(self, history_id: str) -> Optional[Dict[str, Any]]:
+        hid = (history_id or "").strip()
+        if not hid:
+            return None
+        task = self.repo.get_by_id(hid)
+        if not task:
+            return None
+        return self._build_history_detail(task)
+
+    def get_latest_history(self) -> Optional[Dict[str, Any]]:
+        task = self.repo.get_latest()
+        if not task:
+            return None
+        return self._build_history_detail(task)
+
+    def delete_history(self, history_id: str) -> Dict[str, Any]:
+        hid = (history_id or "").strip()
+        if not hid:
+            raise ValueError("history_id 无效")
+        task = self.repo.get_by_id(hid)
+        if not task:
+            raise ValueError("历史记录不存在")
+        work_dir = task.work_dir
+        deleted = self.repo.delete(hid)
+        if not deleted:
+            raise ValueError("历史记录不存在")
+
+        record_path = directory_service.get_prompt_precreation_history_record_path(hid)
+        try:
+            if os.path.isfile(record_path):
+                os.remove(record_path)
+        except Exception:
+            logger.warning("删除历史记录文件失败: %s", record_path, exc_info=True)
+
+        if work_dir:
+            try:
+                if os.path.isdir(work_dir):
+                    shutil.rmtree(work_dir, ignore_errors=True)
+            except Exception:
+                logger.warning("删除历史工作目录失败: %s", work_dir, exc_info=True)
+
+        self._sync_history_index_file()
+        latest = self.get_latest_history()
+        return {"deleted_id": hid, "latest": latest}
 
     async def _run_task_async(self, task_id: str) -> None:
         await asyncio.to_thread(run_prompt_precreation_task_sync, task_id)
@@ -305,6 +549,7 @@ class PromptPrecreationService:
             status="pending",
         )
         directory_service.ensure_dir_exists(task.work_dir)
+        self._sync_history_files_for_task(task.id)
 
         if background_tasks:
             background_tasks.add_task(self._run_task_async, task.id)

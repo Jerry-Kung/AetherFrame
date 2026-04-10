@@ -13,3 +13,18 @@ export interface CreationPromptSession {
   cards: PromptCard[];
   updatedAt: number;
 }
+
+export interface PromptHistoryRecord {
+  id: string;
+  taskId: string;
+  charaId: string;
+  charaName: string;
+  charaAvatar: string;
+  seedPrompt: string;
+  promptCount: number;
+  status: "pending" | "running" | "completed" | "failed";
+  errorMessage?: string | null;
+  cards: PromptCard[];
+  createdAt: string;
+  updatedAt: string;
+}

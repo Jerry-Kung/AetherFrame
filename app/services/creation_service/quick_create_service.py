@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -22,11 +23,102 @@ from app.tools.llm.nano_banana_pro import generate_image_with_nano_banana_pro
 logger = logging.getLogger(__name__)
 
 VALID_ASPECT_RATIOS = {"16:9", "4:3", "1:1", "3:4", "9:16"}
+DEFAULT_HISTORY_LIMIT = 50
 
 
 def _write_json(path: str, data: Any) -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _dump_json_atomic(path: str, payload: Any) -> None:
+    directory_service.ensure_dir_exists(os.path.dirname(path))
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+def _to_iso(dt: Optional[datetime]) -> str:
+    if dt is None:
+        return ""
+    return dt.isoformat()
+
+
+def _parse_json_list(raw: Optional[str]) -> List[Dict[str, Any]]:
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return [x for x in parsed if isinstance(x, dict)]
+    except json.JSONDecodeError:
+        return []
+    return []
+
+
+def _sync_quick_create_history_files_for_task_id(db: Session, task_id: str) -> None:
+    qrepo = CreationQuickCreateRepository(db)
+    mrepo = MaterialCharacterRepository(db)
+    task = qrepo.get_by_id(task_id)
+    if not task:
+        return
+
+    directory_service.ensure_dir_exists(directory_service.get_quick_create_history_dir())
+    directory_service.ensure_dir_exists(directory_service.get_quick_create_history_records_dir())
+
+    character = mrepo.get_by_id(task.character_id)
+    chara_name = character.name if character else "未知角色"
+    selected_prompts = _parse_json_list(task.selected_prompts_json)
+    results = _parse_json_list(task.result_json)
+    image_count = sum(len((r.get("generated_images") or [])) for r in results if isinstance(r, dict))
+    record_payload = {
+        "id": task.id,
+        "task_id": task.id,
+        "character_id": task.character_id,
+        "chara_name": chara_name,
+        "chara_avatar": "",
+        "prompt_count": len(selected_prompts),
+        "image_count": image_count,
+        "n": task.n,
+        "aspect_ratio": task.aspect_ratio,
+        "status": task.status,
+        "error_message": task.error_message,
+        "created_at": _to_iso(task.created_at),
+        "updated_at": _to_iso(task.updated_at),
+        "selected_prompts": selected_prompts,
+        "results": results,
+    }
+    _dump_json_atomic(directory_service.get_quick_create_history_record_path(task.id), record_payload)
+
+    tasks = qrepo.list_history(limit=2000, offset=0)
+    items: List[Dict[str, Any]] = []
+    for t in tasks:
+        c = mrepo.get_by_id(t.character_id)
+        selected = _parse_json_list(t.selected_prompts_json)
+        result_list = _parse_json_list(t.result_json)
+        image_total = sum(len((r.get("generated_images") or [])) for r in result_list if isinstance(r, dict))
+        items.append(
+            {
+                "id": t.id,
+                "task_id": t.id,
+                "character_id": t.character_id,
+                "chara_name": c.name if c else "未知角色",
+                "chara_avatar": "",
+                "prompt_count": len(selected),
+                "image_count": image_total,
+                "n": t.n,
+                "aspect_ratio": t.aspect_ratio,
+                "status": t.status,
+                "error_message": t.error_message,
+                "created_at": _to_iso(t.created_at),
+                "updated_at": _to_iso(t.updated_at),
+            }
+        )
+    _dump_json_atomic(
+        directory_service.get_quick_create_history_index_path(),
+        {"updated_at": datetime.now().isoformat(), "total": len(items), "items": items},
+    )
 
 
 def _safe_segment(value: str) -> str:
@@ -97,9 +189,11 @@ def run_quick_create_task_sync(task_id: str, session_factory=SessionLocal) -> No
         char = mrepo.get_by_id(task.character_id)
         if not char:
             qrepo.update(task_id, {"status": "failed", "error_message": "角色不存在", "current_step": None})
+            _sync_quick_create_history_files_for_task_id(db, task_id)
             return
 
         qrepo.update(task_id, {"status": "running", "current_step": "preparing", "error_message": None})
+        _sync_quick_create_history_files_for_task_id(db, task_id)
         directory_service.ensure_dir_exists(task.work_dir)
 
         refs = _resolve_standard_reference_paths(task.character_id)
@@ -138,6 +232,7 @@ def run_quick_create_task_sync(task_id: str, session_factory=SessionLocal) -> No
         _write_json(os.path.join(task.work_dir, "task_meta.json"), task_meta)
 
         qrepo.update(task_id, {"current_step": "generating"})
+        _sync_quick_create_history_files_for_task_id(db, task_id)
         results: List[Dict[str, Any]] = []
         total_success = 0
         for idx, item in enumerate(selected):
@@ -185,6 +280,7 @@ def run_quick_create_task_sync(task_id: str, session_factory=SessionLocal) -> No
         _write_json(os.path.join(task.work_dir, "result.json"), results)
         if total_success <= 0:
             qrepo.update(task_id, {"status": "failed", "error_message": "所有 Prompt 均生成失败", "current_step": None})
+            _sync_quick_create_history_files_for_task_id(db, task_id)
             return
 
         qrepo.update(
@@ -196,6 +292,7 @@ def run_quick_create_task_sync(task_id: str, session_factory=SessionLocal) -> No
                 "result_json": results,
             },
         )
+        _sync_quick_create_history_files_for_task_id(db, task_id)
     except Exception as e:
         logger.error("一键创作任务失败 task_id=%s: %s", task_id, e, exc_info=True)
         msg = str(e) if str(e) else type(e).__name__
@@ -203,6 +300,7 @@ def run_quick_create_task_sync(task_id: str, session_factory=SessionLocal) -> No
             qrepo = CreationQuickCreateRepository(db)
             if qrepo.get_by_id(task_id):
                 qrepo.update(task_id, {"status": "failed", "error_message": msg, "current_step": None})
+                _sync_quick_create_history_files_for_task_id(db, task_id)
         except Exception:
             logger.exception("写入一键创作失败状态时出错")
     finally:
@@ -217,6 +315,133 @@ class QuickCreateService:
         self.material_repo = MaterialCharacterRepository(db)
         bind = self.db.get_bind()
         self._session_factory = lambda: Session(bind=bind, autocommit=False, autoflush=False)
+
+    def _build_history_detail(self, task: Any) -> Optional[Dict[str, Any]]:
+        if not task:
+            return None
+        character = self.material_repo.get_by_id(task.character_id)
+        chara_name = character.name if character else "未知角色"
+        selected_prompts = _parse_json_list(task.selected_prompts_json)
+        results = _parse_json_list(task.result_json)
+        image_count = sum(len((r.get("generated_images") or [])) for r in results if isinstance(r, dict))
+        return {
+            "id": task.id,
+            "task_id": task.id,
+            "character_id": task.character_id,
+            "chara_name": chara_name,
+            "chara_avatar": "",
+            "prompt_count": len(selected_prompts),
+            "image_count": image_count,
+            "n": task.n,
+            "aspect_ratio": task.aspect_ratio,
+            "status": task.status,
+            "error_message": task.error_message,
+            "created_at": task.created_at,
+            "updated_at": task.updated_at,
+            "selected_prompts": selected_prompts,
+            "results": results,
+        }
+
+    def list_history(self, *, limit: int = DEFAULT_HISTORY_LIMIT, offset: int = 0) -> Dict[str, Any]:
+        lim = max(1, min(int(limit), 200))
+        off = max(0, int(offset))
+        tasks = self.quick_repo.list_history(limit=lim, offset=off)
+        items: List[Dict[str, Any]] = []
+        for task in tasks:
+            detail = self._build_history_detail(task)
+            if not detail:
+                continue
+            items.append(
+                {
+                    "id": detail["id"],
+                    "task_id": detail["task_id"],
+                    "character_id": detail["character_id"],
+                    "chara_name": detail["chara_name"],
+                    "chara_avatar": detail["chara_avatar"],
+                    "prompt_count": detail["prompt_count"],
+                    "image_count": detail["image_count"],
+                    "n": detail["n"],
+                    "aspect_ratio": detail["aspect_ratio"],
+                    "status": detail["status"],
+                    "error_message": detail["error_message"],
+                    "created_at": detail["created_at"],
+                    "updated_at": detail["updated_at"],
+                }
+            )
+        return {"items": items, "total": self.quick_repo.count_history()}
+
+    def get_history_detail(self, history_id: str) -> Optional[Dict[str, Any]]:
+        hid = (history_id or "").strip()
+        if not hid:
+            return None
+        task = self.quick_repo.get_by_id(hid)
+        if not task:
+            return None
+        return self._build_history_detail(task)
+
+    def get_latest_history(self) -> Optional[Dict[str, Any]]:
+        task = self.quick_repo.get_latest()
+        if not task:
+            return None
+        return self._build_history_detail(task)
+
+    def delete_history(self, history_id: str) -> Dict[str, Any]:
+        hid = (history_id or "").strip()
+        if not hid:
+            raise ValueError("history_id 无效")
+        task = self.quick_repo.get_by_id(hid)
+        if not task:
+            raise ValueError("历史记录不存在")
+        work_dir = task.work_dir
+        deleted = self.quick_repo.delete(hid)
+        if not deleted:
+            raise ValueError("历史记录不存在")
+
+        record_path = directory_service.get_quick_create_history_record_path(hid)
+        try:
+            if os.path.isfile(record_path):
+                os.remove(record_path)
+        except Exception:
+            logger.warning("删除一键创作历史记录文件失败: %s", record_path, exc_info=True)
+
+        if work_dir:
+            try:
+                if os.path.isdir(work_dir):
+                    shutil.rmtree(work_dir, ignore_errors=True)
+            except Exception:
+                logger.warning("删除一键创作工作目录失败: %s", work_dir, exc_info=True)
+
+        tasks = self.quick_repo.list_history(limit=2000, offset=0)
+        items: List[Dict[str, Any]] = []
+        for t in tasks:
+            c = self.material_repo.get_by_id(t.character_id)
+            selected = _parse_json_list(t.selected_prompts_json)
+            result_list = _parse_json_list(t.result_json)
+            image_total = sum(len((r.get("generated_images") or [])) for r in result_list if isinstance(r, dict))
+            items.append(
+                {
+                    "id": t.id,
+                    "task_id": t.id,
+                    "character_id": t.character_id,
+                    "chara_name": c.name if c else "未知角色",
+                    "chara_avatar": "",
+                    "prompt_count": len(selected),
+                    "image_count": image_total,
+                    "n": t.n,
+                    "aspect_ratio": t.aspect_ratio,
+                    "status": t.status,
+                    "error_message": t.error_message,
+                    "created_at": _to_iso(t.created_at),
+                    "updated_at": _to_iso(t.updated_at),
+                }
+            )
+        _dump_json_atomic(
+            directory_service.get_quick_create_history_index_path(),
+            {"updated_at": datetime.now().isoformat(), "total": len(items), "items": items},
+        )
+
+        latest = self.get_latest_history()
+        return {"deleted_id": hid, "latest": latest}
 
     async def _run_task_async(self, task_id: str) -> None:
         await asyncio.to_thread(run_quick_create_task_sync, task_id, self._session_factory)
@@ -259,6 +484,7 @@ class QuickCreateService:
             status="pending",
         )
         directory_service.ensure_dir_exists(task.work_dir)
+        _sync_quick_create_history_files_for_task_id(self.db, task.id)
 
         if background_tasks:
             background_tasks.add_task(self._run_task_async, task.id)

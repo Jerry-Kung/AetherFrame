@@ -34,10 +34,37 @@ const GEN_HINTS = [
   "最后一点点，马上就来啦～",
 ];
 const POLL_INTERVAL_MS = 15000;
+const QUICK_CREATE_ACTIVE_TASK_STORAGE_KEY = "aetherframe.creation.quickCreate.activeTask";
+
+interface StoredQuickCreatePromptMeta {
+  id: string;
+  title: string;
+  preview: string;
+}
+
+interface StoredQuickCreateTaskPayload {
+  taskId: string;
+  charaId: string;
+  n: number;
+  aspectRatio: string;
+  prompts: StoredQuickCreatePromptMeta[];
+}
 
 interface QuickCreatePageProps {
   charas: CharaProfile[];
   promptSession: CreationPromptSession | null;
+}
+
+function fmtTime(value: string): string {
+  const t = new Date(value);
+  if (Number.isNaN(t.getTime())) return value;
+  return t.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function PromptSelectCard({
@@ -371,6 +398,127 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelledRef = useRef(false);
 
+  const clearQuickCreateActiveTaskStorage = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem(QUICK_CREATE_ACTIVE_TASK_STORAGE_KEY);
+  }, []);
+
+  const writeQuickCreateActiveTaskStorage = useCallback(
+    (payload: StoredQuickCreateTaskPayload) => {
+      if (typeof window === "undefined") return;
+      if (!payload.taskId || !payload.charaId || !Array.isArray(payload.prompts)) return;
+      window.localStorage.setItem(QUICK_CREATE_ACTIVE_TASK_STORAGE_KEY, JSON.stringify(payload));
+    },
+    []
+  );
+
+  const readQuickCreateActiveTaskStorage = useCallback((): StoredQuickCreateTaskPayload | null => {
+    if (typeof window === "undefined") return null;
+    const raw = window.localStorage.getItem(QUICK_CREATE_ACTIVE_TASK_STORAGE_KEY);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as Partial<StoredQuickCreateTaskPayload>;
+      if (
+        !parsed ||
+        typeof parsed.taskId !== "string" ||
+        typeof parsed.charaId !== "string" ||
+        typeof parsed.n !== "number" ||
+        typeof parsed.aspectRatio !== "string" ||
+        !Array.isArray(parsed.prompts)
+      ) {
+        clearQuickCreateActiveTaskStorage();
+        return null;
+      }
+      const prompts = parsed.prompts
+        .filter((p): p is StoredQuickCreatePromptMeta => !!p && typeof p.id === "string")
+        .map((p) => ({
+          id: p.id,
+          title: typeof p.title === "string" ? p.title : "",
+          preview: typeof p.preview === "string" ? p.preview : "",
+        }));
+      return {
+        taskId: parsed.taskId.trim(),
+        charaId: parsed.charaId.trim(),
+        n: parsed.n,
+        aspectRatio: parsed.aspectRatio,
+        prompts,
+      };
+    } catch {
+      clearQuickCreateActiveTaskStorage();
+      return null;
+    }
+  }, [clearQuickCreateActiveTaskStorage]);
+
+  const buildGroupsFromHistoryDetail = useCallback(
+    (detail: creationApi.QuickCreateHistoryDetailResponse): QuickCreateGroup[] => {
+      const promptMetaMap = new Map((detail.selected_prompts ?? []).map((p) => [p.id, p.fullPrompt] as const));
+      return (detail.results ?? []).map((r) => ({
+        promptId: r.prompt_id,
+        promptTitle: r.prompt_id,
+        promptPreview: promptMetaMap.get(r.prompt_id)?.slice(0, 80) || r.full_prompt.slice(0, 80),
+        images: (r.generated_images ?? []).map((img, i) => ({
+          id: `${detail.task_id}-${r.prompt_id}-${i}`,
+          promptId: r.prompt_id,
+          url: creationApi.buildQuickCreateResultImageUrl(detail.task_id, img),
+        })),
+      }));
+    },
+    []
+  );
+
+  const toQuickCreateRecord = useCallback(
+    (
+      raw: creationApi.QuickCreateHistoryItem | creationApi.QuickCreateHistoryDetailResponse
+    ): QuickCreateRecord => {
+      const chara = charas.find((c) => c.id === raw.character_id);
+      const groups =
+        "results" in raw
+          ? buildGroupsFromHistoryDetail(raw as creationApi.QuickCreateHistoryDetailResponse)
+          : [];
+      return {
+        id: raw.id,
+        taskId: raw.task_id,
+        charaId: raw.character_id,
+        charaName: raw.chara_name || chara?.name || "未知角色",
+        charaAvatar: chara?.avatarUrl || raw.chara_avatar || DEFAULT_CHARA_AVATAR_PLACEHOLDER,
+        promptCount: raw.prompt_count,
+        imageCount: raw.image_count,
+        imagesPerPrompt: raw.n,
+        status: raw.status,
+        errorMessage: raw.error_message ?? null,
+        createdAt: fmtTime(raw.created_at),
+        updatedAt: raw.updated_at,
+        groups,
+      };
+    },
+    [buildGroupsFromHistoryDetail, charas]
+  );
+
+  const upsertRecord = useCallback((record: QuickCreateRecord) => {
+    setHistoryRecords((prev) => {
+      const existed = prev.some((x) => x.id === record.id);
+      if (!existed) return [record, ...prev];
+      return prev.map((x) => (x.id === record.id ? record : x));
+    });
+  }, []);
+
+  const applyRecordToView = useCallback((record: QuickCreateRecord) => {
+    setViewingRecord(record);
+    setResultGroups(record.groups);
+    if (record.status === "failed") {
+      setGenError(record.errorMessage || "一键创作失败");
+      setGenStatus("idle");
+      return;
+    }
+    if (record.status === "completed") {
+      setGenError(null);
+      setGenStatus("done");
+      return;
+    }
+    setGenError(null);
+    setGenStatus("generating");
+  }, []);
+
   useEffect(() => {
     return () => {
       if (genHintTimerRef.current) clearInterval(genHintTimerRef.current);
@@ -380,12 +528,129 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
   }, []);
 
   useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const [latest, list] = await Promise.all([
+          creationApi.getLatestQuickCreateHistory(),
+          creationApi.listQuickCreateHistory({ limit: 50, offset: 0 }),
+        ]);
+        setHistoryRecords(list.items.map((x) => toQuickCreateRecord(x)));
+        if (latest) {
+          const rec = toQuickCreateRecord(latest);
+          upsertRecord(rec);
+          applyRecordToView(rec);
+        }
+      } catch {
+        // ignore history preload failure
+      }
+    };
+    void loadHistory();
+  }, [applyRecordToView, toQuickCreateRecord, upsertRecord]);
+
+  useEffect(() => {
     if (allPrompts.length === 0) {
       setSelectedPromptIds(new Set());
       return;
     }
     setSelectedPromptIds(new Set(allPrompts.map((p) => p.id)));
   }, [promptSession?.updatedAt, allPrompts.length]);
+
+  const pollQuickCreateTask = useCallback(
+    async (taskId: string, promptMetas: StoredQuickCreatePromptMeta[]) => {
+      const tid = String(taskId ?? "").trim();
+      if (!tid) return;
+      cancelledRef.current = false;
+      setGenError(null);
+      setViewingRecord(null);
+      setGenStatus("generating");
+      setHintIndex(0);
+      if (genHintTimerRef.current) clearInterval(genHintTimerRef.current);
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      genHintTimerRef.current = setInterval(() => {
+        setHintIndex((prev) => (prev + 1) % GEN_HINTS.length);
+      }, 1200);
+      const finishError = (msg: string) => {
+        if (genHintTimerRef.current) {
+          clearInterval(genHintTimerRef.current);
+          genHintTimerRef.current = null;
+        }
+        if (pollTimerRef.current) {
+          clearTimeout(pollTimerRef.current);
+          pollTimerRef.current = null;
+        }
+        clearQuickCreateActiveTaskStorage();
+        setGenError(msg);
+        setGenStatus("idle");
+      };
+      const schedulePoll = (delay: number) => {
+        if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = window.setTimeout(() => void runPoll(), delay);
+      };
+      const runPoll = async () => {
+        if (cancelledRef.current) return;
+        try {
+          const st = await creationApi.getQuickCreateTaskStatus(tid);
+          if (cancelledRef.current) return;
+          if (st.status === "failed") {
+            try {
+              const detail = await creationApi.getQuickCreateHistory(tid);
+              const record = toQuickCreateRecord(detail);
+              upsertRecord(record);
+              applyRecordToView(record);
+            } catch {
+              // ignore
+            }
+            finishError(st.error_message?.trim() || "一键创作失败");
+            return;
+          }
+          if (st.status !== "completed") {
+            schedulePoll(POLL_INTERVAL_MS);
+            return;
+          }
+          if (genHintTimerRef.current) {
+            clearInterval(genHintTimerRef.current);
+            genHintTimerRef.current = null;
+          }
+          if (pollTimerRef.current) {
+            clearTimeout(pollTimerRef.current);
+            pollTimerRef.current = null;
+          }
+          clearQuickCreateActiveTaskStorage();
+          try {
+            const detail = await creationApi.getQuickCreateHistory(tid);
+            const record = toQuickCreateRecord(detail);
+            upsertRecord(record);
+            applyRecordToView(record);
+          } catch {
+            const rawResults = st.results ?? [];
+            const groups: QuickCreateGroup[] = rawResults.map((r) => ({
+              promptId: r.prompt_id,
+              promptTitle: r.prompt_id,
+              promptPreview: r.full_prompt.slice(0, 80),
+              images: (r.generated_images ?? []).map((img, i) => ({
+                id: `${r.prompt_id}-${i}-${Date.now()}`,
+                promptId: r.prompt_id,
+                url: creationApi.buildQuickCreateResultImageUrl(tid, img),
+              })),
+            }));
+            setResultGroups(groups);
+            setGenStatus("done");
+          }
+        } catch (e) {
+          if (cancelledRef.current) return;
+          finishError(e instanceof ApiError ? e.message : "获取一键创作任务状态失败");
+        }
+      };
+      void runPoll();
+    },
+    [applyRecordToView, clearQuickCreateActiveTaskStorage, toQuickCreateRecord, upsertRecord]
+  );
+
+  useEffect(() => {
+    const active = readQuickCreateActiveTaskStorage();
+    if (!active) return;
+    void pollQuickCreateTask(active.taskId, active.prompts);
+  }, [pollQuickCreateTask, readQuickCreateActiveTaskStorage]);
 
   const selectedPrompts = allPrompts.filter((p) => selectedPromptIds.has(p.id));
 
@@ -409,112 +674,76 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
   const startGenerate = useCallback(async () => {
     const prompts = allPrompts.filter((p) => selectedPromptIds.has(p.id));
     if (prompts.length === 0 || !promptSession) return;
-    cancelledRef.current = false;
-    setGenError(null);
-    if (genHintTimerRef.current) {
-      clearInterval(genHintTimerRef.current);
-      genHintTimerRef.current = null;
-    }
-    if (pollTimerRef.current) {
-      clearTimeout(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-    setGenStatus("generating");
-    setViewingRecord(null);
-    setHintIndex(0);
-
-    genHintTimerRef.current = setInterval(() => {
-      setHintIndex((prev) => (prev + 1) % GEN_HINTS.length);
-    }, 1200);
-
-    const cardMap = new Map(allPrompts.map((p) => [p.id, p] as const));
-    const finishError = (msg: string) => {
-      if (genHintTimerRef.current) {
-        clearInterval(genHintTimerRef.current);
-        genHintTimerRef.current = null;
-      }
-      if (pollTimerRef.current) {
-        clearTimeout(pollTimerRef.current);
-        pollTimerRef.current = null;
-      }
-      setGenError(msg);
-      setGenStatus("idle");
-    };
-
     try {
       const start = await creationApi.startQuickCreate(promptSession.charaId, {
         selected_prompts: prompts.map((p) => ({ id: p.id, fullPrompt: p.fullPrompt })),
         n: imagesPerPrompt,
         aspect_ratio: aspectRatio,
       });
-      const taskId = start.task_id;
-      const schedulePoll = (delay: number) => {
-        if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-        pollTimerRef.current = window.setTimeout(() => void runPoll(), delay);
+      writeQuickCreateActiveTaskStorage({
+        taskId: start.task_id,
+        charaId: promptSession.charaId,
+        n: imagesPerPrompt,
+        aspectRatio,
+        prompts: prompts.map((p) => ({
+          id: p.id,
+          title: p.title,
+          preview: p.preview,
+        })),
+      });
+      const pendingRecord: QuickCreateRecord = {
+        id: start.task_id,
+        taskId: start.task_id,
+        charaId: promptSession.charaId,
+        charaName: sessionChara?.name ?? "未知角色",
+        charaAvatar: sessionChara?.avatarUrl ?? DEFAULT_CHARA_AVATAR_PLACEHOLDER,
+        promptCount: prompts.length,
+        imageCount: 0,
+        imagesPerPrompt,
+        status: "pending",
+        errorMessage: null,
+        createdAt: fmtTime(new Date().toISOString()),
+        updatedAt: new Date().toISOString(),
+        groups: [],
       };
-      const runPoll = async () => {
-        if (cancelledRef.current) return;
-        try {
-          const st = await creationApi.getQuickCreateTaskStatus(taskId);
-          if (cancelledRef.current) return;
-          if (st.status === "failed") {
-            finishError(st.error_message?.trim() || "一键创作失败");
-            return;
-          }
-          if (st.status !== "completed") {
-            schedulePoll(POLL_INTERVAL_MS);
-            return;
-          }
-          if (genHintTimerRef.current) {
-            clearInterval(genHintTimerRef.current);
-            genHintTimerRef.current = null;
-          }
-          const rawResults = st.results ?? [];
-          const groups: QuickCreateGroup[] = rawResults.map((r) => {
-            const card = cardMap.get(r.prompt_id);
-            const images: QuickCreateImage[] = (r.generated_images ?? []).map((img, i) => ({
-              id: `${r.prompt_id}-${i}-${Date.now()}`,
-              promptId: r.prompt_id,
-              url: creationApi.buildQuickCreateResultImageUrl(taskId, img),
-            }));
-            return {
-              promptId: r.prompt_id,
-              promptTitle: card?.title ?? `Prompt ${r.prompt_id}`,
-              promptPreview: card?.preview ?? r.full_prompt.slice(0, 80),
-              images,
-            };
-          });
-          setResultGroups(groups);
-          setGenStatus("done");
+      upsertRecord(pendingRecord);
+      applyRecordToView(pendingRecord);
 
-          const chara = charas.find((c) => c.id === promptSession.charaId);
-          const newRecord: QuickCreateRecord = {
-            id: `qc-${Date.now()}`,
-            charaId: promptSession.charaId,
-            charaName: chara?.name ?? "未知角色",
-            charaAvatar: chara?.avatarUrl ?? DEFAULT_CHARA_AVATAR_PLACEHOLDER,
-            promptCount: prompts.length,
-            imagesPerPrompt,
-            createdAt: new Date().toLocaleString("zh-CN", {
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            groups,
-          };
-          setHistoryRecords((prev) => [newRecord, ...prev]);
-        } catch (e) {
-          if (cancelledRef.current) return;
-          finishError(e instanceof ApiError ? e.message : "获取一键创作任务状态失败");
-        }
-      };
-      void runPoll();
+      try {
+        const detail = await creationApi.getQuickCreateHistory(start.task_id);
+        const serverPending = toQuickCreateRecord(detail);
+        upsertRecord(serverPending);
+        applyRecordToView(serverPending);
+      } catch {
+        // keep local pending
+      }
+      void pollQuickCreateTask(
+        start.task_id,
+        prompts.map((p) => ({
+          id: p.id,
+          title: p.title,
+          preview: p.preview,
+        }))
+      );
     } catch (e) {
-      finishError(e instanceof ApiError ? e.message : "启动一键创作失败");
+      clearQuickCreateActiveTaskStorage();
+      setGenError(e instanceof ApiError ? e.message : "启动一键创作失败");
+      setGenStatus("idle");
     }
-  }, [allPrompts, selectedPromptIds, promptSession, imagesPerPrompt, aspectRatio, charas]);
+  }, [
+    allPrompts,
+    selectedPromptIds,
+    promptSession,
+    imagesPerPrompt,
+    aspectRatio,
+    pollQuickCreateTask,
+    writeQuickCreateActiveTaskStorage,
+    clearQuickCreateActiveTaskStorage,
+    sessionChara,
+    upsertRecord,
+    applyRecordToView,
+    toQuickCreateRecord,
+  ]);
 
   const handleReset = useCallback(() => {
     setGenStatus("idle");
@@ -523,22 +752,40 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
     setGenError(null);
   }, []);
 
-  const handleViewRecord = useCallback((record: QuickCreateRecord) => {
-    setViewingRecord(record);
-    setResultGroups(record.groups);
-    setGenStatus("done");
-  }, []);
-
-  const handleDeleteRecord = useCallback(
-    (id: string) => {
-      setHistoryRecords((prev) => prev.filter((r) => r.id !== id));
-      if (viewingRecord?.id === id) {
-        setViewingRecord(null);
-        setResultGroups([]);
-        setGenStatus("idle");
+  const handleViewRecord = useCallback(
+    async (record: QuickCreateRecord) => {
+      try {
+        const detail = await creationApi.getQuickCreateHistory(record.id);
+        const next = toQuickCreateRecord(detail);
+        upsertRecord(next);
+        applyRecordToView(next);
+      } catch (e) {
+        if (e instanceof ApiError) setGenError(e.message);
       }
     },
-    [viewingRecord]
+    [applyRecordToView, toQuickCreateRecord, upsertRecord]
+  );
+
+  const handleDeleteRecord = useCallback(
+    async (id: string) => {
+      try {
+        const result = await creationApi.deleteQuickCreateHistory(id);
+        setHistoryRecords((prev) => prev.filter((r) => r.id !== id));
+        if (result.latest) {
+          const latest = toQuickCreateRecord(result.latest);
+          upsertRecord(latest);
+          applyRecordToView(latest);
+        } else {
+          setViewingRecord(null);
+          setResultGroups([]);
+          setGenStatus("idle");
+          setGenError(null);
+        }
+      } catch (e) {
+        if (e instanceof ApiError) setGenError(e.message);
+      }
+    },
+    [applyRecordToView, toQuickCreateRecord, upsertRecord]
   );
 
   const openLightbox = useCallback((images: QuickCreateImage[], index: number) => {

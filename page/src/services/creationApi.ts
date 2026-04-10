@@ -95,6 +95,29 @@ export interface PromptPrecreationStatusResponse {
   cards?: PromptCard[] | null;
 }
 
+export interface PromptPrecreationHistoryItem {
+  id: string;
+  task_id: string;
+  character_id: string;
+  chara_name: string;
+  chara_avatar: string;
+  seed_prompt: string;
+  prompt_count: number;
+  status: "pending" | "running" | "completed" | "failed";
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PromptPrecreationHistoryDetailResponse extends PromptPrecreationHistoryItem {
+  cards: PromptCard[];
+}
+
+export interface PromptPrecreationHistoryListResponse {
+  items: PromptPrecreationHistoryItem[];
+  total: number;
+}
+
 export interface QuickCreatePromptInput {
   id: string;
   fullPrompt: string;
@@ -125,6 +148,32 @@ export interface QuickCreateStatusResponse {
   created_at: string;
   updated_at: string;
   results?: QuickCreatePromptResultItem[] | null;
+}
+
+export interface QuickCreateHistoryItem {
+  id: string;
+  task_id: string;
+  character_id: string;
+  chara_name: string;
+  chara_avatar: string;
+  prompt_count: number;
+  image_count: number;
+  n: number;
+  aspect_ratio: string;
+  status: "pending" | "running" | "completed" | "failed";
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuickCreateHistoryDetailResponse extends QuickCreateHistoryItem {
+  selected_prompts: QuickCreatePromptInput[];
+  results: QuickCreatePromptResultItem[];
+}
+
+export interface QuickCreateHistoryListResponse {
+  items: QuickCreateHistoryItem[];
+  total: number;
 }
 
 export async function startPromptPrecreation(
@@ -168,6 +217,77 @@ export async function getPromptPrecreationTaskStatus(
   }
 }
 
+export async function listPromptPrecreationHistory(params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<PromptPrecreationHistoryListResponse> {
+  const query = new URLSearchParams();
+  if (typeof params?.limit === "number") query.set("limit", String(params.limit));
+  if (typeof params?.offset === "number") query.set("offset", String(params.offset));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  const url = `${API_BASE}/prompt-precreation/history${suffix}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<PromptPrecreationHistoryListResponse>(response);
+    throwIfError(response, data);
+    return data.data as PromptPrecreationHistoryListResponse;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function getLatestPromptPrecreationHistory(): Promise<PromptPrecreationHistoryDetailResponse | null> {
+  const url = `${API_BASE}/prompt-precreation/history/latest`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<PromptPrecreationHistoryDetailResponse | null>(response);
+    throwIfError(response, data);
+    return (data.data ?? null) as PromptPrecreationHistoryDetailResponse | null;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function getPromptPrecreationHistory(
+  historyId: string
+): Promise<PromptPrecreationHistoryDetailResponse> {
+  const hid = String(historyId ?? "").trim();
+  if (!hid) {
+    throw new ApiError("历史ID无效", 400);
+  }
+  const url = `${API_BASE}/prompt-precreation/history/${encodeURIComponent(hid)}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<PromptPrecreationHistoryDetailResponse>(response);
+    throwIfError(response, data);
+    return data.data as PromptPrecreationHistoryDetailResponse;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function deletePromptPrecreationHistory(historyId: string): Promise<{
+  deleted_id: string;
+  latest: PromptPrecreationHistoryDetailResponse | null;
+}> {
+  const hid = String(historyId ?? "").trim();
+  if (!hid) {
+    throw new ApiError("历史ID无效", 400);
+  }
+  const url = `${API_BASE}/prompt-precreation/history/${encodeURIComponent(hid)}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "DELETE" });
+    const data = await parseJson<{
+      deleted_id: string;
+      latest: PromptPrecreationHistoryDetailResponse | null;
+    }>(response);
+    throwIfError(response, data);
+    return data.data as { deleted_id: string; latest: PromptPrecreationHistoryDetailResponse | null };
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
 export async function startQuickCreate(
   characterId: string,
   body: {
@@ -204,6 +324,71 @@ export async function getQuickCreateTaskStatus(taskId: string): Promise<QuickCre
     const data = await parseJson<QuickCreateStatusResponse>(response);
     throwIfError(response, data);
     return data.data as QuickCreateStatusResponse;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function listQuickCreateHistory(params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<QuickCreateHistoryListResponse> {
+  const query = new URLSearchParams();
+  if (typeof params?.limit === "number") query.set("limit", String(params.limit));
+  if (typeof params?.offset === "number") query.set("offset", String(params.offset));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  const url = `${API_BASE}/quick-create/history${suffix}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<QuickCreateHistoryListResponse>(response);
+    throwIfError(response, data);
+    return data.data as QuickCreateHistoryListResponse;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function getLatestQuickCreateHistory(): Promise<QuickCreateHistoryDetailResponse | null> {
+  const url = `${API_BASE}/quick-create/history/latest`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<QuickCreateHistoryDetailResponse | null>(response);
+    throwIfError(response, data);
+    return (data.data ?? null) as QuickCreateHistoryDetailResponse | null;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function getQuickCreateHistory(historyId: string): Promise<QuickCreateHistoryDetailResponse> {
+  const hid = String(historyId ?? "").trim();
+  if (!hid) throw new ApiError("历史ID无效", 400);
+  const url = `${API_BASE}/quick-create/history/${encodeURIComponent(hid)}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<QuickCreateHistoryDetailResponse>(response);
+    throwIfError(response, data);
+    return data.data as QuickCreateHistoryDetailResponse;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function deleteQuickCreateHistory(historyId: string): Promise<{
+  deleted_id: string;
+  latest: QuickCreateHistoryDetailResponse | null;
+}> {
+  const hid = String(historyId ?? "").trim();
+  if (!hid) throw new ApiError("历史ID无效", 400);
+  const url = `${API_BASE}/quick-create/history/${encodeURIComponent(hid)}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "DELETE" });
+    const data = await parseJson<{
+      deleted_id: string;
+      latest: QuickCreateHistoryDetailResponse | null;
+    }>(response);
+    throwIfError(response, data);
+    return data.data as { deleted_id: string; latest: QuickCreateHistoryDetailResponse | null };
   } catch (e) {
     rethrow(e);
   }

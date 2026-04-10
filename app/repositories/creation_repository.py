@@ -74,6 +74,38 @@ class CreationPromptPrecreationRepository:
             .first()
         )
 
+    def list_history(self, *, limit: int = 50, offset: int = 0) -> List[CreationPromptPrecreationTask]:
+        q = self.db.query(CreationPromptPrecreationTask).order_by(
+            desc(CreationPromptPrecreationTask.created_at),
+            desc(CreationPromptPrecreationTask.id),
+        )
+        if offset > 0:
+            q = q.offset(offset)
+        if limit > 0:
+            q = q.limit(limit)
+        return q.all()
+
+    def count_history(self) -> int:
+        return self.db.query(CreationPromptPrecreationTask).count()
+
+    def get_latest(self) -> Optional[CreationPromptPrecreationTask]:
+        return (
+            self.db.query(CreationPromptPrecreationTask)
+            .order_by(
+                desc(CreationPromptPrecreationTask.created_at),
+                desc(CreationPromptPrecreationTask.id),
+            )
+            .first()
+        )
+
+    def delete(self, task_id: str) -> bool:
+        task = self.get_by_id(task_id)
+        if not task:
+            return False
+        self.db.delete(task)
+        self.db.commit()
+        return True
+
 
 class CreationQuickCreateRepository:
     def __init__(self, db: Session):
@@ -128,3 +160,35 @@ class CreationQuickCreateRepository:
         self.db.commit()
         self.db.refresh(task)
         return task
+
+    def list_history(self, *, limit: int = 50, offset: int = 0) -> List[CreationQuickCreateTask]:
+        q = self.db.query(CreationQuickCreateTask).order_by(
+            desc(CreationQuickCreateTask.created_at),
+            desc(CreationQuickCreateTask.id),
+        )
+        if offset > 0:
+            q = q.offset(offset)
+        if limit > 0:
+            q = q.limit(limit)
+        return q.all()
+
+    def count_history(self) -> int:
+        return self.db.query(CreationQuickCreateTask).count()
+
+    def get_latest(self) -> Optional[CreationQuickCreateTask]:
+        return (
+            self.db.query(CreationQuickCreateTask)
+            .order_by(
+                desc(CreationQuickCreateTask.created_at),
+                desc(CreationQuickCreateTask.id),
+            )
+            .first()
+        )
+
+    def delete(self, task_id: str) -> bool:
+        task = self.get_by_id(task_id)
+        if not task:
+            return False
+        self.db.delete(task)
+        self.db.commit()
+        return True
