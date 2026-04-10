@@ -367,7 +367,8 @@ class MaterialService:
             result_images=[],
         )
         material_file_service.clear_standard_photo_task_results(character_id, task.id)
-        if background_tasks:
+        # BackgroundTasks may evaluate to False when task list is empty.
+        if background_tasks is not None:
             background_tasks.add_task(
                 self._run_standard_photo_task,
                 character_id,
@@ -614,7 +615,8 @@ class MaterialService:
             current_step=None,
         )
 
-        if background_tasks:
+        # BackgroundTasks may evaluate to False when task list is empty.
+        if background_tasks is not None:
             background_tasks.add_task(self._run_chara_profile_task_async, character_id, task.id)
         else:
             self._run_chara_profile_task_sync(character_id, task.id)
