@@ -105,8 +105,7 @@ class RepairTaskService:
         aspect_ratio = getattr(task, "aspect_ratio", None) or "16:9"
 
         # 6. 添加后台任务
-        # BackgroundTasks may evaluate to False when task list is empty.
-        if background_tasks is not None:
+        if background_tasks:
             background_tasks.add_task(
                 self._execute_task,
                 task_id=task_id,
