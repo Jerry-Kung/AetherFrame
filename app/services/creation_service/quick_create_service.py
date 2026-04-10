@@ -260,9 +260,7 @@ class QuickCreateService:
         )
         directory_service.ensure_dir_exists(task.work_dir)
 
-        # BackgroundTasks may evaluate to False when currently empty.
-        # We only need to check whether it is provided by FastAPI.
-        if background_tasks is not None:
+        if background_tasks:
             background_tasks.add_task(self._run_task_async, task.id)
         else:
             run_quick_create_task_sync(task.id, self._session_factory)
