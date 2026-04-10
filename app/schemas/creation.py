@@ -41,6 +41,46 @@ class PromptPrecreationStatusResponse(BaseModel):
     cards: Optional[List[PromptCardItem]] = None
 
 
+class QuickCreatePromptInput(BaseModel):
+    id: str = Field(default="", description="Prompt 卡片 ID")
+    fullPrompt: str = Field(default="", description="Prompt 全文")
+
+
+class QuickCreateStartRequest(BaseModel):
+    selected_prompts: List[QuickCreatePromptInput] = Field(default_factory=list)
+    n: Literal[1, 2, 3, 4] = Field(..., description="每个 Prompt 生成张数")
+    aspect_ratio: Literal["16:9", "4:3", "1:1", "3:4", "9:16"] = Field(
+        "16:9", description="输出图片长宽比"
+    )
+
+
+class QuickCreateStartResponse(BaseModel):
+    task_id: str
+    status: str
+
+
+class QuickCreatePromptResultItem(BaseModel):
+    prompt_id: str
+    full_prompt: str
+    attempt_count: int
+    success_count: int
+    requested_count: int
+    generated_images: List[str] = Field(default_factory=list)
+
+
+class QuickCreateStatusResponse(BaseModel):
+    task_id: str
+    character_id: str
+    status: str
+    error_message: Optional[str] = None
+    current_step: Optional[str] = None
+    n: int
+    aspect_ratio: str
+    created_at: datetime
+    updated_at: datetime
+    results: Optional[List[QuickCreatePromptResultItem]] = None
+
+
 class ApiResponse(BaseModel):
     success: bool
     data: Optional[Any] = None

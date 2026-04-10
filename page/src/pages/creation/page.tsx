@@ -19,7 +19,7 @@ interface MainTab {
 
 const MAIN_TABS: MainTab[] = [
   { id: "prompt", label: "Prompt 预生成", icon: "ri-quill-pen-line" },
-  { id: "art", label: "美图创作", icon: "ri-image-ai-line", badge: "即将上线" },
+  { id: "art", label: "美图创作", icon: "ri-image-ai-line" },
 ];
 
 const decorations = [

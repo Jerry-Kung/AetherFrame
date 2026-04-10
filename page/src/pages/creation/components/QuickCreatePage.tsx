@@ -2,13 +2,13 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import type { CreationPromptSession, PromptCard } from "@/types/creation";
 import type { CharaProfile } from "@/types/material";
 import { DEFAULT_CHARA_AVATAR_PLACEHOLDER } from "@/types/material";
+import { ApiError } from "@/services/api";
+import * as creationApi from "@/services/creationApi";
 import {
-  MOCK_QUICK_CREATE_RECORDS,
-  pickQuickCreateMockUrls,
   type QuickCreateRecord,
   type QuickCreateGroup,
   type QuickCreateImage,
-} from "@/mocks/quickCreate";
+} from "@/types/quickCreate";
 
 type GenStatus = "idle" | "generating" | "done";
 
@@ -18,6 +18,13 @@ interface ImageLightbox {
 }
 
 const IMAGES_PER_PROMPT_OPTIONS = [1, 2, 3, 4] as const;
+const ASPECT_RATIO_OPTIONS = [
+  { label: "16:9", value: "16:9" },
+  { label: "4:3", value: "4:3" },
+  { label: "1:1", value: "1:1" },
+  { label: "3:4", value: "3:4" },
+  { label: "9:16", value: "9:16" },
+] as const;
 
 const GEN_HINTS = [
   "正在召唤创作灵感，请稍等一下下～",
@@ -26,6 +33,7 @@ const GEN_HINTS = [
   "快好了！美图正在从像素中诞生～",
   "最后一点点，马上就来啦～",
 ];
+const POLL_INTERVAL_MS = 15000;
 
 interface QuickCreatePageProps {
   charas: CharaProfile[];
@@ -349,18 +357,25 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
 
   const [selectedPromptIds, setSelectedPromptIds] = useState<Set<string>>(() => new Set());
   const [imagesPerPrompt, setImagesPerPrompt] = useState<(typeof IMAGES_PER_PROMPT_OPTIONS)[number]>(2);
+  const [aspectRatio, setAspectRatio] =
+    useState<(typeof ASPECT_RATIO_OPTIONS)[number]["value"]>("16:9");
   const [genStatus, setGenStatus] = useState<GenStatus>("idle");
   const [hintIndex, setHintIndex] = useState(0);
   const [resultGroups, setResultGroups] = useState<QuickCreateGroup[]>([]);
   const [lightbox, setLightbox] = useState<ImageLightbox | null>(null);
-  const [historyRecords, setHistoryRecords] = useState<QuickCreateRecord[]>(MOCK_QUICK_CREATE_RECORDS);
+  const [historyRecords, setHistoryRecords] = useState<QuickCreateRecord[]>([]);
   const [viewingRecord, setViewingRecord] = useState<QuickCreateRecord | null>(null);
+  const [genError, setGenError] = useState<string | null>(null);
 
   const genHintTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     return () => {
       if (genHintTimerRef.current) clearInterval(genHintTimerRef.current);
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      cancelledRef.current = true;
     };
   }, []);
 
@@ -391,12 +406,18 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
     }
   }, [selectedPromptIds.size, allPrompts]);
 
-  const startGenerate = useCallback(() => {
+  const startGenerate = useCallback(async () => {
     const prompts = allPrompts.filter((p) => selectedPromptIds.has(p.id));
     if (prompts.length === 0 || !promptSession) return;
+    cancelledRef.current = false;
+    setGenError(null);
     if (genHintTimerRef.current) {
       clearInterval(genHintTimerRef.current);
       genHintTimerRef.current = null;
+    }
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
     }
     setGenStatus("generating");
     setViewingRecord(null);
@@ -406,58 +427,100 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
       setHintIndex((prev) => (prev + 1) % GEN_HINTS.length);
     }, 1200);
 
-    window.setTimeout(() => {
+    const cardMap = new Map(allPrompts.map((p) => [p.id, p] as const));
+    const finishError = (msg: string) => {
       if (genHintTimerRef.current) {
         clearInterval(genHintTimerRef.current);
         genHintTimerRef.current = null;
       }
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+      setGenError(msg);
+      setGenStatus("idle");
+    };
 
-      const chara = charas.find((c) => c.id === promptSession.charaId);
-      const charaName = chara?.name ?? "未知角色";
-      const charaAvatar = chara?.avatarUrl ?? DEFAULT_CHARA_AVATAR_PLACEHOLDER;
-
-      const groups: QuickCreateGroup[] = prompts.map((p) => {
-        const urls = pickQuickCreateMockUrls(p.id, imagesPerPrompt);
-        const images: QuickCreateImage[] = urls.map((url, i) => ({
-          id: `${p.id}-img-${Date.now()}-${i}`,
-          promptId: p.id,
-          url,
-        }));
-        return {
-          promptId: p.id,
-          promptTitle: p.title,
-          promptPreview: p.preview,
-          images,
-        };
+    try {
+      const start = await creationApi.startQuickCreate(promptSession.charaId, {
+        selected_prompts: prompts.map((p) => ({ id: p.id, fullPrompt: p.fullPrompt })),
+        n: imagesPerPrompt,
+        aspect_ratio: aspectRatio,
       });
-
-      setResultGroups(groups);
-      setGenStatus("done");
-
-      const newRecord: QuickCreateRecord = {
-        id: `qc-${Date.now()}`,
-        charaId: promptSession.charaId,
-        charaName,
-        charaAvatar,
-        promptCount: prompts.length,
-        imagesPerPrompt,
-        createdAt: new Date().toLocaleString("zh-CN", {
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        groups,
+      const taskId = start.task_id;
+      const schedulePoll = (delay: number) => {
+        if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = window.setTimeout(() => void runPoll(), delay);
       };
-      setHistoryRecords((prev) => [newRecord, ...prev]);
-    }, 3000);
-  }, [allPrompts, selectedPromptIds, imagesPerPrompt, promptSession, charas]);
+      const runPoll = async () => {
+        if (cancelledRef.current) return;
+        try {
+          const st = await creationApi.getQuickCreateTaskStatus(taskId);
+          if (cancelledRef.current) return;
+          if (st.status === "failed") {
+            finishError(st.error_message?.trim() || "一键创作失败");
+            return;
+          }
+          if (st.status !== "completed") {
+            schedulePoll(POLL_INTERVAL_MS);
+            return;
+          }
+          if (genHintTimerRef.current) {
+            clearInterval(genHintTimerRef.current);
+            genHintTimerRef.current = null;
+          }
+          const rawResults = st.results ?? [];
+          const groups: QuickCreateGroup[] = rawResults.map((r) => {
+            const card = cardMap.get(r.prompt_id);
+            const images: QuickCreateImage[] = (r.generated_images ?? []).map((img, i) => ({
+              id: `${r.prompt_id}-${i}-${Date.now()}`,
+              promptId: r.prompt_id,
+              url: creationApi.buildQuickCreateResultImageUrl(taskId, img),
+            }));
+            return {
+              promptId: r.prompt_id,
+              promptTitle: card?.title ?? `Prompt ${r.prompt_id}`,
+              promptPreview: card?.preview ?? r.full_prompt.slice(0, 80),
+              images,
+            };
+          });
+          setResultGroups(groups);
+          setGenStatus("done");
+
+          const chara = charas.find((c) => c.id === promptSession.charaId);
+          const newRecord: QuickCreateRecord = {
+            id: `qc-${Date.now()}`,
+            charaId: promptSession.charaId,
+            charaName: chara?.name ?? "未知角色",
+            charaAvatar: chara?.avatarUrl ?? DEFAULT_CHARA_AVATAR_PLACEHOLDER,
+            promptCount: prompts.length,
+            imagesPerPrompt,
+            createdAt: new Date().toLocaleString("zh-CN", {
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            groups,
+          };
+          setHistoryRecords((prev) => [newRecord, ...prev]);
+        } catch (e) {
+          if (cancelledRef.current) return;
+          finishError(e instanceof ApiError ? e.message : "获取一键创作任务状态失败");
+        }
+      };
+      void runPoll();
+    } catch (e) {
+      finishError(e instanceof ApiError ? e.message : "启动一键创作失败");
+    }
+  }, [allPrompts, selectedPromptIds, promptSession, imagesPerPrompt, aspectRatio, charas]);
 
   const handleReset = useCallback(() => {
     setGenStatus("idle");
     setResultGroups([]);
     setViewingRecord(null);
+    setGenError(null);
   }, []);
 
   const handleViewRecord = useCallback((record: QuickCreateRecord) => {
@@ -509,6 +572,11 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
     <div className="flex h-full min-h-0 overflow-hidden">
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {genError && (
+            <p className="text-xs text-rose-700 rounded-xl px-3 py-2 bg-rose-50/90 border border-rose-100">
+              {genError}
+            </p>
+          )}
           <div
             className="rounded-2xl p-4 flex items-center gap-4"
             style={{
@@ -630,39 +698,80 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
               </span>
             </div>
 
-            <div className="flex items-center gap-4 flex-wrap">
-              <span className="text-xs text-rose-500/70 whitespace-nowrap">每份 Prompt 生成几张图？</span>
-              <div
-                className="flex items-center gap-1 p-1 rounded-2xl"
-                style={{
-                  background: "rgba(253,164,175,0.1)",
-                  border: "1px solid rgba(253,164,175,0.18)",
-                }}
-              >
-                {IMAGES_PER_PROMPT_OPTIONS.map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setImagesPerPrompt(n)}
-                    className="w-9 h-8 flex items-center justify-center rounded-xl text-sm cursor-pointer transition-all duration-200 whitespace-nowrap"
-                    style={{
-                      fontFamily: "'ZCOOL KuaiLe', cursive",
-                      background:
-                        imagesPerPrompt === n
-                          ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
-                          : "transparent",
-                      color: imagesPerPrompt === n ? "white" : "#f472b6",
-                      boxShadow:
-                        imagesPerPrompt === n ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
-                    }}
-                  >
-                    {n}
-                  </button>
-                ))}
+            <div className="space-y-3">
+              <div className="flex items-center gap-4 flex-wrap">
+                <span className="text-xs text-rose-500/70 whitespace-nowrap w-28 shrink-0">
+                  每份 Prompt 生成几张图？
+                </span>
+                <div
+                  className="flex items-center gap-1 p-1 rounded-2xl"
+                  style={{
+                    background: "rgba(253,164,175,0.1)",
+                    border: "1px solid rgba(253,164,175,0.18)",
+                  }}
+                >
+                  {IMAGES_PER_PROMPT_OPTIONS.map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setImagesPerPrompt(n)}
+                      className="w-9 h-8 flex items-center justify-center rounded-xl text-sm cursor-pointer transition-all duration-200 whitespace-nowrap"
+                      style={{
+                        fontFamily: "'ZCOOL KuaiLe', cursive",
+                        background:
+                          imagesPerPrompt === n
+                            ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
+                            : "transparent",
+                        color: imagesPerPrompt === n ? "white" : "#f472b6",
+                        boxShadow:
+                          imagesPerPrompt === n ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
+                      }}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-xs text-rose-400/50">
+                  本次共生成约 {selectedPromptIds.size * imagesPerPrompt} 张图片
+                </span>
               </div>
-              <span className="text-xs text-rose-400/50">
-                本次共生成约 {selectedPromptIds.size * imagesPerPrompt} 张图片
-              </span>
+
+              <div className="flex items-center gap-4 flex-wrap">
+                <span className="text-xs text-rose-500/70 whitespace-nowrap w-28 shrink-0">
+                  图片长宽比
+                </span>
+                <div
+                  className="flex items-center gap-1 p-1 rounded-2xl"
+                  style={{
+                    background: "rgba(253,164,175,0.1)",
+                    border: "1px solid rgba(253,164,175,0.18)",
+                  }}
+                >
+                  {ASPECT_RATIO_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setAspectRatio(option.value)}
+                      className="px-3 h-8 flex items-center justify-center rounded-xl text-xs cursor-pointer transition-all duration-200 whitespace-nowrap"
+                      style={{
+                        fontFamily: "'ZCOOL KuaiLe', cursive",
+                        background:
+                          aspectRatio === option.value
+                            ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
+                            : "transparent",
+                        color: aspectRatio === option.value ? "white" : "#f472b6",
+                        boxShadow:
+                          aspectRatio === option.value
+                            ? "0 2px 8px rgba(244,114,182,0.3)"
+                            : "none",
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-xs text-rose-400/50">当前选择：{aspectRatio}</span>
+              </div>
             </div>
           </div>
 

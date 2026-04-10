@@ -197,7 +197,7 @@ def init_db():
             MaterialCharaProfileTask,
             MaterialStandardPhotoTask,
         )
-        from app.models.creation import CreationPromptPrecreationTask  # noqa: F401
+        from app.models.creation import CreationPromptPrecreationTask, CreationQuickCreateTask  # noqa: F401
 
         Base.metadata.create_all(bind=engine)
         migrate_prompt_templates_add_description()

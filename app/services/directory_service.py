@@ -63,6 +63,11 @@ def get_prompt_precreation_task_dir(character_id: str, task_id: str) -> str:
     return os.path.join(get_beautify_dir(), "prompt_precreation", character_id, task_id)
 
 
+def get_quick_create_task_dir(character_id: str, task_id: str) -> str:
+    """一键创作任务工作目录：data/beautify/quick_create/{character_id}/{task_id}/"""
+    return os.path.join(get_beautify_dir(), "quick_create", character_id, task_id)
+
+
 def get_temp_dir() -> str:
     """获取临时文件目录"""
     return os.path.join(get_data_dir(), "temp")

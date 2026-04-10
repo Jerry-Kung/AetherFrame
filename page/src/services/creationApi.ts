@@ -95,6 +95,38 @@ export interface PromptPrecreationStatusResponse {
   cards?: PromptCard[] | null;
 }
 
+export interface QuickCreatePromptInput {
+  id: string;
+  fullPrompt: string;
+}
+
+export interface QuickCreateStartResponse {
+  task_id: string;
+  status: string;
+}
+
+export interface QuickCreatePromptResultItem {
+  prompt_id: string;
+  full_prompt: string;
+  attempt_count: number;
+  success_count: number;
+  requested_count: number;
+  generated_images: string[];
+}
+
+export interface QuickCreateStatusResponse {
+  task_id: string;
+  character_id: string;
+  status: string;
+  error_message?: string | null;
+  current_step?: string | null;
+  n: number;
+  aspect_ratio: string;
+  created_at: string;
+  updated_at: string;
+  results?: QuickCreatePromptResultItem[] | null;
+}
+
 export async function startPromptPrecreation(
   characterId: string,
   body: { seed_prompt: string; count: 2 | 3 | 4 }
@@ -134,4 +166,54 @@ export async function getPromptPrecreationTaskStatus(
   } catch (e) {
     rethrow(e);
   }
+}
+
+export async function startQuickCreate(
+  characterId: string,
+  body: {
+    selected_prompts: QuickCreatePromptInput[];
+    n: 1 | 2 | 3 | 4;
+    aspect_ratio: "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
+  }
+): Promise<QuickCreateStartResponse> {
+  assertValidCharacterId(characterId, "启动一键创作");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/quick-create/start`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      timeout: 120000,
+    });
+    const data = await parseJson<QuickCreateStartResponse>(response);
+    throwIfError(response, data);
+    return data.data as QuickCreateStartResponse;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function getQuickCreateTaskStatus(taskId: string): Promise<QuickCreateStatusResponse> {
+  const tid = String(taskId ?? "").trim();
+  if (!tid) {
+    throw new ApiError("任务ID无效", 400);
+  }
+  const url = `${API_BASE}/quick-create/tasks/${encodeURIComponent(tid)}/status`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<QuickCreateStatusResponse>(response);
+    throwIfError(response, data);
+    return data.data as QuickCreateStatusResponse;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export function buildQuickCreateResultImageUrl(taskId: string, imagePath: string): string {
+  const tid = encodeURIComponent(String(taskId ?? "").trim());
+  const segs = String(imagePath ?? "")
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .map((x) => encodeURIComponent(x));
+  return `${API_BASE}/quick-create/tasks/${tid}/images/${segs.join("/")}`;
 }
