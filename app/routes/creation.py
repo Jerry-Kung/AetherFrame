@@ -3,8 +3,9 @@
 """
 import logging
 import os
+from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -32,6 +33,8 @@ from app.services.creation_service.prompt_precreation_service import PromptPrecr
 from app.services.creation_service.quick_create_service import QuickCreateService
 
 logger = logging.getLogger(__name__)
+
+_PROMPT_PRECREATION_STATUSES = frozenset({"pending", "running", "completed", "failed"})
 
 router = APIRouter(prefix="/api/creation", tags=["creation"])
 
@@ -124,9 +127,18 @@ async def get_prompt_precreation_status(
 async def list_prompt_precreation_history(
     limit: int = 50,
     offset: int = 0,
+    status: Optional[str] = Query(
+        None, description="可选：pending / running / completed / failed，仅返回该状态的任务"
+    ),
     service: PromptPrecreationService = Depends(get_prompt_precreation_service),
 ):
-    data = service.list_history(limit=limit, offset=offset)
+    st = (status or "").strip()
+    if st and st not in _PROMPT_PRECREATION_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail="status 必须为 pending、running、completed 或 failed",
+        )
+    data = service.list_history(limit=limit, offset=offset, status=st or None)
     payload = PromptPrecreationHistoryListResponse(
         items=[PromptPrecreationHistoryItem(**x) for x in data.get("items", [])],
         total=data.get("total", 0),
@@ -158,6 +170,30 @@ async def get_latest_prompt_precreation_history(
         success=True,
         data=payload.model_dump(mode="json"),
         message="获取最新历史记录成功",
+    )
+
+
+@router.get(
+    "/prompt-precreation/history/latest-completed",
+    response_model=ApiResponse,
+)
+async def get_latest_completed_prompt_precreation_history(
+    service: PromptPrecreationService = Depends(get_prompt_precreation_service),
+):
+    """一键创作默认灵感来源：全库最近一条已完成的 Prompt 预生成任务（含 cards）。"""
+    raw = service.get_latest_completed_history()
+    if not raw:
+        return ApiResponse(success=True, data=None, message="暂无已完成的 Prompt 预生成任务")
+    payload = PromptPrecreationHistoryDetailResponse(
+        **{
+            **raw,
+            "cards": [PromptCardItem(**x) for x in raw.get("cards", [])],
+        }
+    )
+    return ApiResponse(
+        success=True,
+        data=payload.model_dump(mode="json"),
+        message="获取最新已完成 Prompt 预生成记录成功",
     )
 
 

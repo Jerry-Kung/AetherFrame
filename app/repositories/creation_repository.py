@@ -74,8 +74,13 @@ class CreationPromptPrecreationRepository:
             .first()
         )
 
-    def list_history(self, *, limit: int = 50, offset: int = 0) -> List[CreationPromptPrecreationTask]:
-        q = self.db.query(CreationPromptPrecreationTask).order_by(
+    def list_history(
+        self, *, limit: int = 50, offset: int = 0, status: Optional[str] = None
+    ) -> List[CreationPromptPrecreationTask]:
+        q = self.db.query(CreationPromptPrecreationTask)
+        if status:
+            q = q.filter(CreationPromptPrecreationTask.status == status)
+        q = q.order_by(
             desc(CreationPromptPrecreationTask.created_at),
             desc(CreationPromptPrecreationTask.id),
         )
@@ -85,13 +90,29 @@ class CreationPromptPrecreationRepository:
             q = q.limit(limit)
         return q.all()
 
-    def count_history(self) -> int:
-        return self.db.query(CreationPromptPrecreationTask).count()
+    def count_history(self, status: Optional[str] = None) -> int:
+        q = self.db.query(CreationPromptPrecreationTask)
+        if status:
+            q = q.filter(CreationPromptPrecreationTask.status == status)
+        return q.count()
 
     def get_latest(self) -> Optional[CreationPromptPrecreationTask]:
         return (
             self.db.query(CreationPromptPrecreationTask)
             .order_by(
+                desc(CreationPromptPrecreationTask.created_at),
+                desc(CreationPromptPrecreationTask.id),
+            )
+            .first()
+        )
+
+    def get_latest_completed(self) -> Optional[CreationPromptPrecreationTask]:
+        """全库最近一条已完成的 Prompt 预生成任务（按更新时间优先）。"""
+        return (
+            self.db.query(CreationPromptPrecreationTask)
+            .filter(CreationPromptPrecreationTask.status == "completed")
+            .order_by(
+                desc(CreationPromptPrecreationTask.updated_at),
                 desc(CreationPromptPrecreationTask.created_at),
                 desc(CreationPromptPrecreationTask.id),
             )

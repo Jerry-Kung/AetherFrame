@@ -220,10 +220,15 @@ export async function getPromptPrecreationTaskStatus(
 export async function listPromptPrecreationHistory(params?: {
   limit?: number;
   offset?: number;
+  /** 筛选任务状态，如 completed */
+  status?: string;
 }): Promise<PromptPrecreationHistoryListResponse> {
   const query = new URLSearchParams();
   if (typeof params?.limit === "number") query.set("limit", String(params.limit));
   if (typeof params?.offset === "number") query.set("offset", String(params.offset));
+  if (params?.status && String(params.status).trim()) {
+    query.set("status", String(params.status).trim());
+  }
   const suffix = query.toString() ? `?${query.toString()}` : "";
   const url = `${API_BASE}/prompt-precreation/history${suffix}`;
   try {
@@ -238,6 +243,19 @@ export async function listPromptPrecreationHistory(params?: {
 
 export async function getLatestPromptPrecreationHistory(): Promise<PromptPrecreationHistoryDetailResponse | null> {
   const url = `${API_BASE}/prompt-precreation/history/latest`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<PromptPrecreationHistoryDetailResponse | null>(response);
+    throwIfError(response, data);
+    return (data.data ?? null) as PromptPrecreationHistoryDetailResponse | null;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+/** 全库最近一条已完成的 Prompt 预生成（一键创作默认灵感来源） */
+export async function getLatestCompletedPromptPrecreationHistory(): Promise<PromptPrecreationHistoryDetailResponse | null> {
+  const url = `${API_BASE}/prompt-precreation/history/latest-completed`;
   try {
     const response = await fetchWithTimeout(url, { method: "GET" });
     const data = await parseJson<PromptPrecreationHistoryDetailResponse | null>(response);

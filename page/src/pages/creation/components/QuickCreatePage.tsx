@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { CreationPromptSession, PromptCard } from "@/types/creation";
+import type { CreationPromptSession, PromptCard, PromptHistoryRecord } from "@/types/creation";
 import type { CharaProfile } from "@/types/material";
 import { DEFAULT_CHARA_AVATAR_PLACEHOLDER } from "@/types/material";
 import { ApiError } from "@/services/api";
@@ -53,6 +53,287 @@ interface StoredQuickCreateTaskPayload {
 interface QuickCreatePageProps {
   charas: CharaProfile[];
   promptSession: CreationPromptSession | null;
+}
+
+function toPromptHistoryRecord(
+  raw: creationApi.PromptPrecreationHistoryItem | creationApi.PromptPrecreationHistoryDetailResponse,
+  charas: CharaProfile[]
+): PromptHistoryRecord {
+  const chara = charas.find((c) => c.id === raw.character_id) ?? null;
+  return {
+    id: raw.id,
+    taskId: raw.task_id,
+    charaId: raw.character_id,
+    charaName: raw.chara_name,
+    charaAvatar: chara?.avatarUrl || raw.chara_avatar || DEFAULT_CHARA_AVATAR_PLACEHOLDER,
+    seedPrompt: raw.seed_prompt,
+    promptCount: raw.prompt_count,
+    status: raw.status,
+    errorMessage: raw.error_message ?? null,
+    cards: "cards" in raw ? raw.cards ?? [] : [],
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+  };
+}
+
+function LinkedTaskSelector({
+  charas,
+  historyItems,
+  listLoading,
+  value,
+  pickingId,
+  onPick,
+  onClear,
+}: {
+  charas: CharaProfile[];
+  historyItems: creationApi.PromptPrecreationHistoryItem[];
+  listLoading: boolean;
+  value: PromptHistoryRecord | null;
+  pickingId: string | null;
+  onPick: (item: creationApi.PromptPrecreationHistoryItem) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="relative w-full flex items-center gap-3 px-4 py-3 rounded-2xl cursor-pointer transition-all duration-200 text-left"
+        style={{
+          background: value
+            ? "linear-gradient(135deg, rgba(253,164,175,0.15) 0%, rgba(244,114,182,0.1) 100%)"
+            : "rgba(255,255,255,0.6)",
+          border: value
+            ? "1.5px solid rgba(244,114,182,0.4)"
+            : "1.5px dashed rgba(253,164,175,0.35)",
+        }}
+      >
+        {value && (
+          <div
+            className="absolute top-3 right-[3.25rem] w-5 h-5 flex items-center justify-center rounded-full shrink-0 z-[1]"
+            style={{ background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)" }}
+            aria-hidden
+          >
+            <i className="ri-check-line text-white text-xs"></i>
+          </div>
+        )}
+
+        {value ? (
+          <>
+            <div
+              className="w-8 h-8 rounded-xl overflow-hidden shrink-0"
+              style={{ border: "1.5px solid rgba(244,114,182,0.3)" }}
+            >
+              <img
+                src={value.charaAvatar}
+                alt=""
+                className="w-full h-full object-cover object-top"
+                draggable={false}
+              />
+            </div>
+            <div className="flex-1 min-w-0 pr-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className="text-sm font-semibold text-rose-700/80"
+                  style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+                >
+                  {value.charaName}
+                </span>
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full"
+                  style={{ background: "rgba(253,164,175,0.2)", color: "#f472b6" }}
+                >
+                  {value.promptCount} 份 Prompt
+                </span>
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full"
+                  style={{ background: "rgba(253,164,175,0.12)", color: "#fb7185" }}
+                >
+                  {fmtTime(value.createdAt)}
+                </span>
+              </div>
+              <p className="text-xs text-rose-400/50 mt-0.5 truncate">{value.seedPrompt}</p>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClear();
+                setOpen(false);
+              }}
+              className="w-6 h-6 flex items-center justify-center rounded-lg shrink-0 cursor-pointer transition-colors duration-200 z-[1]"
+              style={{ color: "#f472b6", background: "rgba(253,164,175,0.15)" }}
+              aria-label="取消关联"
+            >
+              <i className="ri-close-line text-xs"></i>
+            </button>
+          </>
+        ) : (
+          <>
+            <div
+              className="w-8 h-8 flex items-center justify-center rounded-xl shrink-0"
+              style={{
+                background:
+                  "linear-gradient(135deg, rgba(253,164,175,0.2) 0%, rgba(244,114,182,0.15) 100%)",
+                border: "1px solid rgba(253,164,175,0.25)",
+              }}
+            >
+              <i className="ri-link text-rose-400 text-sm"></i>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p
+                className="text-sm text-rose-500/70"
+                style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+              >
+                选一个灵感来源～
+              </p>
+              <p className="text-xs text-rose-400/40 mt-0.5">
+                从历史 Prompt 任务中挑一个，自动带出角色和 Prompt 卡片
+              </p>
+            </div>
+            <div className="w-5 h-5 flex items-center justify-center shrink-0">
+              <i
+                className="ri-arrow-down-s-line text-rose-400 text-sm transition-transform duration-200"
+                style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+              />
+            </div>
+          </>
+        )}
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 right-0 top-full mt-2 rounded-2xl overflow-hidden z-30"
+          style={{
+            background: "rgba(255,255,255,0.97)",
+            border: "1px solid rgba(253,164,175,0.25)",
+            boxShadow: "0 8px 32px rgba(244,114,182,0.12)",
+            backdropFilter: "blur(12px)",
+          }}
+        >
+          {listLoading ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <div
+                className="w-8 h-8 rounded-full mb-2"
+                style={{
+                  border: "2px solid rgba(253,164,175,0.25)",
+                  borderTopColor: "#f472b6",
+                  animation: "qc-spin 0.9s linear infinite",
+                }}
+              />
+              <p className="text-xs text-rose-300/70">加载历史任务中…</p>
+            </div>
+          ) : historyItems.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <i className="ri-inbox-line text-rose-200 text-2xl mb-2"></i>
+              <p className="text-xs text-rose-300/60">还没有历史 Prompt 任务哦～</p>
+            </div>
+          ) : (
+            <div className="max-h-72 overflow-y-auto p-2 space-y-1">
+              {historyItems.map((record) => {
+                const chara = charas.find((c) => c.id === record.character_id) ?? null;
+                const avatar =
+                  chara?.avatarUrl || record.chara_avatar || DEFAULT_CHARA_AVATAR_PLACEHOLDER;
+                const busy = pickingId === record.id;
+                return (
+                  <button
+                    key={record.id}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onPick(record)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200 text-left disabled:opacity-60"
+                    style={{
+                      background:
+                        value?.id === record.id
+                          ? "linear-gradient(135deg, rgba(253,164,175,0.18) 0%, rgba(244,114,182,0.12) 100%)"
+                          : "transparent",
+                      border:
+                        value?.id === record.id
+                          ? "1px solid rgba(244,114,182,0.3)"
+                          : "1px solid transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (value?.id !== record.id) {
+                        (e.currentTarget as HTMLButtonElement).style.background =
+                          "rgba(253,164,175,0.08)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (value?.id !== record.id) {
+                        (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                      }
+                    }}
+                  >
+                    <div
+                      className="w-9 h-9 rounded-xl overflow-hidden shrink-0"
+                      style={{ border: "1.5px solid rgba(244,114,182,0.25)" }}
+                    >
+                      <img
+                        src={avatar}
+                        alt=""
+                        className="w-full h-full object-cover object-top"
+                        draggable={false}
+                      />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className="text-sm font-semibold text-rose-700/80"
+                          style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+                        >
+                          {record.chara_name}
+                        </span>
+                        <span
+                          className="text-xs px-1.5 py-0.5 rounded-full"
+                          style={{ background: "rgba(253,164,175,0.15)", color: "#f472b6" }}
+                        >
+                          {record.prompt_count} 份
+                        </span>
+                      </div>
+                      <p className="text-xs text-rose-400/50 mt-0.5 truncate">{record.seed_prompt}</p>
+                      <p className="text-xs text-rose-300/50 mt-0.5">{fmtTime(record.created_at)}</p>
+                    </div>
+
+                    {busy ? (
+                      <div
+                        className="w-5 h-5 shrink-0 rounded-full"
+                        style={{
+                          border: "2px solid rgba(253,164,175,0.3)",
+                          borderTopColor: "#f472b6",
+                          animation: "qc-spin 0.8s linear infinite",
+                        }}
+                      />
+                    ) : value?.id === record.id ? (
+                      <div
+                        className="w-5 h-5 flex items-center justify-center rounded-full shrink-0"
+                        style={{ background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)" }}
+                      >
+                        <i className="ri-check-line text-white text-xs"></i>
+                      </div>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function fmtTime(value: string): string {
@@ -373,14 +654,46 @@ function Lightbox({
 }
 
 export default function QuickCreatePage({ charas, promptSession }: QuickCreatePageProps) {
-  const allPrompts = promptSession?.cards ?? [];
+  const [linkedTask, setLinkedTask] = useState<PromptHistoryRecord | null>(null);
+  const [serverDefaultTask, setServerDefaultTask] = useState<PromptHistoryRecord | null>(null);
+  const [promptHistoryItems, setPromptHistoryItems] = useState<creationApi.PromptPrecreationHistoryItem[]>(
+    []
+  );
+  const [promptHistoryListLoading, setPromptHistoryListLoading] = useState(true);
+  const [pickingHistoryId, setPickingHistoryId] = useState<string | null>(null);
+
+  /** Prompt 页刚推过来的承接会话（生成中/未完成时通常无卡片） */
+  const hasLivePromptSession = (promptSession?.cards?.length ?? 0) > 0;
+
+  const allPrompts = linkedTask
+    ? linkedTask.cards
+    : hasLivePromptSession
+      ? promptSession!.cards
+      : serverDefaultTask?.cards ?? [];
+
+  const effectiveCharaId = linkedTask
+    ? linkedTask.charaId
+    : hasLivePromptSession
+      ? promptSession!.charaId
+      : serverDefaultTask?.charaId ?? null;
+
   const sessionChara =
-    promptSession && charas.length > 0
-      ? charas.find((c) => c.id === promptSession.charaId) ?? null
+    effectiveCharaId && charas.length > 0
+      ? charas.find((c) => c.id === effectiveCharaId) ?? null
       : null;
 
-  const displayName = sessionChara?.name ?? (promptSession ? "未知角色" : "—");
-  const displayAvatar = sessionChara?.avatarUrl ?? DEFAULT_CHARA_AVATAR_PLACEHOLDER;
+  const displayName = linkedTask
+    ? linkedTask.charaName || sessionChara?.name || "未知角色"
+    : sessionChara?.name ??
+      serverDefaultTask?.charaName ??
+      (effectiveCharaId ? "未知角色" : "—");
+  const displayAvatar = linkedTask
+    ? linkedTask.charaAvatar || sessionChara?.avatarUrl || DEFAULT_CHARA_AVATAR_PLACEHOLDER
+    : sessionChara?.avatarUrl ??
+      serverDefaultTask?.charaAvatar ??
+      DEFAULT_CHARA_AVATAR_PLACEHOLDER;
+
+  const activeCharaId = effectiveCharaId;
 
   const [selectedPromptIds, setSelectedPromptIds] = useState<Set<string>>(() => new Set());
   const [imagesPerPrompt, setImagesPerPrompt] = useState<(typeof IMAGES_PER_PROMPT_OPTIONS)[number]>(2);
@@ -395,7 +708,8 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
   const [genError, setGenError] = useState<string | null>(null);
 
   const genHintTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Browser timer id; avoid NodeJS.Timeout vs number mismatch under mixed DOM/Node typings */
+  const pollTimerRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
 
   const clearQuickCreateActiveTaskStorage = useCallback(() => {
@@ -547,13 +861,94 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
     void loadHistory();
   }, [applyRecordToView, toQuickCreateRecord, upsertRecord]);
 
+  const reloadPromptPrecreationPickers = useCallback(async () => {
+    setPromptHistoryListLoading(true);
+    try {
+      const [latestDone, list] = await Promise.all([
+        creationApi.getLatestCompletedPromptPrecreationHistory(),
+        creationApi.listPromptPrecreationHistory({ limit: 80, offset: 0, status: "completed" }),
+      ]);
+      setServerDefaultTask(latestDone ? toPromptHistoryRecord(latestDone, charas) : null);
+      setPromptHistoryItems(list.items ?? []);
+    } catch {
+      setServerDefaultTask(null);
+      setPromptHistoryItems([]);
+    } finally {
+      setPromptHistoryListLoading(false);
+    }
+  }, [charas]);
+
   useEffect(() => {
-    if (allPrompts.length === 0) {
-      setSelectedPromptIds(new Set());
+    void reloadPromptPrecreationPickers();
+  }, [reloadPromptPrecreationPickers]);
+
+  const resetGenerationUi = useCallback(() => {
+    cancelledRef.current = true;
+    if (genHintTimerRef.current) {
+      clearInterval(genHintTimerRef.current);
+      genHintTimerRef.current = null;
+    }
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    clearQuickCreateActiveTaskStorage();
+    setGenStatus("idle");
+    setResultGroups([]);
+    setViewingRecord(null);
+    setGenError(null);
+    setHintIndex(0);
+  }, [clearQuickCreateActiveTaskStorage]);
+
+  const handleLinkedTaskChange = useCallback(
+    (record: PromptHistoryRecord | null) => {
+      resetGenerationUi();
+      setLinkedTask(record);
+      if (record === null) {
+        void reloadPromptPrecreationPickers();
+      }
+    },
+    [resetGenerationUi, reloadPromptPrecreationPickers]
+  );
+
+  const handlePickPromptHistoryItem = useCallback(
+    async (item: creationApi.PromptPrecreationHistoryItem) => {
+      const id = String(item.id ?? "").trim();
+      if (!id) return;
+      setPickingHistoryId(id);
+      try {
+        const detail = await creationApi.getPromptPrecreationHistory(id);
+        const rec = toPromptHistoryRecord(detail, charas);
+        handleLinkedTaskChange(rec);
+      } catch (e) {
+        setGenError(e instanceof ApiError ? e.message : "加载 Prompt 任务详情失败");
+      } finally {
+        setPickingHistoryId(null);
+      }
+    },
+    [charas, handleLinkedTaskChange]
+  );
+
+  useEffect(() => {
+    if (linkedTask) {
+      const cards = linkedTask.cards ?? [];
+      setSelectedPromptIds(cards.length ? new Set(cards.map((p) => p.id)) : new Set());
       return;
     }
-    setSelectedPromptIds(new Set(allPrompts.map((p) => p.id)));
-  }, [promptSession?.updatedAt, allPrompts.length]);
+    if (hasLivePromptSession) {
+      const cards = promptSession?.cards ?? [];
+      setSelectedPromptIds(cards.length ? new Set(cards.map((p) => p.id)) : new Set());
+      return;
+    }
+    const cards = serverDefaultTask?.cards ?? [];
+    setSelectedPromptIds(cards.length ? new Set(cards.map((p) => p.id)) : new Set());
+  }, [
+    linkedTask,
+    hasLivePromptSession,
+    promptSession?.updatedAt,
+    serverDefaultTask?.id,
+    serverDefaultTask?.updatedAt,
+  ]);
 
   const pollQuickCreateTask = useCallback(
     async (taskId: string, promptMetas: StoredQuickCreatePromptMeta[]) => {
@@ -673,16 +1068,17 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
 
   const startGenerate = useCallback(async () => {
     const prompts = allPrompts.filter((p) => selectedPromptIds.has(p.id));
-    if (prompts.length === 0 || !promptSession) return;
+    const charaId = activeCharaId?.trim();
+    if (prompts.length === 0 || !charaId) return;
     try {
-      const start = await creationApi.startQuickCreate(promptSession.charaId, {
+      const start = await creationApi.startQuickCreate(charaId, {
         selected_prompts: prompts.map((p) => ({ id: p.id, fullPrompt: p.fullPrompt })),
         n: imagesPerPrompt,
         aspect_ratio: aspectRatio,
       });
       writeQuickCreateActiveTaskStorage({
         taskId: start.task_id,
-        charaId: promptSession.charaId,
+        charaId,
         n: imagesPerPrompt,
         aspectRatio,
         prompts: prompts.map((p) => ({
@@ -694,9 +1090,17 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
       const pendingRecord: QuickCreateRecord = {
         id: start.task_id,
         taskId: start.task_id,
-        charaId: promptSession.charaId,
-        charaName: sessionChara?.name ?? "未知角色",
-        charaAvatar: sessionChara?.avatarUrl ?? DEFAULT_CHARA_AVATAR_PLACEHOLDER,
+        charaId,
+        charaName:
+          sessionChara?.name ??
+          linkedTask?.charaName ??
+          serverDefaultTask?.charaName ??
+          "未知角色",
+        charaAvatar:
+          sessionChara?.avatarUrl ??
+          linkedTask?.charaAvatar ??
+          serverDefaultTask?.charaAvatar ??
+          DEFAULT_CHARA_AVATAR_PLACEHOLDER,
         promptCount: prompts.length,
         imageCount: 0,
         imagesPerPrompt,
@@ -731,9 +1135,13 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
       setGenStatus("idle");
     }
   }, [
+    activeCharaId,
     allPrompts,
     selectedPromptIds,
-    promptSession,
+    linkedTask?.charaAvatar,
+    linkedTask?.charaName,
+    serverDefaultTask?.charaAvatar,
+    serverDefaultTask?.charaName,
     imagesPerPrompt,
     aspectRatio,
     pollQuickCreateTask,
@@ -824,6 +1232,47 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
               {genError}
             </p>
           )}
+
+          <div
+            className="rounded-2xl p-4"
+            style={{
+              background: "rgba(255,255,255,0.55)",
+              border: "1px solid rgba(253,164,175,0.18)",
+            }}
+          >
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <div className="w-4 h-4 flex items-center justify-center">
+                <i className="ri-magic-line text-rose-400 text-sm"></i>
+              </div>
+              <span
+                className="text-sm font-semibold text-rose-700/80"
+                style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+              >
+                挑一个灵感来源
+              </span>
+              <span
+                className="text-xs px-2 py-0.5 rounded-full"
+                style={{ background: "rgba(253,164,175,0.12)", color: "#fb7185" }}
+              >
+                关联 Prompt 任务
+              </span>
+            </div>
+            <LinkedTaskSelector
+              charas={charas}
+              historyItems={promptHistoryItems}
+              listLoading={promptHistoryListLoading}
+              value={linkedTask}
+              pickingId={pickingHistoryId}
+              onPick={(item) => void handlePickPromptHistoryItem(item)}
+              onClear={() => handleLinkedTaskChange(null)}
+            />
+            {!linkedTask && (
+              <p className="text-xs text-rose-400/40 mt-2 text-center">
+                不选也没关系，默认使用最新一轮的 Prompt 任务～
+              </p>
+            )}
+          </div>
+
           <div
             className="rounded-2xl p-4 flex items-center gap-4"
             style={{
@@ -862,8 +1311,14 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
               </div>
               <p className="text-xs text-rose-400/60 mt-0.5">
                 {hasPrompts
-                  ? `来自上一轮 Prompt 预生成 · 本轮可用 ${allPrompts.length} 份 Prompt`
-                  : "请先在「Prompt 预生成」中完成生成，再回来一键出图～"}
+                  ? linkedTask
+                    ? `来自「${linkedTask.charaName}」的 Prompt 任务 · 本轮可用 ${allPrompts.length} 份 Prompt`
+                    : hasLivePromptSession
+                      ? `来自最新一轮的 Prompt 预生成任务 · 本轮可用 ${allPrompts.length} 份 Prompt`
+                      : `来自最新一条已完成的 Prompt 预生成任务 · 本轮可用 ${allPrompts.length} 份 Prompt`
+                  : linkedTask
+                    ? "该关联任务暂无可用的 Prompt 卡片"
+                    : "请先在「Prompt 预生成」中完成生成，再回来一键出图～"}
               </p>
             </div>
             <div

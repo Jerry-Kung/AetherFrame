@@ -460,10 +460,13 @@ class PromptPrecreationService:
         self._sync_history_record_file(task)
         self._sync_history_index_file()
 
-    def list_history(self, *, limit: int = DEFAULT_HISTORY_LIMIT, offset: int = 0) -> Dict[str, Any]:
+    def list_history(
+        self, *, limit: int = DEFAULT_HISTORY_LIMIT, offset: int = 0, status: Optional[str] = None
+    ) -> Dict[str, Any]:
         lim = max(1, min(int(limit), 200))
         off = max(0, int(offset))
-        tasks = self.repo.list_history(limit=lim, offset=off)
+        st = (status or "").strip() or None
+        tasks = self.repo.list_history(limit=lim, offset=off, status=st)
         items: List[Dict[str, Any]] = []
         for task in tasks:
             detail = self._build_history_detail(task)
@@ -471,7 +474,7 @@ class PromptPrecreationService:
                 continue
             item = self._build_history_index_item(detail)
             items.append(item)
-        return {"items": items, "total": self.repo.count_history()}
+        return {"items": items, "total": self.repo.count_history(st)}
 
     def get_history_detail(self, history_id: str) -> Optional[Dict[str, Any]]:
         hid = (history_id or "").strip()
@@ -484,6 +487,13 @@ class PromptPrecreationService:
 
     def get_latest_history(self) -> Optional[Dict[str, Any]]:
         task = self.repo.get_latest()
+        if not task:
+            return None
+        return self._build_history_detail(task)
+
+    def get_latest_completed_history(self) -> Optional[Dict[str, Any]]:
+        """供「一键创作」默认关联：全库最近一条已完成的任务（含 cards）。"""
+        task = self.repo.get_latest_completed()
         if not task:
             return None
         return self._build_history_detail(task)
