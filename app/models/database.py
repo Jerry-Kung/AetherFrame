@@ -5,12 +5,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+from app.datetime_display import configure_logging
+
+configure_logging(logging.INFO)
 logger = logging.getLogger(__name__)
 
 # 数据库文件路径
@@ -158,6 +155,37 @@ def migrate_material_raw_images_add_type() -> None:
         raise
 
 
+def migrate_material_characters_add_setting_source_filename() -> None:
+    """
+    轻量迁移：为 material_characters 表补充 setting_source_filename 列（可空）。
+    历史数据为 NULL，与「无来源文件名」语义一致，不影响既有 setting_text。
+    """
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_characters'"
+                )
+            ).fetchone()
+            if row is None:
+                return
+            cols = conn.execute(text("PRAGMA table_info(material_characters)")).fetchall()
+            names = {c[1] for c in cols}
+            if "setting_source_filename" in names:
+                return
+            conn.execute(
+                text(
+                    "ALTER TABLE material_characters ADD COLUMN setting_source_filename VARCHAR(255)"
+                )
+            )
+        logger.info("已迁移: material_characters 增加 setting_source_filename 列")
+    except Exception as e:
+        logger.error(f"迁移 material_characters.setting_source_filename 失败: {e}", exc_info=True)
+        raise
+
+
 def migrate_repair_tasks_add_aspect_ratio() -> None:
     """
     轻量迁移：为 repair_tasks 表补充 aspect_ratio 列（与前端 / nano_banana_pro 一致）。
@@ -207,6 +235,7 @@ def init_db():
         migrate_prompt_templates_add_description()
         migrate_prompt_templates_add_tags()
         migrate_material_raw_images_add_type()
+        migrate_material_characters_add_setting_source_filename()
         migrate_repair_tasks_add_aspect_ratio()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")

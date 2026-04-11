@@ -231,11 +231,16 @@ class MaterialService:
             )
         return summaries, total
 
-    def update_setting_text(self, character_id: str, text: str) -> MaterialCharacter:
+    def update_setting_text(
+        self, character_id: str, text: str, *, clear_setting_source: bool = False
+    ) -> MaterialCharacter:
         char = self.repo.get_by_id(character_id)
         if not char:
             raise ValueError("角色不存在")
-        self.repo.update(character_id, {"setting_text": text})
+        updates: Dict[str, Any] = {"setting_text": text}
+        if clear_setting_source:
+            updates["setting_source_filename"] = None
+        self.repo.update(character_id, updates)
         self._after_character_material_changed(character_id)
         return self.repo.get_by_id(character_id)
 
@@ -252,7 +257,15 @@ class MaterialService:
             text = raw.decode("utf-8")
         except UnicodeDecodeError as e:
             raise FileValidationError("设定文件须为 UTF-8 编码") from e
-        return self.update_setting_text(character_id, text)
+        base_fn = os.path.basename(fn.strip()) or None
+        if base_fn and len(base_fn) > 255:
+            base_fn = base_fn[:255]
+        self.repo.update(
+            character_id,
+            {"setting_text": text, "setting_source_filename": base_fn},
+        )
+        self._after_character_material_changed(character_id)
+        return self.repo.get_by_id(character_id)
 
     def upload_raw_images(
         self,
@@ -383,6 +396,7 @@ class MaterialService:
             "status": char.status,
             "updated_at": char.updated_at,
             "setting_text": char.setting_text or "",
+            "setting_source_filename": char.setting_source_filename or "",
             "raw_images": raw_images,
             "official_photos": self._normalize_official_photos(official_photos),
             "bio": bio,

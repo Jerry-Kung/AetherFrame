@@ -234,7 +234,11 @@ async def update_setting(
         if "application/json" in ct:
             body = await request.json()
             parsed = SettingTextUpdate.model_validate(body)
-            char = service.update_setting_text(character_id, parsed.setting_text)
+            char = service.update_setting_text(
+                character_id,
+                parsed.setting_text,
+                clear_setting_source=parsed.clear_setting_source,
+            )
         elif "multipart/form-data" in ct:
             form = await request.form()
             file = form.get("file")

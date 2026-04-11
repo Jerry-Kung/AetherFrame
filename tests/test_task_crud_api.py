@@ -2,6 +2,7 @@
 任务 CRUD API 测试用例
 包含：Schemas 层、Service 层的完整测试
 """
+
 import os
 import tempfile
 import shutil
@@ -11,8 +12,8 @@ import pytest
 # 配置日志
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ def db_session(temp_data_dir):
     import sys
 
     for key in list(sys.modules.keys()):
-        if key.startswith('app.models') or key.startswith('app.repositories'):
+        if key.startswith("app.models") or key.startswith("app.repositories"):
             del sys.modules[key]
 
     from app.models import database
@@ -73,6 +74,7 @@ def db_session(temp_data_dir):
 # 第一部分：Schemas 层测试
 # ==========================================
 
+
 class TestSchemas:
     """测试 Pydantic Schemas"""
 
@@ -80,11 +82,7 @@ class TestSchemas:
         """测试 TaskCreate 验证 - 有效数据"""
         from app.schemas.repair import TaskCreate
 
-        task_data = TaskCreate(
-            name="测试任务",
-            prompt="这是测试描述",
-            output_count=2
-        )
+        task_data = TaskCreate(name="测试任务", prompt="这是测试描述", output_count=2)
 
         assert task_data.name == "测试任务"
         assert task_data.prompt == "这是测试描述"
@@ -97,11 +95,7 @@ class TestSchemas:
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            TaskCreate(
-                name="测试任务",
-                prompt="这是测试描述",
-                output_count=3  # 无效值
-            )
+            TaskCreate(name="测试任务", prompt="这是测试描述", output_count=3)  # 无效值
 
     def test_task_create_name_too_short(self):
         """测试 TaskCreate 验证 - 名称太短"""
@@ -109,11 +103,7 @@ class TestSchemas:
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            TaskCreate(
-                name="",  # 空名称
-                prompt="这是测试描述",
-                output_count=2
-            )
+            TaskCreate(name="", prompt="这是测试描述", output_count=2)  # 空名称
 
     def test_task_create_name_only_defaults(self):
         """仅传 name 时可通过校验（与前端「新建任务」一致）"""
@@ -139,6 +129,7 @@ class TestSchemas:
 # 第二部分：RepairService 测试
 # ==========================================
 
+
 class TestRepairService:
     """测试 RepairService 业务逻辑层"""
 
@@ -149,11 +140,7 @@ class TestRepairService:
 
         service = RepairService(db_session)
 
-        task_data = TaskCreate(
-            name="测试任务",
-            prompt="这是测试描述",
-            output_count=2
-        )
+        task_data = TaskCreate(name="测试任务", prompt="这是测试描述", output_count=2)
 
         task = service.create_task(task_data)
 
@@ -172,11 +159,9 @@ class TestRepairService:
 
         service = RepairService(db_session)
 
-        created = service.create_task(TaskCreate(
-            name="查询测试",
-            prompt="test",
-            output_count=1
-        ))
+        created = service.create_task(
+            TaskCreate(name="查询测试", prompt="test", output_count=1)
+        )
 
         fetched = service.get_task(created.id)
 
@@ -202,11 +187,9 @@ class TestRepairService:
         service = RepairService(db_session)
 
         for i in range(5):
-            service.create_task(TaskCreate(
-                name=f"任务{i}",
-                prompt="test",
-                output_count=1
-            ))
+            service.create_task(
+                TaskCreate(name=f"任务{i}", prompt="test", output_count=1)
+            )
 
         tasks, total = service.list_tasks(limit=10)
         assert len(tasks) == 5
@@ -221,11 +204,9 @@ class TestRepairService:
         service = RepairService(db_session)
 
         for i in range(5):
-            service.create_task(TaskCreate(
-                name=f"任务{i}",
-                prompt="test",
-                output_count=1
-            ))
+            service.create_task(
+                TaskCreate(name=f"任务{i}", prompt="test", output_count=1)
+            )
 
         tasks_page1, total1 = service.list_tasks(skip=0, limit=2)
         tasks_page2, total2 = service.list_tasks(skip=2, limit=2)
@@ -243,16 +224,13 @@ class TestRepairService:
 
         service = RepairService(db_session)
 
-        task = service.create_task(TaskCreate(
-            name="旧名称",
-            prompt="旧描述",
-            output_count=1
-        ))
+        task = service.create_task(
+            TaskCreate(name="旧名称", prompt="旧描述", output_count=1)
+        )
 
-        updated = service.update_task(task.id, TaskUpdate(
-            name="新名称",
-            prompt="新描述"
-        ))
+        updated = service.update_task(
+            task.id, TaskUpdate(name="新名称", prompt="新描述")
+        )
 
         assert updated is not None
         assert updated.name == "新名称"
@@ -268,11 +246,9 @@ class TestRepairService:
         service = RepairService(db_session)
         repo = RepairTaskRepository(db_session)
 
-        task = service.create_task(TaskCreate(
-            name="测试任务",
-            prompt="test",
-            output_count=1
-        ))
+        task = service.create_task(
+            TaskCreate(name="测试任务", prompt="test", output_count=1)
+        )
 
         repo.update_status(task.id, "processing")
 
@@ -289,11 +265,9 @@ class TestRepairService:
         service = RepairService(db_session)
         repo = RepairTaskRepository(db_session)
 
-        task = service.create_task(TaskCreate(
-            name="已完成任务",
-            prompt="old",
-            output_count=1
-        ))
+        task = service.create_task(
+            TaskCreate(name="已完成任务", prompt="old", output_count=1)
+        )
         repo.update_status(task.id, "completed")
 
         updated = service.update_task(task.id, TaskUpdate(prompt="new prompt"))
@@ -308,11 +282,9 @@ class TestRepairService:
 
         service = RepairService(db_session)
 
-        task = service.create_task(TaskCreate(
-            name="删除测试",
-            prompt="test",
-            output_count=1
-        ))
+        task = service.create_task(
+            TaskCreate(name="删除测试", prompt="test", output_count=1)
+        )
 
         success = service.delete_task(task.id)
         assert success is True
@@ -365,11 +337,9 @@ class TestRepairService:
 
         service = RepairService(db_session)
 
-        task = service.create_task(TaskCreate(
-            name="测试任务",
-            prompt="test",
-            output_count=2
-        ))
+        task = service.create_task(
+            TaskCreate(name="测试任务", prompt="test", output_count=2)
+        )
 
         task_simple = service.build_task_simple_response(task)
 

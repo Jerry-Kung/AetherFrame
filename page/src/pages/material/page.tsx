@@ -287,17 +287,48 @@ export default function MaterialPage() {
     [selected, patchCharaFields, mergeChara, showToast]
   );
 
-  const handleImportSettingFile = useCallback(
-    async (file: File) => {
+  const handleSettingCommit = useCallback(
+    async (text: string) => {
       if (!selected) return;
+      const id = selected.id;
+      if (settingDebounceRef.current) {
+        clearTimeout(settingDebounceRef.current);
+        settingDebounceRef.current = null;
+      }
+      patchCharaFields(id, { settingText: text, settingFileName: "" });
       try {
-        const d = await materialApi.putSettingFile(selected.id, file);
+        const d = await materialApi.putSettingText(id, text, true);
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "保存设定失败");
+      }
+    },
+    [selected, patchCharaFields, mergeChara, showToast]
+  );
+
+  const handleSettingImportedFromFile = useCallback(
+    async (text: string, file: File) => {
+      if (!selected) return;
+      const id = selected.id;
+      if (settingDebounceRef.current) {
+        clearTimeout(settingDebounceRef.current);
+        settingDebounceRef.current = null;
+      }
+      patchCharaFields(id, { settingText: text, settingFileName: file.name });
+      try {
+        const d = await materialApi.putSettingFile(id, file);
         mergeChara(toCharaProfile(d));
       } catch (e) {
         showToast(e instanceof ApiError ? e.message : "上传设定文件失败");
+        try {
+          const d2 = await materialApi.getCharacter(id);
+          mergeChara(toCharaProfile(d2));
+        } catch {
+          /* ignore */
+        }
       }
     },
-    [selected, mergeChara, showToast]
+    [selected, patchCharaFields, mergeChara, showToast]
   );
 
   const handleUploadRawFiles = useCallback(
@@ -564,8 +595,10 @@ export default function MaterialPage() {
                   <RawMaterialTab
                     characterId={selected.id}
                     settingText={selected.settingText}
+                    settingFileName={selected.settingFileName}
                     onSettingTextChange={handleSettingTextChange}
-                    onImportSettingFile={handleImportSettingFile}
+                    onSettingCommit={handleSettingCommit}
+                    onSettingImportedFromFile={handleSettingImportedFromFile}
                     rawImages={selected.rawImages}
                     onUploadRawFiles={handleUploadRawFiles}
                     onRemoveRawImage={handleRemoveRawImage}

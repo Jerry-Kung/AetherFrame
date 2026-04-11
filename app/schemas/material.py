@@ -3,10 +3,11 @@
 """
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, List, Optional, Literal
 
 from pydantic import BaseModel, Field, ConfigDict, model_validator
+
+from app.schemas.serialization import ApiDateTime
 
 RawImageType = Literal["official", "fanart"]
 ShotType = Literal["full_front", "full_side", "half_front", "half_side", "face_close"]
@@ -30,6 +31,10 @@ class CharacterUpdate(BaseModel):
 
 class SettingTextUpdate(BaseModel):
     setting_text: str = Field(..., description="角色设定全文（UTF-8）")
+    clear_setting_source: bool = Field(
+        False,
+        description="为 true 时清除设定来源文件名（如用户完成手动编辑保存）；默认 false 以保留导入 .txt/.md 时的来源标记",
+    )
 
 
 class RawImageTagsUpdate(BaseModel):
@@ -60,7 +65,7 @@ class CharacterSummary(BaseModel):
     name: str
     display_name: str
     status: str
-    updated_at: datetime
+    updated_at: ApiDateTime
     raw_image_count: int
     setting_preview: str
     avatar_url: str = ""
@@ -74,8 +79,12 @@ class CharacterDetail(BaseModel):
     display_name: str
     avatar_url: str
     status: str
-    updated_at: datetime
+    updated_at: ApiDateTime
     setting_text: str
+    setting_source_filename: str = Field(
+        default="",
+        description="最近一次通过 .txt/.md 上传写入设定时的原始文件名；纯 JSON 编辑且未 clear 时保持不变",
+    )
     raw_images: List[RawImageItem]
     official_photos: List[Optional[str]] = Field(
         default_factory=lambda: [None, None, None, None, None],
@@ -132,8 +141,8 @@ class StandardPhotoStatusResponse(BaseModel):
     error_message: Optional[str] = None
     selected_raw_image_ids: List[str] = Field(default_factory=list)
     result_images: List[str] = Field(default_factory=list)
-    created_at: datetime
-    updated_at: datetime
+    created_at: ApiDateTime
+    updated_at: ApiDateTime
 
 
 class StandardPhotoSelectRequest(BaseModel):
@@ -168,8 +177,8 @@ class CharaProfileStatusResponse(BaseModel):
     error_message: Optional[str] = None
     current_step: Optional[str] = None
     selected_fanart_ids: List[str] = Field(default_factory=list)
-    created_at: datetime
-    updated_at: datetime
+    created_at: ApiDateTime
+    updated_at: ApiDateTime
 
 
 class BioPatchRequest(BaseModel):

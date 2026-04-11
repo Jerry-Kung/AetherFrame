@@ -96,7 +96,10 @@ def _sync_history_files_for_task_id(db: Session, task_id: str) -> None:
         "updated_at": _to_iso(task.updated_at),
         "cards": cards,
     }
-    _dump_json_atomic(directory_service.get_prompt_precreation_history_record_path(task.id), record_payload)
+    _dump_json_atomic(
+        directory_service.get_prompt_precreation_history_record_path(task.id),
+        record_payload,
+    )
 
     tasks = crepo.list_history(limit=2000, offset=0)
     items: List[Dict[str, Any]] = []
@@ -124,8 +127,12 @@ def _sync_history_files_for_task_id(db: Session, task_id: str) -> None:
     )
 
 
-def resolve_chara_profile_text(character_id: str, bio_json: Optional[str]) -> Optional[str]:
-    md = material_file_service.read_chara_profile_markdown(character_id, "chara_profile_final.md")
+def resolve_chara_profile_text(
+    character_id: str, bio_json: Optional[str]
+) -> Optional[str]:
+    md = material_file_service.read_chara_profile_markdown(
+        character_id, "chara_profile_final.md"
+    )
     if md and md.strip():
         return md.strip()
     try:
@@ -237,7 +244,9 @@ def _run_review(
         try:
             return call_main()
         except Exception as e:
-            logger.warning("审阅 LLM 调用失败 (attempt %s): %s", attempt + 1, e, exc_info=True)
+            logger.warning(
+                "审阅 LLM 调用失败 (attempt %s): %s", attempt + 1, e, exc_info=True
+            )
             if attempt == 0:
                 time.sleep(10)
             else:
@@ -249,7 +258,9 @@ def _run_review(
         raise RuntimeError("审阅阶段 LLM 调用失败") from e2
 
 
-def _build_cards(best_files: List[str], candidates: Dict[str, str]) -> List[Dict[str, Any]]:
+def _build_cards(
+    best_files: List[str], candidates: Dict[str, str]
+) -> List[Dict[str, Any]]:
     today = date.today().isoformat()
     cards: List[Dict[str, Any]] = []
     for i, name in enumerate(best_files):
@@ -289,7 +300,11 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
         if not char:
             crepo.update(
                 task_id,
-                {"status": "failed", "error_message": "角色不存在", "current_step": None},
+                {
+                    "status": "failed",
+                    "error_message": "角色不存在",
+                    "current_step": None,
+                },
             )
             _sync_history_files_for_task_id(db, task_id)
             return
@@ -307,7 +322,10 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
             _sync_history_files_for_task_id(db, task_id)
             return
 
-        crepo.update(task_id, {"status": "running", "current_step": "collecting", "error_message": None})
+        crepo.update(
+            task_id,
+            {"status": "running", "current_step": "collecting", "error_message": None},
+        )
         _sync_history_files_for_task_id(db, task_id)
         n = task.n
         seed_prompt = task.seed_prompt
@@ -426,7 +444,9 @@ class PromptPrecreationService:
         detail = self._build_history_detail(task)
         if not detail:
             return
-        record_path = directory_service.get_prompt_precreation_history_record_path(task.id)
+        record_path = directory_service.get_prompt_precreation_history_record_path(
+            task.id
+        )
         record_payload = {
             **self._build_history_index_item(detail),
             "cards": detail.get("cards") or [],
@@ -461,7 +481,11 @@ class PromptPrecreationService:
         self._sync_history_index_file()
 
     def list_history(
-        self, *, limit: int = DEFAULT_HISTORY_LIMIT, offset: int = 0, status: Optional[str] = None
+        self,
+        *,
+        limit: int = DEFAULT_HISTORY_LIMIT,
+        offset: int = 0,
+        status: Optional[str] = None,
     ) -> Dict[str, Any]:
         lim = max(1, min(int(limit), 200))
         off = max(0, int(offset))

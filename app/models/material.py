@@ -18,6 +18,7 @@ class MaterialCharacter(Base):
     display_name = Column(String(200), nullable=True)
     status = Column(String(20), nullable=False, index=True, default="idle")
     setting_text = Column(Text, nullable=False, default="")
+    setting_source_filename = Column(String(255), nullable=True)
     avatar_filename = Column(String(255), nullable=True)
     official_photos_json = Column(Text, nullable=False, default="[null,null,null,null,null]")
     bio_json = Column(Text, nullable=False, default="{}")

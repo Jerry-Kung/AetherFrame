@@ -90,6 +90,8 @@ export interface CharaProfile {
   status: CharaStatus;
   updatedAt: string;
   settingText: string;
+  /** 最近一次通过 .txt/.md 导入的源文件名；仅前端会话内展示，后端未持久化时可丢失 */
+  settingFileName: string;
   rawImages: CharaRawImage[];
   officialPhotos: [string | null, string | null, string | null, string | null, string | null];
   standardPhotos: CharaStandardPhoto[];
@@ -160,6 +162,8 @@ export interface ApiCharacterDetail {
   status: string;
   updated_at: string;
   setting_text: string;
+  /** 后端持久化的设定文件来源名（.txt/.md 上传）；缺省或空表示无 */
+  setting_source_filename?: string;
   raw_images: { id: string; url: string; type: RawImageType; tags: string[] }[];
   official_photos: (string | null)[];
   standard_photos?: { id: string; type: StandardPhotoType; url: string; created_at: string }[];
@@ -233,6 +237,10 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
     status: asCharaStatus(d.status),
     updatedAt: d.updated_at,
     settingText: d.setting_text ?? "",
+    settingFileName:
+      typeof d.setting_source_filename === "string" && d.setting_source_filename.length > 0
+        ? d.setting_source_filename
+        : "",
     rawImages: (d.raw_images || []).map((r) => ({
       id: r.id,
       url: r.url,
@@ -257,6 +265,7 @@ export function summaryToListProfile(s: ApiCharacterSummary): CharaProfile {
     updatedAt:
       typeof s.updated_at === "string" ? s.updated_at : new Date(s.updated_at).toISOString(),
     settingText: "",
+    settingFileName: "",
     rawImages: [],
     officialPhotos: [null, null, null, null, null],
     standardPhotos: [],

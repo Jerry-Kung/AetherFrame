@@ -178,14 +178,21 @@ export async function deleteCharacter(id: string): Promise<void> {
   }
 }
 
-export async function putSettingText(characterId: string, settingText: string): Promise<ApiCharacterDetail> {
+export async function putSettingText(
+  characterId: string,
+  settingText: string,
+  clearSettingSource = false
+): Promise<ApiCharacterDetail> {
   assertValidCharacterId(characterId, "保存角色设定");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/setting`;
   try {
     const response = await fetchWithTimeout(url, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ setting_text: settingText }),
+      body: JSON.stringify({
+        setting_text: settingText,
+        clear_setting_source: clearSettingSource,
+      }),
     });
     const data = await parseJson<ApiCharacterDetail>(response);
     throwIfError(response, data);

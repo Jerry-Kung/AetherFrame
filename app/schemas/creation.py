@@ -1,6 +1,7 @@
 """
 创作模块 — Prompt 预生成 API 模型
 """
+
 from __future__ import annotations
 
 from datetime import datetime

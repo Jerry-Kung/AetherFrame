@@ -10,11 +10,9 @@ from unittest.mock import patch
 import pytest
 from starlette.datastructures import UploadFile
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+from app.datetime_display import configure_logging
+
+configure_logging(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -138,6 +136,29 @@ class TestMaterialCharacterService:
         up = UploadFile(filename="note.md", file=BytesIO(raw))
         char = material_svc.update_setting_from_upload(char.id, up)
         assert char.setting_text == "# hello\n中文"
+        assert char.setting_source_filename == "note.md"
+
+    def test_setting_text_preserves_source_filename_by_default(self, material_svc):
+        char = material_svc.create_character("SrcKeep")
+        raw = b"alpha"
+        char = material_svc.update_setting_from_upload(
+            char.id, UploadFile(filename="a.txt", file=BytesIO(raw))
+        )
+        assert char.setting_source_filename == "a.txt"
+        char = material_svc.update_setting_text(char.id, "beta")
+        assert char.setting_text == "beta"
+        assert char.setting_source_filename == "a.txt"
+
+    def test_setting_text_clear_setting_source(self, material_svc):
+        char = material_svc.create_character("SrcClear")
+        raw = b"x"
+        char = material_svc.update_setting_from_upload(
+            char.id, UploadFile(filename="f.md", file=BytesIO(raw))
+        )
+        assert char.setting_source_filename == "f.md"
+        char = material_svc.update_setting_text(char.id, "y", clear_setting_source=True)
+        assert char.setting_text == "y"
+        assert char.setting_source_filename is None
 
     def test_upload_raw_images_and_path(self, material_svc, sample_png):
         char = material_svc.create_character("C")

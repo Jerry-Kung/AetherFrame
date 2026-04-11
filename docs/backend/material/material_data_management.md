@@ -31,6 +31,7 @@
 | display_name | String(200) | 显示名称 | name |
 | status | String(20) | 状态：idle/draft/processing/done | "idle" |
 | setting_text | Text | 角色设定文本 | "" |
+| setting_source_filename | String(255), 可空 | 最近一次通过 .txt/.md 上传写入设定时的原始文件名（仅展示用） | NULL |
 | avatar_filename | String(255) | 头像文件名 | None |
 | official_photos_json | Text | 标准照槽位URL数组JSON | "[null,null,null,null,null]" |
 | bio_json | Text | 角色小档案JSON | "{}" |
