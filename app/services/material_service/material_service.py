@@ -727,21 +727,21 @@ class MaterialService:
                 )
                 return
 
-            official_image_list: List[str] = []
-            for i in range(5):
-                st = INDEX_TO_SHOT_TYPE[i]
-                p = material_file_service.get_standard_slot_image_path(character_id, st)
-                if not p:
-                    repo.update_chara_profile_task(
-                        task_id,
-                        {
-                            "status": "failed",
-                            "error_message": "标准参考图槽位文件缺失",
-                            "current_step": None,
-                        },
-                    )
-                    return
-                official_image_list.append(p)
+            official_image_list = (
+                material_file_service.standard_reference_paths_for_multimodal_prompt(
+                    character_id
+                )
+            )
+            if not official_image_list:
+                repo.update_chara_profile_task(
+                    task_id,
+                    {
+                        "status": "failed",
+                        "error_message": "标准参考图槽位文件缺失",
+                        "current_step": None,
+                    },
+                )
+                return
 
             try:
                 selected_ids = json.loads(task.selected_fanart_ids_json or "[]")

@@ -3,11 +3,11 @@ import logging
 import uuid
 import shutil
 from datetime import datetime
-from typing import Optional, Tuple, List
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import UploadFile
 
-from app.repositories.material_repository import SHOT_TYPE_TO_INDEX
+from app.repositories.material_repository import INDEX_TO_SHOT_TYPE, SHOT_TYPE_TO_INDEX
 from app.services.directory_service import get_material_characters_dir, ensure_dir_exists
 from app.services.file_service import (
     FileValidationError,
@@ -99,6 +99,36 @@ def get_standard_slot_image_path(character_id: str, shot_type: str) -> Optional[
     if os.path.isfile(path):
         return path
     return None
+
+
+# 多模态 Prompt 传入标准参考图：超过总大小则只传全身正面、半身正面、脸部特写
+STANDARD_REF_PROMPT_TOTAL_BYTES_THRESHOLD = 20 * 1024 * 1024
+STANDARD_REF_PROMPT_REDUCED_SHOT_TYPES = ("full_front", "half_front", "face_close")
+
+
+def standard_reference_paths_for_multimodal_prompt(character_id: str) -> Optional[List[str]]:
+    """
+    若 5 个正式槽位齐全，返回供多模态 API 使用的图片路径列表（5 张或按体积缩减为 3 张）。
+    任一路径缺失则返回 None。
+    """
+    by_type: Dict[str, str] = {}
+    paths_ordered: List[str] = []
+    for i in range(5):
+        st = INDEX_TO_SHOT_TYPE[i]
+        p = get_standard_slot_image_path(character_id, st)
+        if not p:
+            return None
+        by_type[st] = p
+        paths_ordered.append(p)
+    total = sum(os.path.getsize(p) for p in paths_ordered)
+    if total > STANDARD_REF_PROMPT_TOTAL_BYTES_THRESHOLD:
+        logger.info(
+            "标准参考图总大小 %s 字节超过阈值 %s，多模态 Prompt 缩减为 3 张",
+            total,
+            STANDARD_REF_PROMPT_TOTAL_BYTES_THRESHOLD,
+        )
+        return [by_type[t] for t in STANDARD_REF_PROMPT_REDUCED_SHOT_TYPES]
+    return paths_ordered
 
 
 def delete_standard_slot_image_file(character_id: str, shot_type: str) -> bool:

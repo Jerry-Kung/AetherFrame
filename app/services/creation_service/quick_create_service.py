@@ -14,11 +14,10 @@ from app.repositories.creation_repository import (
     CreationPromptPrecreationRepository,
     CreationQuickCreateRepository,
 )
-from app.repositories.material_repository import SHOT_TYPE_TO_INDEX
 from app.repositories.material_repository import MaterialCharacterRepository
 from app.services import directory_service
 from app.services.material_service.material_file_service import (
-    get_standard_slot_image_path,
+    standard_reference_paths_for_multimodal_prompt,
 )
 from app.tools.llm.nano_banana_pro import generate_image_with_nano_banana_pro
 
@@ -143,14 +142,9 @@ def _safe_segment(value: str) -> str:
 
 
 def _resolve_standard_reference_paths(character_id: str) -> List[str]:
-    refs: List[str] = []
-    for shot_type in SHOT_TYPE_TO_INDEX.keys():
-        path = get_standard_slot_image_path(character_id, shot_type)
-        if not path or not os.path.isfile(path):
-            raise ValueError(
-                f"角色标准参考图不足 5 张，请先补齐标准照（缺少: {shot_type}）"
-            )
-        refs.append(path)
+    refs = standard_reference_paths_for_multimodal_prompt(character_id)
+    if not refs:
+        raise ValueError("角色标准参考图不足 5 张，请先补齐标准照")
     return refs
 
 
