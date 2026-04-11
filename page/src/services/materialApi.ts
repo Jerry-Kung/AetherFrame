@@ -2,7 +2,7 @@
  * 素材加工模块 /api/material
  */
 import type { ApiCharacterDetail, ApiCharacterSummary } from "@/types/material";
-import { ApiError } from "@/services/api";
+import { ApiError, parseResponseBodyAsJson } from "@/services/api";
 
 const API_BASE = "/api/material";
 const DEFAULT_TIMEOUT = 30000;
@@ -33,11 +33,7 @@ async function fetchWithTimeout(
 }
 
 async function parseJson<T>(response: Response): Promise<ApiEnvelope<T>> {
-  try {
-    return await response.json();
-  } catch {
-    throw new ApiError("响应解析失败", response.status);
-  }
+  return parseResponseBodyAsJson<ApiEnvelope<T>>(response);
 }
 
 function assertValidCharacterId(characterId: string, action: string): void {

@@ -1,7 +1,7 @@
 import os
 import logging
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -27,12 +27,25 @@ SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
 logger.info(f"数据库连接URL: {SQLALCHEMY_DATABASE_URL}")
 
 # 创建引擎
+# - timeout：连接级 busy 等待（秒），与 PRAGMA busy_timeout 配合缓解并发锁竞争
+# - WAL：读写并发更友好，避免后台任务写库时 API 长时间阻塞事件循环
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30.0},
     echo=False,  # 设置为 True 可以查看 SQL 日志
 )
 logger.info("数据库引擎创建成功")
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_on_connect(dbapi_connection, _connection_record):
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+    finally:
+        cursor.close()
 
 # Session 工厂
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
