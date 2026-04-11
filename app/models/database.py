@@ -1,5 +1,6 @@
 import os
 import logging
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -50,6 +51,9 @@ def get_db():
         logger.debug("获取数据库会话")
         yield db
     except Exception as e:
+        # 路由层主动抛出的 HTTP 错误会经 yield 依赖传回此处，不应记为数据库异常
+        if isinstance(e, StarletteHTTPException):
+            raise
         logger.error(f"数据库会话异常: {e}", exc_info=True)
         raise
     finally:

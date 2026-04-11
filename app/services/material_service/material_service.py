@@ -71,6 +71,57 @@ class MaterialService:
         if (has_setting or n > 0) and char.status == "idle":
             self.repo.update(char.id, {"status": "draft"})
 
+    def _is_material_complete(self, char: MaterialCharacter) -> bool:
+        """资料已完善：有设定说明、至少一张参考图、5 槽标准照齐全、已生成角色小档案正文。"""
+        if not (char.setting_text or "").strip():
+            return False
+        from app.models.material import MaterialCharacterRawImage
+
+        n_raw = self.db.query(MaterialCharacterRawImage).filter_by(character_id=char.id).count()
+        if n_raw < 1:
+            return False
+        try:
+            photos_raw = json.loads(char.official_photos_json or "[]")
+        except json.JSONDecodeError:
+            photos_raw = []
+        slots = self._normalize_official_photos(photos_raw)
+        if len(slots) != 5 or any(p is None for p in slots):
+            return False
+        try:
+            bio = json.loads(char.bio_json or "{}")
+        except json.JSONDecodeError:
+            bio = {}
+        if not isinstance(bio, dict):
+            return False
+        cp = bio.get("chara_profile")
+        if not isinstance(cp, str) or not cp.strip():
+            return False
+        return True
+
+    def _sync_material_completion_status(self, character_id: str) -> None:
+        """满足完善条件时置为 done；不再满足时从 done 降为 draft/idle。"""
+        char = self.repo.get_by_id(character_id)
+        if not char:
+            return
+        complete = self._is_material_complete(char)
+        if complete:
+            if char.status != "done":
+                self.repo.update(character_id, {"status": "done"})
+        elif char.status == "done":
+            has_setting = bool((char.setting_text or "").strip())
+            from app.models.material import MaterialCharacterRawImage
+
+            n = self.db.query(MaterialCharacterRawImage).filter_by(character_id=char.id).count()
+            next_status = "draft" if (has_setting or n > 0) else "idle"
+            self.repo.update(character_id, {"status": next_status})
+
+    def _after_character_material_changed(self, character_id: str) -> None:
+        self._sync_material_completion_status(character_id)
+        char = self.repo.get_by_id(character_id)
+        if char:
+            self._maybe_promote_draft(char)
+        self.repo.touch_character_updated_at(character_id)
+
     def create_character(self, name: str, display_name: Optional[str] = None) -> MaterialCharacter:
         data: Dict[str, Any] = {"name": name}
         if display_name is not None:
@@ -122,9 +173,7 @@ class MaterialService:
         material_file_service.delete_raw_image_file(character_id, stored, row.type)
         if char.avatar_filename == row.stored_filename:
             self.repo.update(character_id, {"avatar_filename": None})
-        char = self.repo.get_by_id(character_id)
-        self._maybe_promote_draft(char)
-        self.repo.touch_character_updated_at(character_id)
+        self._after_character_material_changed(character_id)
         return True
 
     def update_raw_image_tags(
@@ -187,9 +236,7 @@ class MaterialService:
         if not char:
             raise ValueError("角色不存在")
         self.repo.update(character_id, {"setting_text": text})
-        char = self.repo.get_by_id(character_id)
-        self._maybe_promote_draft(char)
-        self.repo.touch_character_updated_at(character_id)
+        self._after_character_material_changed(character_id)
         return self.repo.get_by_id(character_id)
 
     def update_setting_from_upload(self, character_id: str, file: UploadFile) -> MaterialCharacter:
@@ -264,10 +311,20 @@ class MaterialService:
                     {"original_filename": file.filename or "unknown", "error": "上传失败"}
                 )
 
-        char = self.repo.get_by_id(character_id)
-        self._maybe_promote_draft(char)
-        self.repo.touch_character_updated_at(character_id)
+        self._after_character_material_changed(character_id)
         return uploaded, failed
+
+    def upload_character_avatar(self, character_id: str, file: UploadFile) -> MaterialCharacter:
+        """将上传图片保存为官方参考图并设为角色头像（avatar_filename）。"""
+        char = self.repo.get_by_id(character_id)
+        if not char:
+            raise ValueError("角色不存在")
+        image_id = material_file_service.new_image_id()
+        stored = material_file_service.save_raw_image(character_id, image_id, file, "official")
+        self.repo.add_raw_image(character_id, image_id, stored, "official", ["头像"])
+        self.repo.update(character_id, {"avatar_filename": stored})
+        self._after_character_material_changed(character_id)
+        return self.repo.get_by_id(character_id)
 
     def get_raw_image_path(self, character_id: str, filename: str) -> Optional[str]:
         char = self.repo.get_by_id(character_id)
@@ -535,7 +592,8 @@ class MaterialService:
         if not updated:
             raise ValueError("角色不存在")
         material_file_service.delete_standard_slot_image_file(character_id, shot_type)
-        return updated
+        self._after_character_material_changed(character_id)
+        return self.repo.get_by_id(character_id)
 
     def select_standard_photo_result(
         self, character_id: str, selected_result_filename: Optional[str], selected_result_index: Optional[int]
@@ -568,7 +626,8 @@ class MaterialService:
         updated = self.repo.save_official_photo_by_shot_type(character_id, task.shot_type, url)
         if not updated:
             raise ValueError("角色不存在")
-        return updated
+        self._after_character_material_changed(character_id)
+        return self.repo.get_by_id(character_id)
 
     async def _run_chara_profile_task_async(self, character_id: str, task_id: str) -> None:
         await asyncio.to_thread(self._run_chara_profile_task_sync, character_id, task_id)
@@ -715,7 +774,7 @@ class MaterialService:
                 bio = {}
             bio["chara_profile"] = final_md
             repo.update(character_id, {"bio_json": json.dumps(bio, ensure_ascii=False)})
-            repo.touch_character_updated_at(character_id)
+            MaterialService(db)._after_character_material_changed(character_id)
             repo.update_chara_profile_task(
                 task_id,
                 {
@@ -770,7 +829,7 @@ class MaterialService:
         if creative_advice is not None:
             bio["creative_advice"] = creative_advice
         self.repo.update(character_id, {"bio_json": json.dumps(bio, ensure_ascii=False)})
-        self.repo.touch_character_updated_at(character_id)
+        self._after_character_material_changed(character_id)
         updated = self.repo.get_by_id(character_id)
         if not updated:
             raise ValueError("角色不存在")

@@ -183,6 +183,78 @@ class TestMaterialCharacterService:
         assert char.name == "New"
         assert char.display_name == "NewDisp"
 
+    def test_upload_character_avatar_sets_file_and_detail_url(self, material_svc, sample_png):
+        char = material_svc.create_character("AvatarChar")
+        up = UploadFile(filename="avatar.png", file=BytesIO(sample_png))
+        char2 = material_svc.upload_character_avatar(char.id, up)
+        assert char2.avatar_filename
+        detail = material_svc.character_to_detail_dict(material_svc.get_character(char.id))
+        assert detail["avatar_url"] == f"/api/material/characters/{char.id}/images/raw/{char2.avatar_filename}"
+        assert any("头像" in img.get("tags", []) for img in detail["raw_images"])
+        path = material_svc.get_raw_image_path(char.id, char2.avatar_filename)
+        assert path and os.path.isfile(path)
+
+    def test_upload_character_avatar_list_summary_prefers_avatar_slot(self, material_svc, sample_png):
+        char = material_svc.create_character("AvSlot")
+        material_svc.upload_raw_images(
+            char.id,
+            [UploadFile(filename="older.png", file=BytesIO(sample_png))],
+            [["立绘"]],
+        )
+        material_svc.upload_character_avatar(
+            char.id,
+            UploadFile(filename="face.png", file=BytesIO(sample_png)),
+        )
+        char3 = material_svc.get_character(char.id)
+        items, _ = material_svc.list_character_summaries()
+        row = next(x for x in items if x["id"] == char.id)
+        assert char3.avatar_filename in row["avatar_url"]
+        assert row["avatar_url"] == f"/api/material/characters/{char.id}/images/raw/{char3.avatar_filename}"
+
+    def test_upload_character_avatar_unknown_character_raises(self, material_svc, sample_png):
+        up = UploadFile(filename="a.png", file=BytesIO(sample_png))
+        with pytest.raises(ValueError, match="角色不存在"):
+            material_svc.upload_character_avatar("mchar_nonexistent_xx", up)
+
+    def test_material_complete_sets_done_status(self, material_svc, sample_png):
+        char = material_svc.create_character("Complete")
+        material_svc.update_setting_text(char.id, "角色设定说明内容")
+        material_svc.upload_raw_images(
+            char.id,
+            [UploadFile(filename="r.png", file=BytesIO(sample_png))],
+            [["立绘"]],
+        )
+        urls = [f"https://slot{i}.example/s.png" for i in range(5)]
+        bio = json.dumps({"chara_profile": "# 小档案\n正文已生成"}, ensure_ascii=False)
+        material_svc.repo.update(
+            char.id,
+            {
+                "official_photos_json": json.dumps(urls, ensure_ascii=False),
+                "bio_json": bio,
+            },
+        )
+        material_svc._after_character_material_changed(char.id)
+        assert material_svc.get_character(char.id).status == "done"
+
+    def test_material_done_demotes_when_standard_slot_cleared(self, material_svc, sample_png):
+        char = material_svc.create_character("Demote")
+        material_svc.update_setting_text(char.id, "设定")
+        material_svc.upload_raw_images(
+            char.id,
+            [UploadFile(filename="r.png", file=BytesIO(sample_png))],
+            None,
+        )
+        urls = [f"https://x{i}.test/p.png" for i in range(5)]
+        bio = json.dumps({"chara_profile": "档案"}, ensure_ascii=False)
+        material_svc.repo.update(
+            char.id,
+            {"official_photos_json": json.dumps(urls, ensure_ascii=False), "bio_json": bio},
+        )
+        material_svc._after_character_material_changed(char.id)
+        assert material_svc.get_character(char.id).status == "done"
+        material_svc.clear_official_photo_slot(char.id, 0)
+        assert material_svc.get_character(char.id).status == "draft"
+
     def test_delete_raw_image_removes_file(self, material_svc, sample_png):
         char = material_svc.create_character("D")
         uploaded, _ = material_svc.upload_raw_images(

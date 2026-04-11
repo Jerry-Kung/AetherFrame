@@ -5,7 +5,7 @@ export const STATUS_LABEL: Record<CharaStatus, string> = {
   idle: "还没开始",
   draft: "资料待补充",
   processing: "加工进行中",
-  done: "已整理完成",
+  done: "资料已完善",
 };
 
 export const STATUS_STYLE: Record<

@@ -44,7 +44,7 @@ from app.schemas.material import (
 )
 from app.repositories.material_repository import SHOT_TYPE_TO_INDEX
 from app.services.material_service import MaterialService
-from app.services.file_service import FileValidationError
+from app.services.file_service import FileSaveError, FileValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +130,36 @@ async def patch_character(
     except Exception as e:
         logger.error(f"API 错误 - 更新角色失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="更新角色失败")
+
+
+@router.post("/characters/{character_id}/avatar", response_model=ApiResponse)
+async def upload_character_avatar(
+    character_id: str,
+    file: UploadFile = File(...),
+    service: MaterialService = Depends(get_material_service),
+):
+    character_id = ensure_valid_character_id(character_id)
+    logger.info(f"API 请求 - 上传角色头像: {character_id}")
+    try:
+        char = service.upload_character_avatar(character_id, file)
+        detail = service.character_to_detail_dict(char)
+        return ApiResponse(
+            success=True,
+            data=CharacterDetail(**detail).model_dump(mode="json"),
+            message="头像已更新",
+        )
+    except ValueError as e:
+        if str(e) == "角色不存在":
+            raise HTTPException(status_code=404, detail="角色不存在") from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except FileValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except FileSaveError as e:
+        logger.error(f"API 错误 - 保存头像文件失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"API 错误 - 上传头像失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="上传头像失败")
 
 
 @router.get("/characters/{character_id}", response_model=ApiResponse)
@@ -453,7 +483,11 @@ async def get_standard_photo_status(
 ):
     task = service.get_standard_photo_task_status(character_id)
     if not task:
-        raise HTTPException(status_code=404, detail="标准照任务不存在")
+        return ApiResponse(
+            success=True,
+            data=None,
+            message="暂无标准照任务",
+        )
     return ApiResponse(
         success=True,
         data=StandardPhotoStatusResponse(**task).model_dump(mode="json"),

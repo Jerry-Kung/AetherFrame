@@ -12,6 +12,7 @@ import CharaSidebar from "./components/CharaSidebar";
 import RawMaterialTab from "./components/RawMaterialTab";
 import ProcessTaskTab, { type ProcessSubTaskId } from "./components/ProcessTaskTab";
 import OfficialContentTab from "./components/OfficialContentTab";
+import AvatarPickerModal from "./components/AvatarPickerModal";
 
 const decorations = [
   { size: 280, top: "-6%", left: "-5%", opacity: 0.15, delay: "0s" },
@@ -63,6 +64,7 @@ export default function MaterialPage() {
   const [preview, setPreview] = useState<{ urls: string[]; index: number; altPrefix: string } | null>(
     null
   );
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
 
   const settingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -245,6 +247,24 @@ export default function MaterialPage() {
     URL.revokeObjectURL(url);
     showToast("已导出 JSON 档案（本地预览用）");
   }, [selected, showToast]);
+
+  const handleAvatarConfirm = useCallback(
+    async (croppedDataUrl: string) => {
+      if (!selected) return;
+      try {
+        const res = await fetch(croppedDataUrl);
+        const blob = await res.blob();
+        const file = new File([blob], "avatar.png", { type: blob.type || "image/png" });
+        const d = await materialApi.uploadCharacterAvatar(selected.id, file);
+        mergeChara(toCharaProfile(d));
+        setAvatarPickerOpen(false);
+        showToast("头像已更新");
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "更新头像失败");
+      }
+    },
+    [selected, mergeChara, showToast]
+  );
 
   const handleSettingTextChange = useCallback(
     (v: string) => {
@@ -583,6 +603,7 @@ export default function MaterialPage() {
                 onEdit={openEdit}
                 onStartProcess={handleStartProcess}
                 onExport={handleExport}
+                onChangeAvatar={selected ? () => setAvatarPickerOpen(true) : undefined}
               />
             </div>
           </div>
@@ -654,6 +675,15 @@ export default function MaterialPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {selected && (
+        <AvatarPickerModal
+          isOpen={avatarPickerOpen}
+          chara={selected}
+          onCancel={() => setAvatarPickerOpen(false)}
+          onConfirm={(url) => void handleAvatarConfirm(url)}
+        />
       )}
 
       {preview && (

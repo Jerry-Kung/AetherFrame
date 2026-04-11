@@ -129,6 +129,25 @@ export async function createCharacter(body: {
   }
 }
 
+/** 上传裁剪后的角色头像（写入官方参考图并设为当前头像） */
+export async function uploadCharacterAvatar(
+  characterId: string,
+  file: File
+): Promise<ApiCharacterDetail> {
+  assertValidCharacterId(characterId, "上传角色头像");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/avatar`;
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const response = await fetchWithTimeout(url, { method: "POST", body: form });
+    const data = await parseJson<ApiCharacterDetail>(response);
+    throwIfError(response, data);
+    return data.data as ApiCharacterDetail;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
 export async function patchCharacter(
   id: string,
   body: { name?: string; display_name?: string | null }
@@ -390,14 +409,14 @@ export async function retryStandardPhotoTask(characterId: string): Promise<Stand
 
 export async function getStandardPhotoStatus(
   characterId: string
-): Promise<StandardPhotoStatusResult> {
+): Promise<StandardPhotoStatusResult | null> {
   assertValidCharacterId(characterId, "查询标准照任务状态");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/standard-photo/status`;
   try {
     const response = await fetchWithTimeout(url, { method: "GET" });
-    const data = await parseJson<StandardPhotoStatusResult>(response);
+    const data = await parseJson<StandardPhotoStatusResult | null>(response);
     throwIfError(response, data);
-    return data.data as StandardPhotoStatusResult;
+    return data.data ?? null;
   } catch (e) {
     rethrow(e);
   }
