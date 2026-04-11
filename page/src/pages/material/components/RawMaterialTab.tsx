@@ -5,10 +5,9 @@ interface RawMaterialTabProps {
   characterId: string;
   settingText: string;
   settingFileName: string;
-  onSettingTextChange: (v: string) => void;
-  /** 展示模式结束编辑（失焦 / 完成）时立即落库，并清除「来源文件名」徽章 */
-  onSettingCommit: (text: string) => void | Promise<void>;
-  /** FileReader 读出文本后由父组件单次上传并更新状态（避免与 debounce 重复请求） */
+  /** 仅点击「完成」时调用；成功后再收起编辑区；失败时应 reject 以便保留展开态与草稿 */
+  onSettingCommit: (text: string) => Promise<void>;
+  /** FileReader 读出文本后由父组件上传并更新状态 */
   onSettingImportedFromFile: (text: string, file: File) => void | Promise<void>;
   rawImages: CharaRawImage[];
   onUploadRawFiles: (files: File[], type: RawImageType) => void | Promise<void>;
@@ -59,7 +58,6 @@ const RawMaterialTab = ({
   characterId,
   settingText,
   settingFileName,
-  onSettingTextChange,
   onSettingCommit,
   onSettingImportedFromFile,
   rawImages,
@@ -74,7 +72,8 @@ const RawMaterialTab = ({
   const settingTextareaRef = useRef<HTMLTextAreaElement>(null);
   const settingEditingRef = useRef(false);
   const [hoverPreview, setHoverPreview] = useState<{ url: string; x: number; y: number } | null>(null);
-  const [settingEditing, setSettingEditing] = useState(false);
+  const [settingExpanded, setSettingExpanded] = useState(false);
+  const [settingDraft, setSettingDraft] = useState("");
 
   const officialImages = useMemo(
     () => rawImages.filter((img) => img.type === "official"),
@@ -91,33 +90,41 @@ const RawMaterialTab = ({
 
   useEffect(() => {
     settingEditingRef.current = false;
-    setSettingEditing(false);
+    setSettingExpanded(false);
   }, [characterId]);
 
   useEffect(() => {
-    settingEditingRef.current = settingEditing;
-  }, [settingEditing]);
+    settingEditingRef.current = settingExpanded;
+  }, [settingExpanded]);
 
   useEffect(() => {
-    if (settingEditing) {
+    setSettingDraft(settingText);
+  }, [characterId, settingText, settingFileName]);
+
+  useEffect(() => {
+    if (settingExpanded) {
       const id = requestAnimationFrame(() => settingTextareaRef.current?.focus());
       return () => cancelAnimationFrame(id);
     }
     return undefined;
-  }, [settingEditing]);
+  }, [settingExpanded]);
 
-  const commitSettingEdit = useCallback(() => {
+  const commitSettingEdit = useCallback(async () => {
     if (!settingEditingRef.current) return;
-    settingEditingRef.current = false;
-    setSettingEditing(false);
-    const v = settingTextareaRef.current?.value ?? settingText;
-    void onSettingCommit(v);
-  }, [onSettingCommit, settingText]);
+    try {
+      await onSettingCommit(settingDraft);
+      settingEditingRef.current = false;
+      setSettingExpanded(false);
+    } catch {
+      /* 父组件已 toast；保持展开与草稿 */
+    }
+  }, [onSettingCommit, settingDraft]);
 
   const startSettingEdit = useCallback(() => {
+    setSettingDraft(settingText);
     settingEditingRef.current = true;
-    setSettingEditing(true);
-  }, []);
+    setSettingExpanded(true);
+  }, [settingText]);
 
   const handleTxtFiles = useCallback(
     (files: FileList | null) => {
@@ -274,7 +281,7 @@ const RawMaterialTab = ({
         className="shrink-0 rounded-xl border border-rose-100/80 bg-white/60 backdrop-blur-sm p-3 shadow-sm"
         style={{ boxShadow: "0 1px 12px rgba(244, 114, 182, 0.06)" }}
       >
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div className={`flex flex-wrap items-center justify-between gap-2 ${settingExpanded ? "mb-2" : ""}`}>
           <h3
             className="text-sm font-semibold text-rose-700/80 flex flex-wrap items-center gap-1.5 min-w-0"
             style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
@@ -308,7 +315,7 @@ const RawMaterialTab = ({
               <i className="ri-upload-2-line mr-1" />
               上传 .txt / .md
             </button>
-            {settingEditing ? (
+            {settingExpanded ? (
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
@@ -332,29 +339,27 @@ const RawMaterialTab = ({
           </div>
         </div>
 
-        {settingEditing ? (
+        {settingExpanded ? (
           <textarea
             ref={settingTextareaRef}
-            value={settingText}
-            onChange={(e) => onSettingTextChange(e.target.value)}
-            onBlur={() => void commitSettingEdit()}
-            placeholder="在此编辑设定全文，失焦或点击「完成」将保存…"
+            value={settingDraft}
+            onChange={(e) => setSettingDraft(e.target.value)}
+            placeholder="编辑完成后请点击右上角「完成」保存到服务器；未点完成则不会保存。"
             className="w-full min-h-[140px] rounded-xl border border-rose-100/90 bg-white/75 px-3 py-2.5 text-sm text-rose-900/85 placeholder:text-rose-300/60 resize-y focus:outline-none focus:ring-2 focus:ring-pink-200/80"
           />
         ) : (
-          <button
-            type="button"
-            onClick={startSettingEdit}
-            className="w-full min-h-[140px] rounded-xl border border-rose-100/80 bg-white/50 px-3 py-2.5 text-left text-sm text-rose-900/85 cursor-text transition-colors hover:bg-white/70 hover:border-rose-200/70"
-          >
+          <div className="rounded-xl border border-rose-100/70 bg-white/40 px-3 py-2 text-sm text-rose-900/80">
             {hasSetting ? (
-              <span className="whitespace-pre-wrap block w-full">{settingText}</span>
+              <p className="whitespace-pre-wrap line-clamp-3 break-words leading-relaxed">{settingText}</p>
             ) : (
-              <span className="italic text-rose-400/80">
-                尚未填写设定。点击此处或右上角「编辑」开始输入，也可使用「上传 .txt / .md」导入文本文件。
-              </span>
+              <p className="italic text-rose-400/80 leading-relaxed">
+                尚未填写设定。点击右上角「编辑」输入全文，或使用「上传 .txt / .md」导入。
+              </p>
             )}
-          </button>
+            {hasSetting ? (
+              <p className="text-[11px] text-rose-400/80 mt-1.5">点「编辑」查看与修改全文。</p>
+            ) : null}
+          </div>
         )}
       </section>
 

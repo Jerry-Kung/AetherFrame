@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { CharaProfile, RawImageType } from "@/types/material";
 import { DEFAULT_CHARA_AVATAR_PLACEHOLDER, toCharaProfile, summaryToListProfile } from "@/types/material";
@@ -36,8 +36,6 @@ const MAIN_TABS: { id: MainTabId; label: string; icon: string }[] = [
   { id: "official", label: "正式内容", icon: "ri-trophy-line" },
 ];
 
-const SETTING_DEBOUNCE_MS = 600;
-
 function downloadDataUrl(url: string, filename: string) {
   const a = document.createElement("a");
   a.href = url;
@@ -65,8 +63,6 @@ export default function MaterialPage() {
     null
   );
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
-
-  const settingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -133,13 +129,6 @@ export default function MaterialPage() {
       cancelled = true;
     };
   }, [selectedId, mergeChara, showToast]);
-
-  useEffect(() => {
-    if (settingDebounceRef.current) {
-      clearTimeout(settingDebounceRef.current);
-      settingDebounceRef.current = null;
-    }
-  }, [selectedId]);
 
   const selected = useMemo(
     () => charas.find((c) => c.id === selectedId) ?? null,
@@ -266,54 +255,27 @@ export default function MaterialPage() {
     [selected, mergeChara, showToast]
   );
 
-  const handleSettingTextChange = useCallback(
-    (v: string) => {
-      if (!selected) return;
-      const id = selected.id;
-      patchCharaFields(id, { settingText: v });
-      if (settingDebounceRef.current) clearTimeout(settingDebounceRef.current);
-      settingDebounceRef.current = setTimeout(() => {
-        settingDebounceRef.current = null;
-        void (async () => {
-          try {
-            const d = await materialApi.putSettingText(id, v);
-            mergeChara(toCharaProfile(d));
-          } catch (e) {
-            showToast(e instanceof ApiError ? e.message : "保存设定失败");
-          }
-        })();
-      }, SETTING_DEBOUNCE_MS);
-    },
-    [selected, patchCharaFields, mergeChara, showToast]
-  );
-
   const handleSettingCommit = useCallback(
     async (text: string) => {
-      if (!selected) return;
-      const id = selected.id;
-      if (settingDebounceRef.current) {
-        clearTimeout(settingDebounceRef.current);
-        settingDebounceRef.current = null;
+      if (!selected) {
+        throw new Error("未选择角色");
       }
-      patchCharaFields(id, { settingText: text, settingFileName: "" });
+      const id = selected.id;
       try {
         const d = await materialApi.putSettingText(id, text, true);
         mergeChara(toCharaProfile(d));
       } catch (e) {
         showToast(e instanceof ApiError ? e.message : "保存设定失败");
+        throw e;
       }
     },
-    [selected, patchCharaFields, mergeChara, showToast]
+    [selected, mergeChara, showToast]
   );
 
   const handleSettingImportedFromFile = useCallback(
     async (text: string, file: File) => {
       if (!selected) return;
       const id = selected.id;
-      if (settingDebounceRef.current) {
-        clearTimeout(settingDebounceRef.current);
-        settingDebounceRef.current = null;
-      }
       patchCharaFields(id, { settingText: text, settingFileName: file.name });
       try {
         const d = await materialApi.putSettingFile(id, file);
@@ -596,7 +558,6 @@ export default function MaterialPage() {
                     characterId={selected.id}
                     settingText={selected.settingText}
                     settingFileName={selected.settingFileName}
-                    onSettingTextChange={handleSettingTextChange}
                     onSettingCommit={handleSettingCommit}
                     onSettingImportedFromFile={handleSettingImportedFromFile}
                     rawImages={selected.rawImages}
