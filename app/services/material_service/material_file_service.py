@@ -27,6 +27,9 @@ ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 ALLOWED_IMAGE_MIMETYPES = {"image/png", "image/jpeg", "image/webp"}
 RAW_IMAGE_TYPES = {"official", "fanart"}
 
+# 角色头像固定存储名（与前端裁剪 PNG 一致，目录内仅保留此一张）
+AVATAR_STORED_FILENAME = "avatar.png"
+
 
 def get_character_dir(character_id: str) -> str:
     return os.path.join(get_material_characters_dir(), character_id)
@@ -38,6 +41,11 @@ def get_character_raw_dir(character_id: str) -> str:
 
 def get_character_raw_type_dir(character_id: str, raw_image_type: str) -> str:
     return os.path.join(get_character_raw_dir(character_id), raw_image_type)
+
+
+def get_character_avatar_dir(character_id: str) -> str:
+    """角色头像专用目录，与 raw/official、raw/fanart 分离。"""
+    return os.path.join(get_character_dir(character_id), "avatar")
 
 
 def get_character_standard_photo_dir(character_id: str) -> str:
@@ -114,6 +122,7 @@ def ensure_character_dirs(character_id: str) -> Tuple[str, str]:
     ensure_dir_exists(raw_dir)
     ensure_dir_exists(get_character_raw_type_dir(character_id, "official"))
     ensure_dir_exists(get_character_raw_type_dir(character_id, "fanart"))
+    ensure_dir_exists(get_character_avatar_dir(character_id))
     ensure_dir_exists(get_character_standard_photo_dir(character_id))
     ensure_dir_exists(get_chara_profile_dir(character_id))
     return char_dir, raw_dir
@@ -182,6 +191,73 @@ def get_raw_image_path(character_id: str, filename: str, raw_image_type: str = "
             continue
         return path
     return None
+
+
+def _clear_avatar_dir_files(character_id: str) -> None:
+    """删除 avatar 目录下已有图片，保证目录内仅保留即将写入的一张。"""
+    d = get_character_avatar_dir(character_id)
+    if not os.path.isdir(d):
+        return
+    for name in os.listdir(d):
+        ext = os.path.splitext(name)[1].lower()
+        if ext not in ALLOWED_IMAGE_EXTENSIONS:
+            continue
+        path = os.path.join(d, name)
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError as e:
+                logger.warning(f"删除旧头像文件失败 {path}: {e}")
+
+
+def save_avatar_image(character_id: str, file: UploadFile) -> str:
+    """
+    将头像保存为 avatar/avatar.png（与 raw 参考图分离）。
+    Returns:
+        固定 stored_filename：avatar.png
+    """
+    ensure_character_dirs(character_id)
+    avatar_dir = get_character_avatar_dir(character_id)
+    ensure_dir_exists(avatar_dir)
+
+    is_valid, err = validate_image_file(file)
+    if not is_valid:
+        raise FileValidationError(err)
+
+    _clear_avatar_dir_files(character_id)
+    return save_uploaded_file(
+        file,
+        save_dir=avatar_dir,
+        save_filename=AVATAR_STORED_FILENAME,
+        allowed_extensions=ALLOWED_IMAGE_EXTENSIONS,
+        allowed_mimetypes=ALLOWED_IMAGE_MIMETYPES,
+    )
+
+
+def get_avatar_image_path(character_id: str, filename: str) -> Optional[str]:
+    """解析 avatar 目录下的文件路径；越界或不存在则返回 None。"""
+    d = get_character_avatar_dir(character_id)
+    path = get_file_path(d, filename)
+    if not path or not os.path.isfile(path):
+        return None
+    real_d = os.path.realpath(d)
+    real_p = os.path.realpath(path)
+    if not real_p.startswith(real_d + os.sep) and real_p != real_d:
+        logger.warning(f"路径越界拒绝: {path}")
+        return None
+    return path
+
+
+def delete_avatar_file(character_id: str, filename: str) -> bool:
+    """删除 avatar 目录下单个文件。"""
+    d = get_character_avatar_dir(character_id)
+    try:
+        if delete_file(d, filename):
+            return True
+        return False
+    except FileDeleteError as e:
+        logger.warning(f"删除头像文件失败: {e}")
+        return False
 
 
 def delete_raw_image_file(character_id: str, stored_filename: str, raw_image_type: str = "official") -> bool:

@@ -45,6 +45,18 @@ class MaterialService:
     def raw_image_url(self, character_id: str, stored_filename: str) -> str:
         return f"/api/material/characters/{character_id}/images/raw/{stored_filename}"
 
+    def avatar_stored_image_url(self, character_id: str, stored_filename: str) -> str:
+        return f"/api/material/characters/{character_id}/images/avatar/{stored_filename}"
+
+    def avatar_url_for_character(self, character_id: str, avatar_filename: Optional[str]) -> str:
+        """头像 URL：新数据在 images/avatar/；旧数据仍指向 raw 下的文件名。"""
+        if not avatar_filename:
+            return ""
+        path = material_file_service.get_avatar_image_path(character_id, avatar_filename)
+        if path:
+            return self.avatar_stored_image_url(character_id, avatar_filename)
+        return self.raw_image_url(character_id, avatar_filename)
+
     def standard_photo_result_image_url(self, character_id: str, filename: str) -> str:
         return f"/api/material/characters/{character_id}/standard-photo/result-images/{filename}"
 
@@ -214,7 +226,7 @@ class MaterialService:
             )
             avatar_url = ""
             if c.avatar_filename:
-                avatar_url = self.raw_image_url(c.id, c.avatar_filename)
+                avatar_url = self.avatar_url_for_character(c.id, c.avatar_filename)
             elif first_img is not None:
                 avatar_url = self.raw_image_url(c.id, first_img.stored_filename)
             summaries.append(
@@ -328,13 +340,11 @@ class MaterialService:
         return uploaded, failed
 
     def upload_character_avatar(self, character_id: str, file: UploadFile) -> MaterialCharacter:
-        """将上传图片保存为官方参考图并设为角色头像（avatar_filename）。"""
+        """将头像保存至独立 avatar 目录（与 raw 参考图分离），目录内仅保留一张。"""
         char = self.repo.get_by_id(character_id)
         if not char:
             raise ValueError("角色不存在")
-        image_id = material_file_service.new_image_id()
-        stored = material_file_service.save_raw_image(character_id, image_id, file, "official")
-        self.repo.add_raw_image(character_id, image_id, stored, "official", ["头像"])
+        stored = material_file_service.save_avatar_image(character_id, file)
         self.repo.update(character_id, {"avatar_filename": stored})
         self._after_character_material_changed(character_id)
         return self.repo.get_by_id(character_id)
@@ -347,6 +357,12 @@ class MaterialService:
         if not row:
             return None
         return material_file_service.get_raw_image_path(character_id, filename, row.type)
+
+    def get_avatar_image_path(self, character_id: str, filename: str) -> Optional[str]:
+        char = self.repo.get_by_id(character_id)
+        if not char:
+            return None
+        return material_file_service.get_avatar_image_path(character_id, filename)
 
     def character_to_detail_dict(self, char: MaterialCharacter) -> Dict[str, Any]:
         from app.models.material import MaterialCharacterRawImage
@@ -386,7 +402,7 @@ class MaterialService:
 
         avatar_url = ""
         if char.avatar_filename:
-            avatar_url = self.raw_image_url(char.id, char.avatar_filename)
+            avatar_url = self.avatar_url_for_character(char.id, char.avatar_filename)
 
         return {
             "id": char.id,

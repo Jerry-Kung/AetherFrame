@@ -226,14 +226,6 @@ const ImageCropper = ({
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
         >
-          <img
-            src={imageUrl}
-            alt="选择区域"
-            className="absolute inset-0 w-full h-full object-contain"
-            style={{ opacity: 0.45 }}
-            draggable={false}
-          />
-
           {imgLoaded && (
             <div
               className="absolute"

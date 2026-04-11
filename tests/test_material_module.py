@@ -208,11 +208,13 @@ class TestMaterialCharacterService:
         char = material_svc.create_character("AvatarChar")
         up = UploadFile(filename="avatar.png", file=BytesIO(sample_png))
         char2 = material_svc.upload_character_avatar(char.id, up)
-        assert char2.avatar_filename
+        assert char2.avatar_filename == "avatar.png"
         detail = material_svc.character_to_detail_dict(material_svc.get_character(char.id))
-        assert detail["avatar_url"] == f"/api/material/characters/{char.id}/images/raw/{char2.avatar_filename}"
-        assert any("头像" in img.get("tags", []) for img in detail["raw_images"])
-        path = material_svc.get_raw_image_path(char.id, char2.avatar_filename)
+        assert detail["avatar_url"] == (
+            f"/api/material/characters/{char.id}/images/avatar/{char2.avatar_filename}"
+        )
+        assert detail["raw_images"] == []
+        path = material_svc.get_avatar_image_path(char.id, char2.avatar_filename)
         assert path and os.path.isfile(path)
 
     def test_upload_character_avatar_list_summary_prefers_avatar_slot(self, material_svc, sample_png):
@@ -230,7 +232,9 @@ class TestMaterialCharacterService:
         items, _ = material_svc.list_character_summaries()
         row = next(x for x in items if x["id"] == char.id)
         assert char3.avatar_filename in row["avatar_url"]
-        assert row["avatar_url"] == f"/api/material/characters/{char.id}/images/raw/{char3.avatar_filename}"
+        assert row["avatar_url"] == (
+            f"/api/material/characters/{char.id}/images/avatar/{char3.avatar_filename}"
+        )
 
     def test_upload_character_avatar_unknown_character_raises(self, material_svc, sample_png):
         up = UploadFile(filename="a.png", file=BytesIO(sample_png))

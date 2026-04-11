@@ -129,7 +129,7 @@ export async function createCharacter(body: {
   }
 }
 
-/** 上传裁剪后的角色头像（写入官方参考图并设为当前头像） */
+/** 上传裁剪后的角色头像（写入独立 avatar 目录，与官方/同人参考图分离） */
 export async function uploadCharacterAvatar(
   characterId: string,
   file: File

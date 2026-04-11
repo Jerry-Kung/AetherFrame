@@ -417,6 +417,27 @@ async def get_raw_image(
     return FileResponse(path=path, media_type=media_type, filename=filename)
 
 
+@router.get("/characters/{character_id}/images/avatar/{filename}")
+async def get_avatar_image(
+    character_id: str,
+    filename: str,
+    service: MaterialService = Depends(get_material_service),
+):
+    logger.debug(f"API 请求 - 读取角色头像: {character_id}/{filename}")
+    path = service.get_avatar_image_path(character_id, filename)
+    if not path:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    ext = os.path.splitext(filename)[1].lower()
+    media_type_map = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+    }
+    media_type = media_type_map.get(ext, "application/octet-stream")
+    return FileResponse(path=path, media_type=media_type, filename=filename)
+
+
 @router.post("/characters/{character_id}/standard-photo/start", response_model=ApiResponse)
 async def start_standard_photo(
     character_id: str,
