@@ -22,6 +22,11 @@ function isPromptCharaSelectable(c: CharaProfile): boolean {
   return c.status === "done";
 }
 
+/** 原生 <option> 仅支持纯文本，用符号区分「资料已完善 / 待完善」 */
+function charaSelectOptionLabel(c: CharaProfile): string {
+  return isPromptCharaSelectable(c) ? `✓ ${c.name}` : `✗ ${c.name}`;
+}
+
 function stepHintLabel(step: string | null | undefined): string | null {
   if (!step) return null;
   if (step === "collecting") return "正在生成备选 Prompt…";
@@ -941,14 +946,14 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
                       <option value="">暂无「资料已完善」的角色</option>
                       {charas.map((c) => (
                         <option key={c.id} value={c.id} disabled>
-                          {c.name}
+                          {charaSelectOptionLabel(c)}
                         </option>
                       ))}
                     </>
                   ) : (
                     charas.map((c) => (
                       <option key={c.id} value={c.id} disabled={!isPromptCharaSelectable(c)}>
-                        {c.name}
+                        {charaSelectOptionLabel(c)}
                       </option>
                     ))
                   )}
@@ -957,6 +962,14 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
                   <i className="ri-arrow-down-s-line text-rose-400 text-sm"></i>
                 </div>
               </div>
+              {hasCharas &&
+                !listLoading &&
+                charas.some((c) => !isPromptCharaSelectable(c)) && (
+                  <p className="text-[11px] text-rose-400/70 mt-1.5 leading-snug">
+                    <span className="mr-2.5">✓ 资料已完善</span>
+                    <span>✗ 资料未完善</span>
+                  </p>
+                )}
               {listLoading && (
                 <p className="text-xs text-rose-300/70 mt-2">正在加载角色列表…</p>
               )}
