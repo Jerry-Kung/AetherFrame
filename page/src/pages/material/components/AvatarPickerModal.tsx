@@ -227,6 +227,14 @@ const ImageCropper = ({
           onMouseLeave={handleMouseUp}
         >
           {imgLoaded && (
+            <img
+              src={imageUrl}
+              alt="选择区域"
+              className="absolute inset-0 z-0 w-full h-full object-contain"
+              draggable={false}
+            />
+          )}
+          {imgLoaded && (
             <div
               className="absolute"
               style={{
@@ -236,24 +244,6 @@ const ImageCropper = ({
               }}
               onMouseDown={(e) => handleMouseDown(e, "move")}
             >
-              <div
-                className="absolute inset-0 overflow-hidden rounded-sm"
-                style={{ pointerEvents: "none" }}
-              >
-                <img
-                  src={imageUrl}
-                  alt=""
-                  className="absolute object-contain"
-                  style={{
-                    width: `${(1 / crop.w) * 100}%`,
-                    height: `${(1 / crop.h) * 100}%`,
-                    left: `${(-crop.x / crop.w) * 100}%`,
-                    top: `${(-crop.y / crop.h) * 100}%`,
-                  }}
-                  draggable={false}
-                />
-              </div>
-
               <div
                 className="absolute inset-0 rounded-sm"
                 style={{
