@@ -18,6 +18,10 @@ const COUNT_OPTIONS = [2, 3, 4] as const;
 
 const POLL_INTERVAL_MS = 10000;
 
+function isPromptCharaSelectable(c: CharaProfile): boolean {
+  return c.status === "done";
+}
+
 function stepHintLabel(step: string | null | undefined): string | null {
   if (!step) return null;
   if (step === "collecting") return "正在生成备选 Prompt…";
@@ -570,11 +574,18 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
       setSelectedCharaId("");
       return;
     }
-    setSelectedCharaId((prev) => (prev && charas.some((c) => c.id === prev) ? prev : charas[0]!.id));
+    const firstDone = charas.find(isPromptCharaSelectable);
+    setSelectedCharaId((prev) => {
+      if (prev && charas.some((c) => c.id === prev)) {
+        return prev;
+      }
+      return firstDone?.id ?? "";
+    });
   }, [charas]);
 
   const selectedChara = charas.find((c) => c.id === selectedCharaId) ?? null;
   const hasCharas = charas.length > 0;
+  const hasSelectableChara = charas.some(isPromptCharaSelectable);
 
   const upsertHistoryRecord = useCallback((record: PromptHistoryRecord) => {
     setHistoryRecords((prev) => {
@@ -640,7 +651,10 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
   }, [charas, applyHistoryRecordToMain, upsertHistoryRecord]);
 
   const startGenerate = async () => {
-    if (!selectedCharaId || !seedPrompt.trim()) return;
+    const charaForGen = charas.find((c) => c.id === selectedCharaId);
+    if (!selectedCharaId || !seedPrompt.trim() || !charaForGen || !isPromptCharaSelectable(charaForGen)) {
+      return;
+    }
     setGenError(null);
     setStatusStep(null);
     setGenState("generating");
@@ -871,7 +885,11 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
     };
   }, []);
 
-  const canSubmit = hasCharas && !!selectedCharaId && !!seedPrompt.trim();
+  const canSubmit =
+    hasCharas &&
+    !!selectedChara &&
+    isPromptCharaSelectable(selectedChara) &&
+    !!seedPrompt.trim();
   const submitDisabled = !canSubmit || genState === "generating" || !!listLoading;
   const stepHint = stepHintLabel(statusStep);
 
@@ -918,9 +936,18 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
                 >
                   {!hasCharas && !listLoading ? (
                     <option value="">暂无角色，请先在「素材加工」中创建</option>
+                  ) : hasCharas && !hasSelectableChara ? (
+                    <>
+                      <option value="">暂无「资料已完善」的角色</option>
+                      {charas.map((c) => (
+                        <option key={c.id} value={c.id} disabled>
+                          {c.name}
+                        </option>
+                      ))}
+                    </>
                   ) : (
                     charas.map((c) => (
-                      <option key={c.id} value={c.id}>
+                      <option key={c.id} value={c.id} disabled={!isPromptCharaSelectable(c)}>
                         {c.name}
                       </option>
                     ))
