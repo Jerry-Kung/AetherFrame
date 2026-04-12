@@ -462,18 +462,33 @@ export async function deleteOfficialPhotoSlot(
   }
 }
 
-/** 保存角色小档案 */
-export async function saveCharaProfile(
+export type PatchCharacterBioBody = {
+  chara_profile?: string;
+  creative_advice?: string;
+  official_seed_prompts?: Record<string, unknown>;
+};
+
+/** 合并更新角色 bio（chara_profile / creative_advice / official_seed_prompts 至少一项） */
+export async function patchCharacterBio(
   characterId: string,
-  charaProfile: string
+  body: PatchCharacterBioBody
 ): Promise<ApiCharacterDetail> {
-  assertValidCharacterId(characterId, "保存角色小档案");
+  assertValidCharacterId(characterId, "更新角色档案");
+  const payload: Record<string, unknown> = {};
+  if (body.chara_profile !== undefined) payload.chara_profile = body.chara_profile;
+  if (body.creative_advice !== undefined) payload.creative_advice = body.creative_advice;
+  if (body.official_seed_prompts !== undefined) {
+    payload.official_seed_prompts = body.official_seed_prompts;
+  }
+  if (Object.keys(payload).length === 0) {
+    throw new ApiError("至少需要一项 bio 更新字段", 400);
+  }
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/bio`;
   try {
     const response = await fetchWithTimeout(url, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chara_profile: charaProfile }),
+      body: JSON.stringify(payload),
     });
     const data = await parseJson<ApiCharacterDetail>(response);
     throwIfError(response, data);
@@ -483,23 +498,18 @@ export async function saveCharaProfile(
   }
 }
 
+/** 保存角色小档案 */
+export async function saveCharaProfile(
+  characterId: string,
+  charaProfile: string
+): Promise<ApiCharacterDetail> {
+  return patchCharacterBio(characterId, { chara_profile: charaProfile });
+}
+
 /** 保存角色创作建议 */
 export async function saveCreativeAdvice(
   characterId: string,
   creativeAdvice: string
 ): Promise<ApiCharacterDetail> {
-  assertValidCharacterId(characterId, "保存创作建议");
-  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/bio`;
-  try {
-    const response = await fetchWithTimeout(url, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ creative_advice: creativeAdvice }),
-    });
-    const data = await parseJson<ApiCharacterDetail>(response);
-    throwIfError(response, data);
-    return data.data as ApiCharacterDetail;
-  } catch (e) {
-    rethrow(e);
-  }
+  return patchCharacterBio(characterId, { creative_advice: creativeAdvice });
 }

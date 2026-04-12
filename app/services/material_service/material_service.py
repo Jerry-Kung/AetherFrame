@@ -842,12 +842,19 @@ class MaterialService:
         character_id: str,
         chara_profile: Optional[str] = None,
         creative_advice: Optional[str] = None,
+        official_seed_prompts: Optional[Dict[str, Any]] = None,
     ) -> MaterialCharacter:
         char = self.repo.get_by_id(character_id)
         if not char:
             raise ValueError("角色不存在")
-        if chara_profile is None and creative_advice is None:
-            raise ValueError("至少提供 chara_profile 或 creative_advice 之一")
+        if (
+            chara_profile is None
+            and creative_advice is None
+            and official_seed_prompts is None
+        ):
+            raise ValueError(
+                "至少提供 chara_profile、creative_advice、official_seed_prompts 之一"
+            )
         try:
             bio = json.loads(char.bio_json or "{}")
             if not isinstance(bio, dict):
@@ -858,6 +865,8 @@ class MaterialService:
             bio["chara_profile"] = chara_profile
         if creative_advice is not None:
             bio["creative_advice"] = creative_advice
+        if official_seed_prompts is not None:
+            bio["official_seed_prompts"] = official_seed_prompts
         self.repo.update(character_id, {"bio_json": json.dumps(bio, ensure_ascii=False)})
         self._after_character_material_changed(character_id)
         updated = self.repo.get_by_id(character_id)

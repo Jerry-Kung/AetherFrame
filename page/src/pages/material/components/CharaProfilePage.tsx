@@ -1,10 +1,14 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import {
   type CharaProfile,
   type CharaRawImage,
   type ApiCharacterDetail,
+  type OfficialSeedPrompts,
+  type SeedPrompt,
   ALL_STANDARD_PHOTO_TYPES,
   STANDARD_PHOTO_LABELS,
+  emptyOfficialSeedPrompts,
+  cloneOfficialSeedPrompts,
 } from "@/types/material";
 import { toCharaProfile } from "@/types/material";
 import * as materialApi from "@/services/materialApi";
@@ -17,6 +21,7 @@ interface CharaProfilePageProps {
   showToast: (msg: string) => void;
   onGoRaw: () => void;
   onGoPhoto: () => void;
+  onSaveSeedPrompts: (payload: OfficialSeedPrompts) => void | Promise<void>;
 }
 
 /** 从结果页返回配置后写入，避免刷新时仍被已完成的任务拉回「仅结果」心智；重新 start 时会清除 */
@@ -1052,22 +1057,45 @@ const ProfileStage = ({
   );
 };
 
-/* ── Stage 2: Creative advice ── */
+/* ── Stage 2: Creative advice + seed prompts ── */
 const AdviceStage = ({
   chara,
   profileUnlocked,
   onSave,
+  onSaveSeedPrompts,
 }: {
   chara: CharaProfile;
   profileUnlocked: boolean;
   onSave: (text: string) => void;
+  onSaveSeedPrompts: (payload: OfficialSeedPrompts) => void | Promise<void>;
 }) => {
   const [genState, setGenState] = useState<GenState>("idle");
   const [adviceText, setAdviceText] = useState(chara.bio.creativeAdvice || "");
+  const [innerTab, setInnerTab] = useState<AdviceInnerTab>("role_advice");
+  const [seedDraft, setSeedDraft] = useState<OfficialSeedPrompts>(() => emptyOfficialSeedPrompts());
+  const [savingSeeds, setSavingSeeds] = useState(false);
+
+  const officialSeedKey = useMemo(
+    () =>
+      chara.bio.officialSeedPrompts
+        ? JSON.stringify(chara.bio.officialSeedPrompts)
+        : "",
+    [chara.bio.officialSeedPrompts]
+  );
 
   useEffect(() => {
     setAdviceText(chara.bio.creativeAdvice || "");
   }, [chara.bio.creativeAdvice]);
+
+  useEffect(() => {
+    if (genState !== "done") return;
+    const o = chara.bio.officialSeedPrompts;
+    if (o && (o.characterSpecific.length > 0 || o.general.length > 0)) {
+      setSeedDraft(cloneOfficialSeedPrompts(o));
+    } else {
+      setSeedDraft(generateMockSeedPrompts(chara.name));
+    }
+  }, [genState, chara.id, chara.name, officialSeedKey]);
 
   const handleStart = () => {
     setGenState("generating");
@@ -1081,6 +1109,15 @@ const AdviceStage = ({
   const handleRegenerate = () => {
     setGenState("generating");
   };
+
+  const handleSaveSeedsOfficial = useCallback(async () => {
+    setSavingSeeds(true);
+    try {
+      await onSaveSeedPrompts(seedDraft);
+    } finally {
+      setSavingSeeds(false);
+    }
+  }, [onSaveSeedPrompts, seedDraft]);
 
   if (!profileUnlocked) {
     return (
@@ -1109,12 +1146,12 @@ const AdviceStage = ({
   }
 
   if (genState === "generating") {
-    return <TimedGeneratingView label="正在整理角色创作建议～" onDone={handleGenDone} />;
+    return <TimedGeneratingView label="正在整理角色创作建议与种子提示词～" onDone={handleGenDone} />;
   }
 
   if (genState === "done") {
     return (
-      <div className="flex flex-col gap-4 p-5">
+      <div className="flex flex-col gap-3 p-5">
         <div className="flex items-center gap-2">
           <div
             className="w-6 h-6 rounded-lg flex items-center justify-center"
@@ -1128,18 +1165,73 @@ const AdviceStage = ({
             className="text-sm font-bold text-rose-600"
             style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
           >
-            创作建议已生成，可以继续修改哦～
+            内容已生成，可编辑创作建议并整理种子提示词～
           </span>
         </div>
-        <EditableResult
-          value={adviceText}
-          onChange={setAdviceText}
-          onSave={() => onSave(adviceText)}
-          onRegenerate={handleRegenerate}
-          saveLabel="保存创作建议"
-          savedLabel="创作建议已保存！"
-          placeholder="角色创作建议内容..."
-        />
+
+        <div
+          className="inline-flex items-center gap-1 p-1 rounded-2xl self-start"
+          style={{
+            background: "rgba(253,164,175,0.1)",
+            border: "1px solid rgba(253,164,175,0.2)",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setInnerTab("role_advice")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm cursor-pointer transition-all duration-200 whitespace-nowrap"
+            style={{
+              fontFamily: "'ZCOOL KuaiLe', cursive",
+              background:
+                innerTab === "role_advice"
+                  ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
+                  : "transparent",
+              color: innerTab === "role_advice" ? "white" : "#f472b6",
+              boxShadow:
+                innerTab === "role_advice" ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
+            }}
+          >
+            <i className="ri-quill-pen-line text-sm" />
+            角色创作建议
+          </button>
+          <button
+            type="button"
+            onClick={() => setInnerTab("seed_prompts")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm cursor-pointer transition-all duration-200 whitespace-nowrap"
+            style={{
+              fontFamily: "'ZCOOL KuaiLe', cursive",
+              background:
+                innerTab === "seed_prompts"
+                  ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
+                  : "transparent",
+              color: innerTab === "seed_prompts" ? "white" : "#f472b6",
+              boxShadow:
+                innerTab === "seed_prompts" ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
+            }}
+          >
+            <i className="ri-seedling-line text-sm" />
+            种子提示词
+          </button>
+        </div>
+
+        {innerTab === "role_advice" ? (
+          <EditableResult
+            value={adviceText}
+            onChange={setAdviceText}
+            onSave={() => onSave(adviceText)}
+            onRegenerate={handleRegenerate}
+            saveLabel="保存创作建议"
+            savedLabel="创作建议已保存！"
+            placeholder="角色创作建议内容..."
+          />
+        ) : (
+          <SeedPromptList
+            value={seedDraft}
+            onChange={setSeedDraft}
+            onSaveOfficial={handleSaveSeedsOfficial}
+            saving={savingSeeds}
+          />
+        )}
       </div>
     );
   }
@@ -1163,10 +1255,9 @@ const AdviceStage = ({
         准备好了！
       </h3>
       <p className="text-sm text-rose-400/60 leading-relaxed mb-6 max-w-xs">
-        AI 将基于角色小档案，为你整理出视觉创作方向、场景建议和性格表现技巧
+        AI 将基于角色小档案，整理创作建议与种子提示词（角色专属 / 通用），生成后可在双 Tab 中分别编辑与保存
       </p>
 
-      {/* Already-saved hint */}
       {chara.bio.creativeAdvice && (
         <div
           className="flex items-center justify-between px-4 py-3 rounded-2xl mb-5 w-full max-w-sm"
@@ -1187,6 +1278,7 @@ const AdviceStage = ({
             </span>
           </div>
           <button
+            type="button"
             onClick={() => setGenState("done")}
             className="text-xs px-3 py-1 rounded-lg cursor-pointer whitespace-nowrap transition-all hover:opacity-80"
             style={{
@@ -1202,6 +1294,7 @@ const AdviceStage = ({
       )}
 
       <button
+        type="button"
         onClick={handleStart}
         className="flex items-center gap-2.5 px-8 py-3.5 rounded-2xl text-base font-bold text-white cursor-pointer transition-all duration-200 whitespace-nowrap"
         style={{
@@ -1224,6 +1317,124 @@ const AdviceStage = ({
 const generateMockAdvice = (name: string) =>
   `【角色创作建议 · ${name}】\n\n视觉创作方向\n· 根据角色配色和风格，建议使用协调的色调\n· 背景元素可参考角色的世界观设定\n\n场景创作建议\n· 日常场景：结合角色的日常习惯和爱好\n· 特殊场景：展现角色的独特能力和魅力\n\n性格表现技巧\n· 通过细节动作体现角色性格\n· 表情设计要符合角色的情感特征\n\n注意事项\n· 保持角色设定的一致性\n· 适当留白，给观者想象空间`;
 
+function newSeedId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `seed-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+const generateMockSeedPrompts = (name: string): OfficialSeedPrompts => ({
+  characterSpecific: [
+    {
+      id: newSeedId(),
+      text: `【${name} · 角色专属】日系赛璐璐半身肖像，柔和顶光，背景为角色标志性小道具与淡色渐变，强调瞳色与发型层次。`,
+      used: false,
+    },
+    {
+      id: newSeedId(),
+      text: `同一角色冬装外套 + 围巾，室外薄雪街道，呼出白气，电影感浅景深，保持人设气质一致。`,
+      used: false,
+    },
+  ],
+  general: [
+    {
+      id: newSeedId(),
+      text: "通用：柔焦樱花林间小径，逆光发丝边缘光，粉白配色，治愈氛围，无文字水印。",
+      used: false,
+    },
+    {
+      id: newSeedId(),
+      text: "通用：室内咖啡馆靠窗座位，午后斜照，桌面一杯热饮与翻开的书，安静叙事感。",
+      used: false,
+    },
+  ],
+});
+
+type AdviceInnerTab = "role_advice" | "seed_prompts";
+
+/* ── 加工任务内：种子提示词列表（勾选 = 标记使用） ── */
+const SeedPromptList = ({
+  value,
+  onChange,
+  onSaveOfficial,
+  saving,
+}: {
+  value: OfficialSeedPrompts;
+  onChange: (next: OfficialSeedPrompts) => void;
+  onSaveOfficial: () => void | Promise<void>;
+  saving: boolean;
+}) => {
+  const toggleUsed = (scope: keyof Pick<OfficialSeedPrompts, "characterSpecific" | "general">, id: string) => {
+    onChange({
+      ...value,
+      [scope]: value[scope].map((s) => (s.id === id ? { ...s, used: !s.used } : s)),
+    });
+  };
+
+  const block = (title: string, scope: keyof Pick<OfficialSeedPrompts, "characterSpecific" | "general">, items: SeedPrompt[]) => (
+    <div className="flex flex-col gap-2">
+      <span
+        className="text-xs font-bold text-rose-500/90 uppercase tracking-wide"
+        style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+      >
+        {title}
+      </span>
+      <div
+        className="rounded-2xl overflow-hidden"
+        style={{
+          border: "1px solid rgba(253,164,175,0.22)",
+          background: "rgba(255,255,255,0.75)",
+        }}
+      >
+        {items.length === 0 ? (
+          <p className="text-xs text-rose-300/70 px-4 py-6 text-center" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
+            暂无条目
+          </p>
+        ) : (
+          items.map((s, idx) => (
+            <div key={s.id}>
+              {idx > 0 && <div className="h-px mx-3" style={{ background: "rgba(253,164,175,0.12)" }} />}
+              <label className="flex items-start gap-3 px-4 py-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={s.used}
+                  onChange={() => toggleUsed(scope, s.id)}
+                  className="mt-1 w-4 h-4 rounded border-rose-200 text-pink-500 focus:ring-pink-300"
+                />
+                <span className="text-sm text-rose-800/85 leading-relaxed flex-1 min-w-0">{s.text}</span>
+              </label>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      {block("角色专属", "characterSpecific", value.characterSpecific)}
+      {block("通用种子", "general", value.general)}
+      <div className="flex justify-end pt-1">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => void onSaveOfficial()}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium text-white cursor-pointer transition-all duration-200 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{
+            background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+            fontFamily: "'ZCOOL KuaiLe', cursive",
+            boxShadow: "0 4px 14px rgba(244,114,182,0.3)",
+          }}
+        >
+          <i className="ri-seedling-line text-sm" />
+          {saving ? "保存中…" : "保存为正式种子提示词"}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 /* ── Main component ── */
 const CharaProfilePage = ({
   characterId,
@@ -1232,6 +1443,7 @@ const CharaProfilePage = ({
   showToast,
   onGoRaw,
   onGoPhoto,
+  onSaveSeedPrompts,
 }: CharaProfilePageProps) => {
   const { hasSettingText, hasOfficialImage, hasFanartImage, hasAllStandardPhotos } =
     checkPrerequisites(chara);
@@ -1373,6 +1585,7 @@ const CharaProfilePage = ({
             chara={chara}
             profileUnlocked={profileSaved}
             onSave={(text) => void handleSaveAdvice(text)}
+            onSaveSeedPrompts={onSaveSeedPrompts}
           />
         )}
       </div>

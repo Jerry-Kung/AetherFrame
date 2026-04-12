@@ -192,6 +192,7 @@ async def patch_character_bio(
             character_id,
             chara_profile=body.chara_profile,
             creative_advice=body.creative_advice,
+            official_seed_prompts=body.official_seed_prompts,
         )
         detail = service.character_to_detail_dict(char)
         return ApiResponse(

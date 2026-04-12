@@ -3,7 +3,7 @@
 """
 from __future__ import annotations
 
-from typing import Any, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal
 
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
@@ -184,9 +184,16 @@ class CharaProfileStatusResponse(BaseModel):
 class BioPatchRequest(BaseModel):
     chara_profile: Optional[str] = Field(None, description="角色小档案全文（Markdown）")
     creative_advice: Optional[str] = Field(None, description="创作建议全文")
+    official_seed_prompts: Optional[Dict[str, Any]] = Field(
+        None, description="正式种子提示词（character_specific / general 等，写入 bio_json）"
+    )
 
     @model_validator(mode="after")
     def at_least_one_field(self):
-        if self.chara_profile is None and self.creative_advice is None:
-            raise ValueError("至少提供 chara_profile 或 creative_advice 之一")
+        if (
+            self.chara_profile is None
+            and self.creative_advice is None
+            and self.official_seed_prompts is None
+        ):
+            raise ValueError("至少提供 chara_profile、creative_advice、official_seed_prompts 之一")
         return self

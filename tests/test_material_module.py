@@ -525,3 +525,20 @@ class TestMaterialCharacterService:
         assert bio["chara_profile"] == "profile_keep"
         assert bio["creative_advice"] == "advice_only"
         assert bio["other"] == 1
+
+    def test_patch_character_bio_official_seed_prompts(self, material_svc):
+        char = material_svc.create_character("SeedBio")
+        material_svc.repo.update(
+            char.id,
+            {"bio_json": '{"chara_profile": "p", "creative_advice": "a"}'},
+        )
+        payload = {
+            "character_specific": [{"id": "1", "text": "专属", "used": False}],
+            "general": [{"id": "2", "text": "通用", "used": True}],
+        }
+        material_svc.patch_character_bio(char.id, official_seed_prompts=payload)
+        char2 = material_svc.get_character(char.id)
+        bio = json.loads(char2.bio_json)
+        assert bio["chara_profile"] == "p"
+        assert bio["creative_advice"] == "a"
+        assert bio["official_seed_prompts"] == payload

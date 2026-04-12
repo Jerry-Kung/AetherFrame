@@ -65,6 +65,18 @@ export const ALL_STANDARD_PHOTO_TYPES: StandardPhotoType[] = [
   "face_close",
 ];
 
+/** 正式种子提示词单条（与 bio_json.official_seed_prompts 对应） */
+export interface SeedPrompt {
+  id: string;
+  text: string;
+  used: boolean;
+}
+
+export interface OfficialSeedPrompts {
+  characterSpecific: SeedPrompt[];
+  general: SeedPrompt[];
+}
+
 export interface CharaBio {
   displayName: string;
   age: string;
@@ -74,6 +86,8 @@ export interface CharaBio {
   appearance: string;
   charaProfile?: string;
   creativeAdvice?: string;
+  /** 已保存至正式内容的种子提示词；未保存过为 null */
+  officialSeedPrompts?: OfficialSeedPrompts | null;
 }
 
 export interface CharaStandardPhoto {
@@ -127,6 +141,57 @@ function emptyBio(displayName: string): CharaBio {
     personality: "待补充",
     ability: "待补充",
     appearance: "待补充",
+    officialSeedPrompts: null,
+  };
+}
+
+function parseSeedPromptItem(x: unknown, index: number): SeedPrompt | null {
+  if (!x || typeof x !== "object") return null;
+  const o = x as Record<string, unknown>;
+  const id = typeof o.id === "string" && o.id.length > 0 ? o.id : `seed-${index}`;
+  const text = typeof o.text === "string" ? o.text : "";
+  const used = o.used === true;
+  return { id, text, used };
+}
+
+function parseSeedPromptArray(raw: unknown): SeedPrompt[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(parseSeedPromptItem).filter((x): x is SeedPrompt => x !== null);
+}
+
+/** 从 API bio 字典解析 official_seed_prompts */
+export function parseOfficialSeedPromptsFromBio(bio: Record<string, unknown>): OfficialSeedPrompts | null {
+  const raw =
+    bio.official_seed_prompts ??
+    (bio as { officialSeedPrompts?: unknown }).officialSeedPrompts;
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const characterSpecific = parseSeedPromptArray(
+    o.character_specific ?? o.characterSpecific
+  );
+  const general = parseSeedPromptArray(o.general);
+  if (characterSpecific.length === 0 && general.length === 0) return null;
+  return { characterSpecific, general };
+}
+
+/** 写入 PATCH 请求体用的 snake_case 结构 */
+export function officialSeedPromptsToApiPayload(p: OfficialSeedPrompts): Record<string, unknown> {
+  const row = (s: SeedPrompt) => ({ id: s.id, text: s.text, used: s.used });
+  return {
+    character_specific: p.characterSpecific.map(row),
+    general: p.general.map(row),
+  };
+}
+
+export function emptyOfficialSeedPrompts(): OfficialSeedPrompts {
+  return { characterSpecific: [], general: [] };
+}
+
+export function cloneOfficialSeedPrompts(p: OfficialSeedPrompts): OfficialSeedPrompts {
+  return {
+    characterSpecific: p.characterSpecific.map((s) => ({ ...s })),
+    general: p.general.map((s) => ({ ...s })),
   };
 }
 
@@ -186,6 +251,10 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
   const str = (v: unknown, fallback: string) =>
     typeof v === "string" && v.length > 0 ? v : fallback;
 
+  const bioRecord: Record<string, unknown> =
+    b && typeof b === "object" && !Array.isArray(b) ? (b as Record<string, unknown>) : {};
+  const seeds = parseOfficialSeedPromptsFromBio(bioRecord);
+
   const bio: CharaBio = {
     displayName: str(
       b.display_name ?? (b as { displayName?: unknown }).displayName,
@@ -198,6 +267,7 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
     appearance: str(b.appearance, "待补充"),
     charaProfile: str(b.charaProfile ?? (b as { chara_profile?: unknown }).chara_profile, ""),
     creativeAdvice: str(b.creativeAdvice ?? (b as { creative_advice?: unknown }).creative_advice, ""),
+    officialSeedPrompts: seeds,
   };
 
   const photos = d.official_photos || [];

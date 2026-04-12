@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { CharaProfile, RawImageType } from "@/types/material";
-import { DEFAULT_CHARA_AVATAR_PLACEHOLDER, toCharaProfile, summaryToListProfile } from "@/types/material";
+import type { CharaProfile, OfficialSeedPrompts, RawImageType } from "@/types/material";
+import {
+  DEFAULT_CHARA_AVATAR_PLACEHOLDER,
+  toCharaProfile,
+  summaryToListProfile,
+  officialSeedPromptsToApiPayload,
+} from "@/types/material";
 import * as materialApi from "@/services/materialApi";
 import { ApiError } from "@/services/api";
 import CuteConfirmModal from "@/pages/repair/components/CuteConfirmModal";
@@ -375,6 +380,42 @@ export default function MaterialPage() {
     [selected, mergeChara, showToast]
   );
 
+  const handleSaveSeedPrompts = useCallback(
+    async (payload: OfficialSeedPrompts) => {
+      if (!selected) return;
+      try {
+        const d = await materialApi.patchCharacterBio(selected.id, {
+          official_seed_prompts: officialSeedPromptsToApiPayload(payload),
+        });
+        mergeChara(toCharaProfile(d));
+        showToast("正式种子提示词已保存");
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "保存种子提示词失败");
+      }
+    },
+    [selected, mergeChara, showToast]
+  );
+
+  const handleToggleUsedSeed = useCallback(
+    async (next: OfficialSeedPrompts) => {
+      if (!selected) return;
+      try {
+        const d = await materialApi.patchCharacterBio(selected.id, {
+          official_seed_prompts: officialSeedPromptsToApiPayload(next),
+        });
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "更新使用状态失败");
+      }
+    },
+    [selected, mergeChara, showToast]
+  );
+
+  const handleGoProfileTask = useCallback(() => {
+    setMainTab("process");
+    setProcessSubTask("profile");
+  }, []);
+
   const onPreviewDownload = useCallback((url: string, idx: number) => {
     const name = `image-${idx + 1}.png`;
     try {
@@ -576,6 +617,7 @@ export default function MaterialPage() {
                     showToast={showToast}
                     onGoRaw={handleGoRaw}
                     onGoStandard={handleGoStandard}
+                    onSaveSeedPrompts={handleSaveSeedPrompts}
                   />
                 ) : (
                   <OfficialContentTab
@@ -583,6 +625,8 @@ export default function MaterialPage() {
                     bio={selected.bio}
                     onPhotoClick={handleOfficialPhotoClick}
                     onOfficialPhotoDelete={handleOfficialPhotoDelete}
+                    onGoProfileTask={handleGoProfileTask}
+                    onToggleUsedSeed={handleToggleUsedSeed}
                   />
                 )}
               </div>
