@@ -9,6 +9,7 @@ import {
   STANDARD_PHOTO_LABELS,
   emptyOfficialSeedPrompts,
   cloneOfficialSeedPrompts,
+  pickOfficialSeedsForSave,
 } from "@/types/material";
 import { toCharaProfile } from "@/types/material";
 import * as materialApi from "@/services/materialApi";
@@ -1108,11 +1109,13 @@ function draftApiToOfficialSeedPrompts(draft: CreationAdviceSeedDraft | null): O
       id: newSeedId(),
       text,
       used: false,
+      selected: true,
     })),
     general: (draft.general ?? []).map((text) => ({
       id: newSeedId(),
       text,
       used: false,
+      selected: true,
     })),
   };
 }
@@ -1307,13 +1310,18 @@ const AdviceStage = ({
   }, [chara.bio.creativeAdvice, chara.bio.officialSeedPrompts]);
 
   const handleSaveSeedsOfficial = useCallback(async () => {
+    const payload = pickOfficialSeedsForSave(seedDraft);
+    if (payload.characterSpecific.length === 0 && payload.general.length === 0) {
+      showToast("请至少勾选一条种子提示词再保存为正式内容");
+      return;
+    }
     setSavingSeeds(true);
     try {
-      await onSaveSeedPrompts(seedDraft);
+      await onSaveSeedPrompts(payload);
     } finally {
       setSavingSeeds(false);
     }
-  }, [onSaveSeedPrompts, seedDraft]);
+  }, [onSaveSeedPrompts, seedDraft, showToast]);
 
   if (!profileUnlocked) {
     return (
@@ -1548,7 +1556,7 @@ const AdviceStage = ({
   );
 };
 
-/* ── 加工任务内：种子提示词列表（勾选 = 标记使用） ── */
+/* ── 加工任务内：种子提示词列表（勾选 = 纳入正式内容；「已使用」仅在正式内容页单独标记） ── */
 const SeedPromptList = ({
   value,
   onChange,
@@ -1560,10 +1568,10 @@ const SeedPromptList = ({
   onSaveOfficial: () => void | Promise<void>;
   saving: boolean;
 }) => {
-  const toggleUsed = (scope: keyof Pick<OfficialSeedPrompts, "characterSpecific" | "general">, id: string) => {
+  const toggleSelected = (scope: keyof Pick<OfficialSeedPrompts, "characterSpecific" | "general">, id: string) => {
     onChange({
       ...value,
-      [scope]: value[scope].map((s) => (s.id === id ? { ...s, used: !s.used } : s)),
+      [scope]: value[scope].map((s) => (s.id === id ? { ...s, selected: !s.selected } : s)),
     });
   };
 
@@ -1593,8 +1601,9 @@ const SeedPromptList = ({
               <label className="flex items-start gap-3 px-4 py-3 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={s.used}
-                  onChange={() => toggleUsed(scope, s.id)}
+                  checked={s.selected}
+                  onChange={() => toggleSelected(scope, s.id)}
+                  title="勾选后加入正式种子提示词"
                   className="mt-1 w-4 h-4 rounded border-rose-200 text-pink-500 focus:ring-pink-300"
                 />
                 <span className="text-sm text-rose-800/85 leading-relaxed flex-1 min-w-0">{s.text}</span>
@@ -1608,6 +1617,12 @@ const SeedPromptList = ({
 
   return (
     <div className="flex flex-col gap-4">
+      <p
+        className="text-xs text-rose-500/85 leading-relaxed px-0.5"
+        style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+      >
+        仅勾选的条目会写入「正式内容」。是否在创作中「已使用」请在正式内容页单独标记，与此处勾选无关。
+      </p>
       {block("角色专属", "characterSpecific", value.characterSpecific)}
       {block("通用种子", "general", value.general)}
       <div className="flex justify-end pt-1">

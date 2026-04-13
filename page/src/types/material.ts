@@ -69,7 +69,13 @@ export const ALL_STANDARD_PHOTO_TYPES: StandardPhotoType[] = [
 export interface SeedPrompt {
   id: string;
   text: string;
+  /** 是否在创作流程中标记为「已使用」（仅展示，不参与「保存为正式内容」的筛选） */
   used: boolean;
+  /**
+   * 创作建议页：勾选则纳入「保存为正式种子提示词」；持久化到 bio 时不会写入该字段。
+   * 从接口读入的旧数据若无该字段，视为 true（与历史「全部保存」行为兼容）。
+   */
+  selected: boolean;
 }
 
 export interface OfficialSeedPrompts {
@@ -151,7 +157,8 @@ function parseSeedPromptItem(x: unknown, index: number): SeedPrompt | null {
   const id = typeof o.id === "string" && o.id.length > 0 ? o.id : `seed-${index}`;
   const text = typeof o.text === "string" ? o.text : "";
   const used = o.used === true;
-  return { id, text, used };
+  const selected = o.selected === false ? false : true;
+  return { id, text, used, selected };
 }
 
 function parseSeedPromptArray(raw: unknown): SeedPrompt[] {
@@ -181,6 +188,18 @@ export function officialSeedPromptsToApiPayload(p: OfficialSeedPrompts): Record<
   return {
     character_specific: p.characterSpecific.map(row),
     general: p.general.map(row),
+  };
+}
+
+/**
+ * 创作建议种子列表 → 写入正式内容：只保留勾选项，并清空 used（避免与「标记使用」混用）。
+ */
+export function pickOfficialSeedsForSave(draft: OfficialSeedPrompts): OfficialSeedPrompts {
+  return {
+    characterSpecific: draft.characterSpecific
+      .filter((s) => s.selected)
+      .map((s) => ({ ...s, used: false })),
+    general: draft.general.filter((s) => s.selected).map((s) => ({ ...s, used: false })),
   };
 }
 
