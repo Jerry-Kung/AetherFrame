@@ -1163,6 +1163,7 @@ const AdviceStage = ({
   const [pollError, setPollError] = useState<string | null>(null);
   const [taskStep, setTaskStep] = useState<string | null>(null);
   const [loadingStart, setLoadingStart] = useState(false);
+  const [viewingSavedLoading, setViewingSavedLoading] = useState(false);
 
   const onCharacterUpdatedRef = useRef(onCharacterUpdated);
   const showToastRef = useRef(showToast);
@@ -1178,6 +1179,8 @@ const AdviceStage = ({
   useEffect(() => {
     let cancelled = false;
     setHydrated(false);
+    setSeedDraft(emptyOfficialSeedPrompts());
+    setInnerTab("role_advice");
     void (async () => {
       try {
         const status = await materialApi.getCreationAdviceStatus(characterId);
@@ -1196,17 +1199,11 @@ const AdviceStage = ({
             onCharacterUpdatedRef.current(detail);
             const p = toCharaProfile(detail);
             setAdviceText(p.bio.creativeAdvice || "");
-            setSeedDraft(
-              mergeDraftAndOfficialSeeds(status.seed_draft, p.bio.officialSeedPrompts ?? undefined)
-            );
-            setPhase("done");
+            setPhase("idle");
           } catch {
             if (cancelled) return;
             setAdviceText(chara.bio.creativeAdvice || "");
-            setSeedDraft(
-              mergeDraftAndOfficialSeeds(status.seed_draft, chara.bio.officialSeedPrompts ?? undefined)
-            );
-            setPhase("done");
+            setPhase("idle");
           }
         } else {
           setPhase("idle");
@@ -1298,16 +1295,31 @@ const AdviceStage = ({
   }, [characterId, showToast]);
 
   const handleViewSaved = useCallback(() => {
-    setAdviceText(chara.bio.creativeAdvice || "");
-    const o = chara.bio.officialSeedPrompts;
-    if (o && (o.characterSpecific.length > 0 || o.general.length > 0)) {
-      setSeedDraft(cloneOfficialSeedPrompts(o));
-    } else {
-      setSeedDraft(emptyOfficialSeedPrompts());
-    }
-    setPhase("done");
-    setPollError(null);
-  }, [chara.bio.creativeAdvice, chara.bio.officialSeedPrompts]);
+    void (async () => {
+      setViewingSavedLoading(true);
+      setPollError(null);
+      setInnerTab("role_advice");
+      setAdviceText(chara.bio.creativeAdvice || "");
+      try {
+        let draft: CreationAdviceSeedDraft | null = null;
+        try {
+          const status = await materialApi.getCreationAdviceStatus(characterId);
+          draft = status.seed_draft;
+        } catch (e) {
+          if (!(e instanceof ApiError && e.status === 404)) {
+            showToast(e instanceof ApiError ? e.message : "加载任务状态失败");
+            return;
+          }
+        }
+        setSeedDraft(
+          mergeDraftAndOfficialSeeds(draft, chara.bio.officialSeedPrompts ?? undefined)
+        );
+        setPhase("done");
+      } finally {
+        setViewingSavedLoading(false);
+      }
+    })();
+  }, [characterId, chara.bio.creativeAdvice, chara.bio.officialSeedPrompts, showToast]);
 
   const handleSaveSeedsOfficial = useCallback(async () => {
     const payload = pickOfficialSeedsForSave(seedDraft);
@@ -1518,7 +1530,8 @@ const AdviceStage = ({
           <button
             type="button"
             onClick={handleViewSaved}
-            className="text-xs px-3 py-1 rounded-lg cursor-pointer whitespace-nowrap transition-all hover:opacity-80"
+            disabled={viewingSavedLoading}
+            className="text-xs px-3 py-1 rounded-lg cursor-pointer whitespace-nowrap transition-all hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
             style={{
               background: "rgba(110,231,183,0.15)",
               color: "#059669",
@@ -1526,7 +1539,7 @@ const AdviceStage = ({
               fontFamily: "'ZCOOL KuaiLe', cursive",
             }}
           >
-            查看已保存内容
+            {viewingSavedLoading ? "加载中…" : "查看已保存内容"}
           </button>
         </div>
       )}
@@ -1534,7 +1547,7 @@ const AdviceStage = ({
       <button
         type="button"
         onClick={() => void runStartAdviceTask()}
-        disabled={loadingStart}
+        disabled={loadingStart || viewingSavedLoading}
         className="flex items-center gap-2.5 px-8 py-3.5 rounded-2xl text-base font-bold text-white cursor-pointer transition-all duration-200 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
         style={{
           fontFamily: "'ZCOOL KuaiLe', cursive",
@@ -1550,7 +1563,7 @@ const AdviceStage = ({
             <i className="ri-lightbulb-fill text-lg"></i>
           )}
         </div>
-        {loadingStart ? "提交中…" : chara.bio.creativeAdvice ? "重新整理创作建议" : "开始整理创作建议"}
+        {loadingStart ? "提交中…" : "重新整理创作建议"}
       </button>
     </div>
   );
