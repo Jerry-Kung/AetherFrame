@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   type CharaProfile,
   type CharaRawImage,
@@ -1161,6 +1161,13 @@ const AdviceStage = ({
   const [taskStep, setTaskStep] = useState<string | null>(null);
   const [loadingStart, setLoadingStart] = useState(false);
 
+  const onCharacterUpdatedRef = useRef(onCharacterUpdated);
+  const showToastRef = useRef(showToast);
+  useEffect(() => {
+    onCharacterUpdatedRef.current = onCharacterUpdated;
+    showToastRef.current = showToast;
+  });
+
   useEffect(() => {
     setAdviceText(chara.bio.creativeAdvice || "");
   }, [chara.bio.creativeAdvice]);
@@ -1183,7 +1190,7 @@ const AdviceStage = ({
           try {
             const detail = await materialApi.getCharacter(characterId);
             if (cancelled) return;
-            onCharacterUpdated(detail);
+            onCharacterUpdatedRef.current(detail);
             const p = toCharaProfile(detail);
             setAdviceText(p.bio.creativeAdvice || "");
             setSeedDraft(
@@ -1217,9 +1224,9 @@ const AdviceStage = ({
     return () => {
       cancelled = true;
     };
-    // chara 仅用于 hydrate 失败回退；不把 chara 放入 deps，避免详情刷新打断界面
+    // 仅随角色切换拉取；勿依赖 onCharacterUpdated 引用，否则父组件任意重渲染都会打断本页状态
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [characterId, onCharacterUpdated]);
+  }, [characterId]);
 
   useEffect(() => {
     let alive = true;
@@ -1234,7 +1241,7 @@ const AdviceStage = ({
         if (status.status === "completed") {
           const detail = await materialApi.getCharacter(characterId);
           if (!alive) return;
-          onCharacterUpdated(detail);
+          onCharacterUpdatedRef.current(detail);
           const p = toCharaProfile(detail);
           setAdviceText(p.bio.creativeAdvice || "");
           const st2 = await materialApi.getCreationAdviceStatus(characterId);
@@ -1244,7 +1251,7 @@ const AdviceStage = ({
           );
           setPhase("done");
           setPollError(null);
-          showToast("创作建议与种子提示词已生成");
+          showToastRef.current("创作建议与种子提示词已生成");
           return;
         }
         if (status.status === "failed") {
@@ -1266,7 +1273,7 @@ const AdviceStage = ({
       alive = false;
       if (timer) window.clearTimeout(timer);
     };
-  }, [characterId, phase, pollError, onCharacterUpdated, showToast]);
+  }, [characterId, phase, pollError]);
 
   const runStartAdviceTask = useCallback(async () => {
     if (!characterId || characterId === "undefined" || characterId === "null") {

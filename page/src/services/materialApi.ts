@@ -401,6 +401,7 @@ export async function startCreationAdviceTask(
     const response = await fetchWithTimeout(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      body: "{}",
       timeout: 120000,
     });
     const data = await parseJson<CreationAdviceStartResult>(response);

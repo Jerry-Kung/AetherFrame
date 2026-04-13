@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { CharaProfile, OfficialSeedPrompts, RawImageType } from "@/types/material";
+import type {
+  ApiCharacterDetail,
+  CharaProfile,
+  OfficialSeedPrompts,
+  RawImageType,
+} from "@/types/material";
 import {
   DEFAULT_CHARA_AVATAR_PLACEHOLDER,
   toCharaProfile,
@@ -83,6 +88,14 @@ export default function MaterialPage() {
       return next;
     });
   }, []);
+
+  /** 稳定引用，避免加工任务子页（如创作建议 hydrate）因父组件重渲染而反复重置 */
+  const handleCharacterDetailUpdated = useCallback(
+    (detail: ApiCharacterDetail) => {
+      mergeChara(toCharaProfile(detail));
+    },
+    [mergeChara]
+  );
 
   const patchCharaFields = useCallback((id: string, patch: Partial<CharaProfile>) => {
     setCharas((prev) =>
@@ -634,7 +647,7 @@ export default function MaterialPage() {
                     onSubTaskChange={setProcessSubTask}
                     charaName={selected.name}
                     chara={selected}
-                    onCharacterUpdated={(detail) => mergeChara(toCharaProfile(detail))}
+                    onCharacterUpdated={handleCharacterDetailUpdated}
                     showToast={showToast}
                     onGoRaw={handleGoRaw}
                     onGoStandard={handleGoStandard}
