@@ -135,6 +135,26 @@ export default function MaterialPage() {
     };
   }, [selectedId, mergeChara, showToast]);
 
+  /** 进入「正式内容」时拉取最新详情，确保角色小档案等与加工任务保存的 bio_json 一致 */
+  useEffect(() => {
+    if (!selectedId || mainTab !== "official") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = await materialApi.getCharacter(selectedId);
+        if (cancelled) return;
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        if (!cancelled) {
+          showToast(e instanceof ApiError ? e.message : "刷新正式内容失败");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, mainTab, mergeChara, showToast]);
+
   const selected = useMemo(
     () => charas.find((c) => c.id === selectedId) ?? null,
     [charas, selectedId]
@@ -589,7 +609,8 @@ export default function MaterialPage() {
               </div>
               <div className="mx-5 h-px bg-rose-100/60 shrink-0" />
 
-              <div className="flex-1 min-h-0 overflow-hidden px-5 py-4">
+              <div className="flex-1 min-h-0 overflow-hidden px-5 py-4 flex flex-col">
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden min-w-0 pr-1">
                 {!selected ? (
                   <div className="h-full flex items-center justify-center text-rose-300/50 text-sm select-none">
                     ← 请先选择或新建一位角色
@@ -629,6 +650,7 @@ export default function MaterialPage() {
                     onToggleUsedSeed={handleToggleUsedSeed}
                   />
                 )}
+                </div>
               </div>
             </div>
 

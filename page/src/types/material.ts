@@ -196,6 +196,16 @@ export function cloneOfficialSeedPrompts(p: OfficialSeedPrompts): OfficialSeedPr
 }
 
 /**
+ * 角色小档案正文：仅取自 bio_json 中加工任务写入的 `chara_profile`（及兼容 camelCase）。
+ * 不使用年龄/性格等占位字段冒充小档案正文。
+ */
+export function extractCharaProfileMarkdown(bio: Record<string, unknown>): string {
+  const raw = bio.chara_profile ?? bio.charaProfile;
+  if (typeof raw !== "string") return "";
+  return raw;
+}
+
+/**
  * 后端角色详情只保证 `official_photos` 五槽位（顺序与 ALL_STANDARD_PHOTO_TYPES 一致），
  * 不一定返回 `standard_photos`。从小档案解锁等逻辑需要按「类型」识别已完成槽位，故从槽位 URL 推导。
  */
@@ -265,7 +275,7 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
     personality: str(b.personality, "待补充"),
     ability: str(b.ability, "待补充"),
     appearance: str(b.appearance, "待补充"),
-    charaProfile: str(b.charaProfile ?? (b as { chara_profile?: unknown }).chara_profile, ""),
+    charaProfile: extractCharaProfileMarkdown(bioRecord),
     creativeAdvice: str(b.creativeAdvice ?? (b as { creative_advice?: unknown }).creative_advice, ""),
     officialSeedPrompts: seeds,
   };

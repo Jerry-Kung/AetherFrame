@@ -19,15 +19,6 @@ const PHOTO_LABELS = [
   "脸部特写",
 ] as const;
 
-const BIO_FIELDS: { key: keyof CharaBio; label: string }[] = [
-  { key: "displayName", label: "姓名" },
-  { key: "age", label: "年龄" },
-  { key: "height", label: "身高" },
-  { key: "personality", label: "性格" },
-  { key: "ability", label: "能力" },
-  { key: "appearance", label: "外观" },
-];
-
 type StandardPhotoItem = {
   id: string;
   slotIndex: number;
@@ -55,6 +46,8 @@ const OfficialContentTab = ({
   const [deletePhotoId, setDeletePhotoId] = useState<string | null>(null);
   const [seedSubTab, setSeedSubTab] = useState<SeedSubTab>("character");
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  /** 正式内容页角色小档案正文默认折叠，避免长文撑破布局并挡住下方模块 */
+  const [charaProfileExpanded, setCharaProfileExpanded] = useState(false);
 
   const standardPhotos: StandardPhotoItem[] = useMemo(
     () =>
@@ -163,7 +156,7 @@ const OfficialContentTab = ({
     );
 
   return (
-    <div className="flex flex-col gap-6 min-h-0 overflow-y-auto pr-1">
+    <div className="flex flex-col gap-6 min-h-0">
       <section>
         <h3
           className="text-sm font-semibold text-rose-700/80 mb-3 flex items-center gap-2 flex-wrap"
@@ -266,24 +259,48 @@ const OfficialContentTab = ({
         )}
       </section>
 
-      <section>
-        <h3
-          className="text-sm font-semibold text-rose-700/80 mb-3 flex items-center gap-1.5"
-          style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
-        >
-          <i className="ri-file-list-3-line text-rose-400" />
-          角色小档案
-        </h3>
-        {charaProfileText ? (
+      <section className="min-w-0">
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h3
+            className="text-sm font-semibold text-rose-700/80 flex items-center gap-1.5 min-w-0"
+            style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+          >
+            <i className="ri-file-list-3-line text-rose-400 shrink-0" />
+            <span className="truncate">角色小档案</span>
+          </h3>
+          <button
+            type="button"
+            onClick={() => setCharaProfileExpanded((v) => !v)}
+            className="shrink-0 flex items-center gap-1 text-xs px-2.5 py-1 rounded-xl cursor-pointer transition-all hover:opacity-90 border border-rose-200/80 bg-white/80 text-rose-600"
+            style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+            aria-expanded={charaProfileExpanded}
+          >
+            <i className={charaProfileExpanded ? "ri-arrow-up-s-line" : "ri-arrow-down-s-line"} />
+            {charaProfileExpanded ? "收起" : "展开"}
+          </button>
+        </div>
+        <p className="text-[11px] text-rose-400/55 leading-snug mb-2 pl-0.5">
+          正文与「加工任务 → 角色小档案」中保存并写入服务器的档案一致（bio_json.chara_profile）。
+        </p>
+
+        {!charaProfileExpanded ? (
+          <p className="text-xs text-rose-400/75 leading-relaxed pl-0.5" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
+            {charaProfileText
+              ? `已保存正文（约 ${charaProfileText.length} 字），点击「展开」查看；下方种子提示词等模块可滚动浏览。`
+              : "尚未在加工任务中生成并保存小档案正文。点击「展开」查看说明与入口。"}
+          </p>
+        ) : charaProfileText ? (
           <div
-            className="rounded-2xl overflow-hidden border border-rose-100/80 px-4 py-4 text-sm text-rose-800/90 leading-relaxed whitespace-pre-wrap break-words"
+            className="rounded-2xl border border-rose-100/80 overflow-hidden min-w-0"
             style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(255,250,252,0.95) 100%)" }}
           >
-            {bio.charaProfile}
+            <div className="max-h-[min(55vh,28rem)] overflow-y-auto overflow-x-hidden px-4 py-4 text-sm text-rose-800/90 leading-relaxed whitespace-pre-wrap break-words">
+              {bio.charaProfile}
+            </div>
           </div>
         ) : (
           <div
-            className="rounded-2xl border border-dashed border-rose-200/80 flex flex-col items-center justify-center py-12 px-6 text-center"
+            className="rounded-2xl border border-dashed border-rose-200/80 flex flex-col items-center justify-center py-10 px-6 text-center"
             style={{ background: "rgba(253,164,175,0.06)" }}
           >
             <i className="ri-quill-pen-line text-rose-300 text-2xl mb-2" />
@@ -402,33 +419,6 @@ const OfficialContentTab = ({
               : seedList(officialSeeds!.general, "general")}
           </>
         )}
-      </section>
-
-      <section>
-        <h3
-          className="text-sm font-semibold text-rose-700/80 mb-3 flex items-center gap-1.5"
-          style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
-        >
-          <i className="ri-contacts-line text-rose-400" />
-          结构化档案字段
-        </h3>
-        <div
-          className="rounded-2xl overflow-hidden border border-rose-100/80"
-          style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.85) 0%, rgba(255,250,252,0.9) 100%)" }}
-        >
-          <dl className="divide-y divide-rose-100/60">
-            {BIO_FIELDS.map(({ key, label }) => {
-              const v = bio[key];
-              if (typeof v !== "string") return null;
-              return (
-                <div key={key} className="grid grid-cols-[5rem_1fr] sm:grid-cols-[6.5rem_1fr] gap-2 px-4 py-3 text-sm">
-                  <dt className="text-rose-400/80 font-medium shrink-0">{label}</dt>
-                  <dd className="text-rose-800/85 leading-relaxed break-words">{v}</dd>
-                </div>
-              );
-            })}
-          </dl>
-        </div>
       </section>
 
       {deletePhotoId && (
