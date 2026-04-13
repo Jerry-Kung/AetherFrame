@@ -543,6 +543,59 @@ class TestMaterialCharacterService:
         assert bio["creative_advice"] == "a"
         assert bio["official_seed_prompts"] == payload
 
+    def test_patch_character_bio_official_seed_prompts_clear_removes_key(self, material_svc):
+        char = material_svc.create_character("SeedClear")
+        material_svc.repo.update(
+            char.id,
+            {
+                "bio_json": json.dumps(
+                    {
+                        "chara_profile": "p",
+                        "official_seed_prompts": {
+                            "character_specific": [{"id": "1", "text": "a", "used": False}],
+                            "general": [{"id": "2", "text": "b", "used": True}],
+                        },
+                    },
+                    ensure_ascii=False,
+                )
+            },
+        )
+        material_svc.patch_character_bio(
+            char.id,
+            official_seed_prompts={"character_specific": [], "general": []},
+        )
+        char2 = material_svc.get_character(char.id)
+        bio = json.loads(char2.bio_json)
+        assert bio["chara_profile"] == "p"
+        assert "official_seed_prompts" not in bio
+
+    def test_patch_character_bio_official_seed_prompts_delete_one_row(self, material_svc):
+        char = material_svc.create_character("SeedDel")
+        material_svc.repo.update(
+            char.id,
+            {
+                "bio_json": json.dumps(
+                    {
+                        "official_seed_prompts": {
+                            "character_specific": [
+                                {"id": "1", "text": "keep", "used": False},
+                                {"id": "2", "text": "gone", "used": True},
+                            ],
+                            "general": [{"id": "g1", "text": "gen", "used": False}],
+                        }
+                    },
+                    ensure_ascii=False,
+                )
+            },
+        )
+        payload = {
+            "character_specific": [{"id": "1", "text": "keep", "used": False}],
+            "general": [{"id": "g1", "text": "gen", "used": False}],
+        }
+        material_svc.patch_character_bio(char.id, official_seed_prompts=payload)
+        bio = json.loads(material_svc.get_character(char.id).bio_json)
+        assert bio["official_seed_prompts"] == payload
+
     def test_start_creation_advice_missing_prerequisite(self, material_svc):
         char = material_svc.create_character("CADV0")
         with pytest.raises(ValueError, match="text_understanding"):

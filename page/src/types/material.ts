@@ -182,8 +182,14 @@ export function parseOfficialSeedPromptsFromBio(bio: Record<string, unknown>): O
   return { characterSpecific, general };
 }
 
+/** PATCH /characters/:id/bio 的 official_seed_prompts（与后端 OfficialSeedPromptsPatch 一致） */
+export type OfficialSeedPromptsApiPatch = {
+  character_specific: { id: string; text: string; used: boolean }[];
+  general: { id: string; text: string; used: boolean }[];
+};
+
 /** 写入 PATCH 请求体用的 snake_case 结构 */
-export function officialSeedPromptsToApiPayload(p: OfficialSeedPrompts): Record<string, unknown> {
+export function officialSeedPromptsToApiPayload(p: OfficialSeedPrompts): OfficialSeedPromptsApiPatch {
   const row = (s: SeedPrompt) => ({ id: s.id, text: s.text, used: s.used });
   return {
     character_specific: p.characterSpecific.map(row),

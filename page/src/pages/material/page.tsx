@@ -11,6 +11,8 @@ import {
   toCharaProfile,
   summaryToListProfile,
   officialSeedPromptsToApiPayload,
+  cloneOfficialSeedPrompts,
+  emptyOfficialSeedPrompts,
 } from "@/types/material";
 import * as materialApi from "@/services/materialApi";
 import { ApiError } from "@/services/api";
@@ -444,6 +446,40 @@ export default function MaterialPage() {
     [selected, mergeChara, showToast]
   );
 
+  const handleDeleteSeed = useCallback(
+    async (scope: keyof Pick<OfficialSeedPrompts, "characterSpecific" | "general">, id: string) => {
+      if (!selected) return;
+      const seeds = selected.bio.officialSeedPrompts;
+      if (!seeds) return;
+      const next = cloneOfficialSeedPrompts(seeds);
+      next[scope] = next[scope].filter((s) => s.id !== id);
+      try {
+        const d = await materialApi.patchCharacterBio(selected.id, {
+          official_seed_prompts: officialSeedPromptsToApiPayload(next),
+        });
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "删除种子提示词失败");
+      }
+    },
+    [selected, mergeChara, showToast]
+  );
+
+  const handleClearSeeds = useCallback(async () => {
+    if (!selected) return;
+    /** 后端需写入空结构；toCharaProfile 解析时空数组会归一为 officialSeedPrompts === null */
+    const empty = emptyOfficialSeedPrompts();
+    try {
+      const d = await materialApi.patchCharacterBio(selected.id, {
+        official_seed_prompts: officialSeedPromptsToApiPayload(empty),
+      });
+      mergeChara(toCharaProfile(d));
+      showToast("已清空全部正式种子提示词");
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "清空种子提示词失败");
+    }
+  }, [selected, mergeChara, showToast]);
+
   const handleGoProfileTask = useCallback(() => {
     setMainTab("process");
     setProcessSubTask("profile");
@@ -661,6 +697,8 @@ export default function MaterialPage() {
                     onOfficialPhotoDelete={handleOfficialPhotoDelete}
                     onGoProfileTask={handleGoProfileTask}
                     onToggleUsedSeed={handleToggleUsedSeed}
+                    onDeleteSeed={handleDeleteSeed}
+                    onClearSeeds={handleClearSeeds}
                   />
                 )}
                 </div>

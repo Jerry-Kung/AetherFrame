@@ -204,11 +204,38 @@ class CreationAdviceStatusResponse(BaseModel):
     )
 
 
+class OfficialSeedPromptRowIn(BaseModel):
+    """正式种子单条；与前端 `officialSeedPromptsToApiPayload` 的 id / text / used 对齐。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(..., min_length=1, max_length=256)
+    text: str = Field(default="", max_length=100_000)
+    used: bool = False
+
+
+class OfficialSeedPromptsPatch(BaseModel):
+    """
+    PATCH bio 时整体替换 `bio_json.official_seed_prompts`。
+    用于正式内容页：单条删除、标记使用、一键清空（两侧均为空时服务端移除该字段）。
+    """
+
+    character_specific: List[OfficialSeedPromptRowIn] = Field(
+        default_factory=list,
+        description="角色专属正式种子",
+    )
+    general: List[OfficialSeedPromptRowIn] = Field(
+        default_factory=list,
+        description="通用正式种子",
+    )
+
+
 class BioPatchRequest(BaseModel):
     chara_profile: Optional[str] = Field(None, description="角色小档案全文（Markdown）")
     creative_advice: Optional[str] = Field(None, description="创作建议全文")
-    official_seed_prompts: Optional[Dict[str, Any]] = Field(
-        None, description="正式种子提示词（character_specific / general 等，写入 bio_json）"
+    official_seed_prompts: Optional[OfficialSeedPromptsPatch] = Field(
+        None,
+        description="正式种子提示词；character_specific 与 general 均为空时服务端从 bio 中移除该字段",
     )
 
     @model_validator(mode="after")

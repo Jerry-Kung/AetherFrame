@@ -990,7 +990,17 @@ class MaterialService:
         if creative_advice is not None:
             bio["creative_advice"] = creative_advice
         if official_seed_prompts is not None:
-            bio["official_seed_prompts"] = official_seed_prompts
+            cs = official_seed_prompts.get("character_specific")
+            ge = official_seed_prompts.get("general")
+            if (
+                isinstance(cs, list)
+                and isinstance(ge, list)
+                and len(cs) == 0
+                and len(ge) == 0
+            ):
+                bio.pop("official_seed_prompts", None)
+            else:
+                bio["official_seed_prompts"] = official_seed_prompts
         self.repo.update(character_id, {"bio_json": json.dumps(bio, ensure_ascii=False)})
         self._after_character_material_changed(character_id)
         updated = self.repo.get_by_id(character_id)

@@ -1,7 +1,11 @@
 /**
  * 素材加工模块 /api/material
  */
-import type { ApiCharacterDetail, ApiCharacterSummary } from "@/types/material";
+import type {
+  ApiCharacterDetail,
+  ApiCharacterSummary,
+  OfficialSeedPromptsApiPatch,
+} from "@/types/material";
 import { ApiError, parseResponseBodyAsJson } from "@/services/api";
 
 const API_BASE = "/api/material";
@@ -524,7 +528,7 @@ export async function deleteOfficialPhotoSlot(
 export type PatchCharacterBioBody = {
   chara_profile?: string;
   creative_advice?: string;
-  official_seed_prompts?: Record<string, unknown>;
+  official_seed_prompts?: OfficialSeedPromptsApiPatch;
 };
 
 /** 合并更新角色 bio（chara_profile / creative_advice / official_seed_prompts 至少一项） */
