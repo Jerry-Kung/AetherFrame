@@ -117,3 +117,31 @@ class MaterialCharaProfileTask(Base):
             f"<MaterialCharaProfileTask(id={self.id!r}, character_id={self.character_id!r}, "
             f"status={self.status!r})>"
         )
+
+
+class MaterialCreationAdviceTask(Base):
+    """素材加工 — 生成创作建议任务（每角色当前任务）"""
+
+    __tablename__ = "material_creation_advice_tasks"
+
+    id = Column(String, primary_key=True, index=True)
+    character_id = Column(
+        String,
+        ForeignKey("material_characters.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        unique=True,
+    )
+    status = Column(String(20), nullable=False, index=True, default="pending")
+    error_message = Column(Text, nullable=True)
+    current_step = Column(String(40), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    character = relationship("MaterialCharacter")
+
+    def __repr__(self):
+        return (
+            f"<MaterialCreationAdviceTask(id={self.id!r}, character_id={self.character_id!r}, "
+            f"status={self.status!r})>"
+        )

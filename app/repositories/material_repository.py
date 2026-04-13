@@ -12,6 +12,7 @@ from app.models.material import (
     MaterialCharacter,
     MaterialCharacterRawImage,
     MaterialCharaProfileTask,
+    MaterialCreationAdviceTask,
     MaterialStandardPhotoTask,
 )
 
@@ -302,6 +303,60 @@ class MaterialCharacterRepository(BaseRepository[MaterialCharacter]):
         updates: Dict,
     ) -> Optional[MaterialCharaProfileTask]:
         task = self.get_chara_profile_task_by_id(task_id)
+        if not task:
+            return None
+        for key, value in updates.items():
+            if key.endswith("_json") and value is not None and not isinstance(value, str):
+                value = json.dumps(value, ensure_ascii=False)
+            if hasattr(task, key):
+                setattr(task, key, value)
+        self.db.commit()
+        self.db.refresh(task)
+        return task
+
+    def get_creation_advice_task_by_character_id(
+        self, character_id: str
+    ) -> Optional[MaterialCreationAdviceTask]:
+        return (
+            self.db.query(MaterialCreationAdviceTask)
+            .filter(MaterialCreationAdviceTask.character_id == character_id)
+            .first()
+        )
+
+    def get_creation_advice_task_by_id(self, task_id: str) -> Optional[MaterialCreationAdviceTask]:
+        return self.db.query(MaterialCreationAdviceTask).filter_by(id=task_id).first()
+
+    def upsert_creation_advice_task(
+        self,
+        character_id: str,
+        status: str = "pending",
+        error_message: Optional[str] = None,
+        current_step: Optional[str] = None,
+    ) -> MaterialCreationAdviceTask:
+        task = self.get_creation_advice_task_by_character_id(character_id)
+        if task is None:
+            task = MaterialCreationAdviceTask(
+                id=f"mcadv_{uuid.uuid4().hex[:10]}",
+                character_id=character_id,
+                status=status,
+                error_message=error_message,
+                current_step=current_step,
+            )
+            self.db.add(task)
+        else:
+            task.status = status
+            task.error_message = error_message
+            task.current_step = current_step
+        self.db.commit()
+        self.db.refresh(task)
+        return task
+
+    def update_creation_advice_task(
+        self,
+        task_id: str,
+        updates: Dict,
+    ) -> Optional[MaterialCreationAdviceTask]:
+        task = self.get_creation_advice_task_by_id(task_id)
         if not task:
             return None
         for key, value in updates.items():

@@ -181,6 +181,29 @@ class CharaProfileStatusResponse(BaseModel):
     updated_at: ApiDateTime
 
 
+class CreationAdviceStartResponse(BaseModel):
+    task_id: str
+    status: str
+
+
+class CreationAdviceSeedDraftData(BaseModel):
+    character_specific: List[str] = Field(default_factory=list)
+    general: List[str] = Field(default_factory=list)
+
+
+class CreationAdviceStatusResponse(BaseModel):
+    task_id: str
+    character_id: str
+    status: str
+    error_message: Optional[str] = None
+    current_step: Optional[str] = None
+    created_at: ApiDateTime
+    updated_at: ApiDateTime
+    seed_draft: Optional[CreationAdviceSeedDraftData] = Field(
+        None, description="仅 status=completed 时返回本次生成的候选种子列表"
+    )
+
+
 class BioPatchRequest(BaseModel):
     chara_profile: Optional[str] = Field(None, description="角色小档案全文（Markdown）")
     creative_advice: Optional[str] = Field(None, description="创作建议全文")

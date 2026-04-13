@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   type CharaProfile,
   type CharaRawImage,
@@ -12,6 +12,7 @@ import {
 } from "@/types/material";
 import { toCharaProfile } from "@/types/material";
 import * as materialApi from "@/services/materialApi";
+import type { CreationAdviceSeedDraft } from "@/services/materialApi";
 import { ApiError } from "@/services/api";
 
 interface CharaProfilePageProps {
@@ -52,8 +53,14 @@ const PROFILE_STEP_LABELS: Record<string, string> = {
   done: "即将完成…",
 };
 
+const CREATION_ADVICE_STEP_LABELS: Record<string, string> = {
+  creation_advice: "正在生成创作建议…",
+  creation_seed: "正在生成种子提示词…",
+  done: "即将完成…",
+};
+
 type StageTab = "profile" | "advice";
-type GenState = "idle" | "generating" | "done";
+type AdvicePhase = "hydrating" | "idle" | "generating" | "done";
 
 /* ── Prerequisite check helpers ── */
 const checkPrerequisites = (chara: CharaProfile) => {
@@ -277,75 +284,6 @@ const LockedCard = ({
   );
 };
 
-/* ── 创作建议占位动画（后端未接时仍用短时动画） ── */
-const TimedGeneratingView = ({
-  label,
-  onDone,
-}: {
-  label: string;
-  onDone: () => void;
-}) => {
-  useEffect(() => {
-    const timer = setTimeout(onDone, 2800);
-    return () => clearTimeout(timer);
-  }, [onDone]);
-
-  return (
-    <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
-      <div className="relative mb-8">
-        <div
-          className="w-20 h-20 rounded-3xl flex items-center justify-center"
-          style={{
-            background:
-              "linear-gradient(135deg, rgba(253,164,175,0.2) 0%, rgba(244,114,182,0.15) 100%)",
-            border: "2px solid rgba(244,114,182,0.25)",
-            animation: "pulse 1.5s ease-in-out infinite",
-          }}
-        >
-          <i className="ri-quill-pen-line text-rose-400 text-3xl"></i>
-        </div>
-        {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            className="absolute w-2.5 h-2.5 flex items-center justify-center text-pink-400"
-            style={{
-              top: "50%",
-              left: "50%",
-              animation: `profileOrbit${i} 2s linear infinite`,
-              animationDelay: `${i * 0.66}s`,
-            }}
-          >
-            <i className="ri-star-fill text-xs"></i>
-          </div>
-        ))}
-      </div>
-      <h3
-        className="text-base font-bold text-rose-600 mb-2"
-        style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
-      >
-        {label}
-      </h3>
-      <p className="text-sm text-rose-400/60 leading-relaxed">
-        AI 正在认真阅读角色资料，马上就好，请稍等一下下 ✨
-      </p>
-      <style>{`
-        @keyframes profileOrbit0 {
-          0% { transform: translate(-50%, -50%) rotate(0deg) translateX(46px) rotate(0deg); }
-          100% { transform: translate(-50%, -50%) rotate(360deg) translateX(46px) rotate(-360deg); }
-        }
-        @keyframes profileOrbit1 {
-          0% { transform: translate(-50%, -50%) rotate(120deg) translateX(46px) rotate(-120deg); }
-          100% { transform: translate(-50%, -50%) rotate(480deg) translateX(46px) rotate(-480deg); }
-        }
-        @keyframes profileOrbit2 {
-          0% { transform: translate(-50%, -50%) rotate(240deg) translateX(46px) rotate(-240deg); }
-          100% { transform: translate(-50%, -50%) rotate(600deg) translateX(46px) rotate(-600deg); }
-        }
-      `}</style>
-    </div>
-  );
-};
-
 /** 角色小档案：异步任务进行中 / 失败（轮询由父组件负责） */
 const ProfileTaskGeneratingView = ({
   currentStep,
@@ -437,6 +375,105 @@ const ProfileTaskGeneratingView = ({
           100% { transform: translate(-50%, -50%) rotate(480deg) translateX(46px) rotate(-480deg); }
         }
         @keyframes profileOrbit2 {
+          0% { transform: translate(-50%, -50%) rotate(240deg) translateX(46px) rotate(-240deg); }
+          100% { transform: translate(-50%, -50%) rotate(600deg) translateX(46px) rotate(-600deg); }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+/** 生成创作建议：异步任务进行中 / 失败（轮询由父组件负责） */
+const CreationAdviceTaskGeneratingView = ({
+  currentStep,
+  errorMessage,
+  onBack,
+}: {
+  currentStep: string | null;
+  errorMessage: string | null;
+  onBack: () => void;
+}) => {
+  if (errorMessage) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-8 text-center max-w-md mx-auto">
+        <div
+          className="rounded-xl px-4 py-3 text-sm text-rose-600 border border-rose-100 bg-rose-50/90 mb-6 w-full"
+          style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+        >
+          {errorMessage}
+        </div>
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all hover:opacity-90"
+          style={{
+            fontFamily: "'ZCOOL KuaiLe', cursive",
+            background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+            color: "white",
+            boxShadow: "0 4px 14px rgba(244,114,182,0.3)",
+          }}
+        >
+          <i className="ri-arrow-go-back-line"></i>
+          返回
+        </button>
+      </div>
+    );
+  }
+
+  const stepLabel =
+    (currentStep && CREATION_ADVICE_STEP_LABELS[currentStep]) || "任务已提交，正在排队处理…";
+
+  return (
+    <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
+      <div className="relative mb-8">
+        <div
+          className="w-20 h-20 rounded-3xl flex items-center justify-center"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(253,164,175,0.2) 0%, rgba(244,114,182,0.15) 100%)",
+            border: "2px solid rgba(244,114,182,0.25)",
+            animation: "pulse 1.5s ease-in-out infinite",
+          }}
+        >
+          <i className="ri-lightbulb-line text-rose-400 text-3xl"></i>
+        </div>
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="absolute w-2.5 h-2.5 flex items-center justify-center text-pink-400"
+            style={{
+              top: "50%",
+              left: "50%",
+              animation: `adviceOrbit${i} 2s linear infinite`,
+              animationDelay: `${i * 0.66}s`,
+            }}
+          >
+            <i className="ri-star-fill text-xs"></i>
+          </div>
+        ))}
+      </div>
+      <h3
+        className="text-base font-bold text-rose-600 mb-2"
+        style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+      >
+        正在整理创作建议与种子提示词～
+      </h3>
+      <p className="text-sm text-rose-500/80 leading-relaxed mb-1" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
+        {stepLabel}
+      </p>
+      <p className="text-xs text-rose-400/60 leading-relaxed">
+        多步推理可能需要数分钟，页面会自动刷新结果，请勿关闭标签页
+      </p>
+      <style>{`
+        @keyframes adviceOrbit0 {
+          0% { transform: translate(-50%, -50%) rotate(0deg) translateX(46px) rotate(0deg); }
+          100% { transform: translate(-50%, -50%) rotate(360deg) translateX(46px) rotate(-360deg); }
+        }
+        @keyframes adviceOrbit1 {
+          0% { transform: translate(-50%, -50%) rotate(120deg) translateX(46px) rotate(-120deg); }
+          100% { transform: translate(-50%, -50%) rotate(480deg) translateX(46px) rotate(-480deg); }
+        }
+        @keyframes adviceOrbit2 {
           0% { transform: translate(-50%, -50%) rotate(240deg) translateX(46px) rotate(-240deg); }
           100% { transform: translate(-50%, -50%) rotate(600deg) translateX(46px) rotate(-600deg); }
         }
@@ -1057,58 +1094,210 @@ const ProfileStage = ({
   );
 };
 
+function newSeedId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `seed-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function draftApiToOfficialSeedPrompts(draft: CreationAdviceSeedDraft | null): OfficialSeedPrompts {
+  if (!draft) return emptyOfficialSeedPrompts();
+  return {
+    characterSpecific: (draft.character_specific ?? []).map((text) => ({
+      id: newSeedId(),
+      text,
+      used: false,
+    })),
+    general: (draft.general ?? []).map((text) => ({
+      id: newSeedId(),
+      text,
+      used: false,
+    })),
+  };
+}
+
+function mergeDraftAndOfficialSeeds(
+  draft: CreationAdviceSeedDraft | null,
+  official: OfficialSeedPrompts | null | undefined
+): OfficialSeedPrompts {
+  const fromDraft = draftApiToOfficialSeedPrompts(draft);
+  if (fromDraft.characterSpecific.length > 0 || fromDraft.general.length > 0) {
+    return fromDraft;
+  }
+  if (official && (official.characterSpecific.length > 0 || official.general.length > 0)) {
+    return cloneOfficialSeedPrompts(official);
+  }
+  return emptyOfficialSeedPrompts();
+}
+
+type AdviceInnerTab = "role_advice" | "seed_prompts";
+
 /* ── Stage 2: Creative advice + seed prompts ── */
 const AdviceStage = ({
+  characterId,
   chara,
   profileUnlocked,
   onSave,
   onSaveSeedPrompts,
+  onCharacterUpdated,
+  showToast,
 }: {
+  characterId: string;
   chara: CharaProfile;
   profileUnlocked: boolean;
   onSave: (text: string) => void;
   onSaveSeedPrompts: (payload: OfficialSeedPrompts) => void | Promise<void>;
+  onCharacterUpdated: (detail: ApiCharacterDetail) => void;
+  showToast: (msg: string) => void;
 }) => {
-  const [genState, setGenState] = useState<GenState>("idle");
+  const [hydrated, setHydrated] = useState(false);
+  const [phase, setPhase] = useState<AdvicePhase>("hydrating");
   const [adviceText, setAdviceText] = useState(chara.bio.creativeAdvice || "");
   const [innerTab, setInnerTab] = useState<AdviceInnerTab>("role_advice");
   const [seedDraft, setSeedDraft] = useState<OfficialSeedPrompts>(() => emptyOfficialSeedPrompts());
   const [savingSeeds, setSavingSeeds] = useState(false);
-
-  const officialSeedKey = useMemo(
-    () =>
-      chara.bio.officialSeedPrompts
-        ? JSON.stringify(chara.bio.officialSeedPrompts)
-        : "",
-    [chara.bio.officialSeedPrompts]
-  );
+  const [pollError, setPollError] = useState<string | null>(null);
+  const [taskStep, setTaskStep] = useState<string | null>(null);
+  const [loadingStart, setLoadingStart] = useState(false);
 
   useEffect(() => {
     setAdviceText(chara.bio.creativeAdvice || "");
   }, [chara.bio.creativeAdvice]);
 
   useEffect(() => {
-    if (genState !== "done") return;
+    let cancelled = false;
+    setHydrated(false);
+    void (async () => {
+      try {
+        const status = await materialApi.getCreationAdviceStatus(characterId);
+        if (cancelled) return;
+        setPollError(null);
+        if (status.status === "processing" || status.status === "pending") {
+          setPhase("generating");
+          setTaskStep(status.current_step ?? null);
+        } else if (status.status === "failed") {
+          setPhase("idle");
+          setPollError(status.error_message || "生成创作建议失败");
+        } else if (status.status === "completed") {
+          try {
+            const detail = await materialApi.getCharacter(characterId);
+            if (cancelled) return;
+            onCharacterUpdated(detail);
+            const p = toCharaProfile(detail);
+            setAdviceText(p.bio.creativeAdvice || "");
+            setSeedDraft(
+              mergeDraftAndOfficialSeeds(status.seed_draft, p.bio.officialSeedPrompts ?? undefined)
+            );
+            setPhase("done");
+          } catch {
+            if (cancelled) return;
+            setAdviceText(chara.bio.creativeAdvice || "");
+            setSeedDraft(
+              mergeDraftAndOfficialSeeds(status.seed_draft, chara.bio.officialSeedPrompts ?? undefined)
+            );
+            setPhase("done");
+          }
+        } else {
+          setPhase("idle");
+        }
+      } catch (e) {
+        if (cancelled) return;
+        if (e instanceof ApiError && e.status === 404) {
+          setPhase("idle");
+          setPollError(null);
+        } else {
+          setPhase("idle");
+          setPollError(e instanceof ApiError ? e.message : "加载任务状态失败");
+        }
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // chara 仅用于 hydrate 失败回退；不把 chara 放入 deps，避免详情刷新打断界面
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [characterId, onCharacterUpdated]);
+
+  useEffect(() => {
+    let alive = true;
+    let timer: number | null = null;
+    if (phase !== "generating" || pollError) return;
+
+    const poll = async () => {
+      try {
+        const status = await materialApi.getCreationAdviceStatus(characterId);
+        if (!alive) return;
+        setTaskStep(status.current_step ?? null);
+        if (status.status === "completed") {
+          const detail = await materialApi.getCharacter(characterId);
+          if (!alive) return;
+          onCharacterUpdated(detail);
+          const p = toCharaProfile(detail);
+          setAdviceText(p.bio.creativeAdvice || "");
+          const st2 = await materialApi.getCreationAdviceStatus(characterId);
+          if (!alive) return;
+          setSeedDraft(
+            mergeDraftAndOfficialSeeds(st2.seed_draft, p.bio.officialSeedPrompts ?? undefined)
+          );
+          setPhase("done");
+          setPollError(null);
+          showToast("创作建议与种子提示词已生成");
+          return;
+        }
+        if (status.status === "failed") {
+          setPollError(status.error_message || "生成创作建议失败");
+          return;
+        }
+      } catch (e) {
+        if (!alive) return;
+        setPollError(e instanceof ApiError ? e.message : "获取任务状态失败");
+        return;
+      }
+      timer = window.setTimeout(() => {
+        void poll();
+      }, 10000);
+    };
+
+    void poll();
+    return () => {
+      alive = false;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [characterId, phase, pollError, onCharacterUpdated, showToast]);
+
+  const runStartAdviceTask = useCallback(async () => {
+    if (!characterId || characterId === "undefined" || characterId === "null") {
+      showToast("当前角色ID无效，请重新选择角色后再试");
+      return;
+    }
+    setLoadingStart(true);
+    setPollError(null);
+    try {
+      await materialApi.startCreationAdviceTask(characterId);
+      setTaskStep(null);
+      setPhase("generating");
+      showToast("任务已提交，正在生成创作建议…");
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "启动任务失败");
+    } finally {
+      setLoadingStart(false);
+    }
+  }, [characterId, showToast]);
+
+  const handleViewSaved = useCallback(() => {
+    setAdviceText(chara.bio.creativeAdvice || "");
     const o = chara.bio.officialSeedPrompts;
     if (o && (o.characterSpecific.length > 0 || o.general.length > 0)) {
       setSeedDraft(cloneOfficialSeedPrompts(o));
     } else {
-      setSeedDraft(generateMockSeedPrompts(chara.name));
+      setSeedDraft(emptyOfficialSeedPrompts());
     }
-  }, [genState, chara.id, chara.name, officialSeedKey]);
-
-  const handleStart = () => {
-    setGenState("generating");
-  };
-
-  const handleGenDone = () => {
-    setAdviceText(chara.bio.creativeAdvice || generateMockAdvice(chara.name));
-    setGenState("done");
-  };
-
-  const handleRegenerate = () => {
-    setGenState("generating");
-  };
+    setPhase("done");
+    setPollError(null);
+  }, [chara.bio.creativeAdvice, chara.bio.officialSeedPrompts]);
 
   const handleSaveSeedsOfficial = useCallback(async () => {
     setSavingSeeds(true);
@@ -1145,11 +1334,29 @@ const AdviceStage = ({
     );
   }
 
-  if (genState === "generating") {
-    return <TimedGeneratingView label="正在整理角色创作建议与种子提示词～" onDone={handleGenDone} />;
+  if (!hydrated) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-6 text-rose-400 text-sm gap-2">
+        <i className="ri-loader-4-line text-2xl animate-spin" aria-hidden />
+        <span style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>加载任务状态…</span>
+      </div>
+    );
   }
 
-  if (genState === "done") {
+  if (phase === "generating") {
+    return (
+      <CreationAdviceTaskGeneratingView
+        currentStep={taskStep}
+        errorMessage={pollError}
+        onBack={() => {
+          setPollError(null);
+          setPhase("idle");
+        }}
+      />
+    );
+  }
+
+  if (phase === "done") {
     return (
       <div className="flex flex-col gap-3 p-5">
         <div className="flex items-center gap-2">
@@ -1219,7 +1426,7 @@ const AdviceStage = ({
             value={adviceText}
             onChange={setAdviceText}
             onSave={() => onSave(adviceText)}
-            onRegenerate={handleRegenerate}
+            onRegenerate={() => void runStartAdviceTask()}
             saveLabel="保存创作建议"
             savedLabel="创作建议已保存！"
             placeholder="角色创作建议内容..."
@@ -1237,7 +1444,23 @@ const AdviceStage = ({
   }
 
   return (
-    <div className="flex flex-col items-center justify-center py-12 px-8 text-center">
+    <div className="flex flex-col items-center justify-center py-12 px-8 text-center w-full max-w-md mx-auto">
+      {pollError && (
+        <div
+          className="w-full rounded-xl px-4 py-3 text-sm text-rose-600 border border-rose-100 bg-rose-50/90 mb-4 flex items-start justify-between gap-2"
+          style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+        >
+          <span className="text-left flex-1 min-w-0">{pollError}</span>
+          <button
+            type="button"
+            onClick={() => setPollError(null)}
+            className="shrink-0 text-xs px-2 py-1 rounded-lg cursor-pointer"
+            style={{ color: "#db2777", border: "1px solid rgba(244,114,182,0.35)" }}
+          >
+            关闭
+          </button>
+        </div>
+      )}
       <div
         className="w-16 h-16 flex items-center justify-center rounded-3xl mb-5"
         style={{
@@ -1279,7 +1502,7 @@ const AdviceStage = ({
           </div>
           <button
             type="button"
-            onClick={() => setGenState("done")}
+            onClick={handleViewSaved}
             className="text-xs px-3 py-1 rounded-lg cursor-pointer whitespace-nowrap transition-all hover:opacity-80"
             style={{
               background: "rgba(110,231,183,0.15)",
@@ -1295,8 +1518,9 @@ const AdviceStage = ({
 
       <button
         type="button"
-        onClick={handleStart}
-        className="flex items-center gap-2.5 px-8 py-3.5 rounded-2xl text-base font-bold text-white cursor-pointer transition-all duration-200 whitespace-nowrap"
+        onClick={() => void runStartAdviceTask()}
+        disabled={loadingStart}
+        className="flex items-center gap-2.5 px-8 py-3.5 rounded-2xl text-base font-bold text-white cursor-pointer transition-all duration-200 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
         style={{
           fontFamily: "'ZCOOL KuaiLe', cursive",
           background:
@@ -1305,53 +1529,17 @@ const AdviceStage = ({
         }}
       >
         <div className="w-5 h-5 flex items-center justify-center">
-          <i className="ri-lightbulb-fill text-lg"></i>
+          {loadingStart ? (
+            <i className="ri-loader-4-line text-lg animate-spin" />
+          ) : (
+            <i className="ri-lightbulb-fill text-lg"></i>
+          )}
         </div>
-        {chara.bio.creativeAdvice ? "重新整理创作建议" : "开始整理创作建议"}
+        {loadingStart ? "提交中…" : chara.bio.creativeAdvice ? "重新整理创作建议" : "开始整理创作建议"}
       </button>
     </div>
   );
 };
-
-/* ── Mock（创作建议后端未接时） ── */
-const generateMockAdvice = (name: string) =>
-  `【角色创作建议 · ${name}】\n\n视觉创作方向\n· 根据角色配色和风格，建议使用协调的色调\n· 背景元素可参考角色的世界观设定\n\n场景创作建议\n· 日常场景：结合角色的日常习惯和爱好\n· 特殊场景：展现角色的独特能力和魅力\n\n性格表现技巧\n· 通过细节动作体现角色性格\n· 表情设计要符合角色的情感特征\n\n注意事项\n· 保持角色设定的一致性\n· 适当留白，给观者想象空间`;
-
-function newSeedId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `seed-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-const generateMockSeedPrompts = (name: string): OfficialSeedPrompts => ({
-  characterSpecific: [
-    {
-      id: newSeedId(),
-      text: `【${name} · 角色专属】日系赛璐璐半身肖像，柔和顶光，背景为角色标志性小道具与淡色渐变，强调瞳色与发型层次。`,
-      used: false,
-    },
-    {
-      id: newSeedId(),
-      text: `同一角色冬装外套 + 围巾，室外薄雪街道，呼出白气，电影感浅景深，保持人设气质一致。`,
-      used: false,
-    },
-  ],
-  general: [
-    {
-      id: newSeedId(),
-      text: "通用：柔焦樱花林间小径，逆光发丝边缘光，粉白配色，治愈氛围，无文字水印。",
-      used: false,
-    },
-    {
-      id: newSeedId(),
-      text: "通用：室内咖啡馆靠窗座位，午后斜照，桌面一杯热饮与翻开的书，安静叙事感。",
-      used: false,
-    },
-  ],
-});
-
-type AdviceInnerTab = "role_advice" | "seed_prompts";
 
 /* ── 加工任务内：种子提示词列表（勾选 = 标记使用） ── */
 const SeedPromptList = ({
@@ -1582,10 +1770,13 @@ const CharaProfilePage = ({
           />
         ) : (
           <AdviceStage
+            characterId={characterId}
             chara={chara}
             profileUnlocked={profileSaved}
             onSave={(text) => void handleSaveAdvice(text)}
             onSaveSeedPrompts={onSaveSeedPrompts}
+            onCharacterUpdated={onCharacterUpdated}
+            showToast={showToast}
           />
         )}
       </div>

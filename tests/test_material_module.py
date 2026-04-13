@@ -542,3 +542,106 @@ class TestMaterialCharacterService:
         assert bio["chara_profile"] == "p"
         assert bio["creative_advice"] == "a"
         assert bio["official_seed_prompts"] == payload
+
+    def test_start_creation_advice_missing_prerequisite(self, material_svc):
+        char = material_svc.create_character("CADV0")
+        with pytest.raises(ValueError, match="text_understanding"):
+            material_svc.start_creation_advice_task(char.id, background_tasks=None)
+
+    def test_creation_advice_task_success(self, material_svc):
+        from app.services.material_service import material_file_service
+
+        char = material_svc.create_character("CADV1")
+        cp_dir = material_file_service.get_chara_profile_dir(char.id)
+        os.makedirs(cp_dir, exist_ok=True)
+        for name in material_file_service.CHARA_PROFILE_ARTIFACT_NAMES:
+            with open(os.path.join(cp_dir, name), "w", encoding="utf-8") as f:
+                f.write("body\n")
+
+        calls = []
+
+        def fake_infer(prompt: str, **_kw):
+            calls.append(prompt)
+            if "请以JSON格式给出你的输出" in prompt:
+                return '{"character_specific": ["种子A"], "general": ["通用B"]}'
+            return "# 创作建议\n\n段落"
+
+        with patch(
+            "app.services.material_service.creation_advice_generation_service.yibu_gemini_infer",
+            side_effect=fake_infer,
+        ):
+            material_svc.start_creation_advice_task(char.id, background_tasks=None)
+
+        st = material_svc.get_creation_advice_task_status(char.id)
+        assert st["status"] == "completed"
+        assert st["current_step"] == "done"
+        assert st["seed_draft"] == {"character_specific": ["种子A"], "general": ["通用B"]}
+        adv_path = os.path.join(cp_dir, material_file_service.CREATION_ADVICE_MD_FILENAME)
+        assert os.path.isfile(adv_path)
+        char2 = material_svc.get_character(char.id)
+        bio = json.loads(char2.bio_json)
+        assert bio["creative_advice"] == "# 创作建议\n\n段落"
+        assert len(calls) == 2
+
+    def test_creation_advice_history_seeds_in_second_prompt(self, material_svc):
+        from app.services.material_service import material_file_service
+
+        char = material_svc.create_character("CADV2")
+        material_svc.repo.update(
+            char.id,
+            {
+                "bio_json": json.dumps(
+                    {
+                        "official_seed_prompts": {
+                            "character_specific": [{"id": "1", "text": "历史专属一句", "used": False}],
+                            "general": [],
+                        }
+                    },
+                    ensure_ascii=False,
+                )
+            },
+        )
+        cp_dir = material_file_service.get_chara_profile_dir(char.id)
+        os.makedirs(cp_dir, exist_ok=True)
+        for name in material_file_service.CHARA_PROFILE_ARTIFACT_NAMES:
+            with open(os.path.join(cp_dir, name), "w", encoding="utf-8") as f:
+                f.write("x\n")
+
+        calls = []
+
+        def capture(prompt: str, **_kw):
+            calls.append(prompt)
+            if "请以JSON格式给出你的输出" in prompt:
+                return '{"character_specific": [], "general": []}'
+            return "adv"
+
+        with patch(
+            "app.services.material_service.creation_advice_generation_service.yibu_gemini_infer",
+            side_effect=capture,
+        ):
+            material_svc.start_creation_advice_task(char.id, background_tasks=None)
+
+        assert len(calls) == 2
+        assert "历史专属一句" in calls[1]
+
+    def test_parse_seed_prompt_llm_json_strips_fence(self):
+        from app.services.material_service.creation_advice_generation_service import (
+            parse_seed_prompt_llm_json,
+        )
+
+        raw = '```json\n{"character_specific": ["a"], "general": ["b"]}\n```'
+        d = parse_seed_prompt_llm_json(raw)
+        assert d == {"character_specific": ["a"], "general": ["b"]}
+
+    def test_build_history_seed_prompts_empty_and_filled(self):
+        from app.services.material_service.history_seed_prompts import build_history_seed_prompts
+
+        assert build_history_seed_prompts({}) == "（暂无历史正式种子提示词）"
+        bio = {
+            "official_seed_prompts": {
+                "character_specific": [{"id": "1", "text": "  甲  ", "used": False}],
+                "general": [{"id": "2", "text": "乙", "used": True}],
+            }
+        }
+        assert "- 甲" in build_history_seed_prompts(bio)
+        assert "- 乙" in build_history_seed_prompts(bio)

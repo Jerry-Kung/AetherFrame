@@ -332,6 +332,27 @@ export interface CharaProfileStatusResult {
   updated_at: string;
 }
 
+export interface CreationAdviceStartResult {
+  task_id: string;
+  status: string;
+}
+
+export interface CreationAdviceSeedDraft {
+  character_specific: string[];
+  general: string[];
+}
+
+export interface CreationAdviceStatusResult {
+  task_id: string;
+  character_id: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  error_message: string | null;
+  current_step: string | null;
+  created_at: string;
+  updated_at: string;
+  seed_draft: CreationAdviceSeedDraft | null;
+}
+
 export async function startCharaProfileTask(
   characterId: string,
   body: { selected_fanart_ids: string[] }
@@ -366,6 +387,43 @@ export async function getCharaProfileStatus(
     const data = await parseJson<CharaProfileStatusResult>(response);
     throwIfError(response, data);
     return data.data as CharaProfileStatusResult;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function startCreationAdviceTask(
+  characterId: string
+): Promise<CreationAdviceStartResult> {
+  assertValidCharacterId(characterId, "启动生成创作建议任务");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creation-advice/start`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      timeout: 120000,
+    });
+    const data = await parseJson<CreationAdviceStartResult>(response);
+    throwIfError(response, data);
+    return data.data as CreationAdviceStartResult;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function getCreationAdviceStatus(
+  characterId: string
+): Promise<CreationAdviceStatusResult> {
+  assertValidCharacterId(characterId, "查询生成创作建议任务状态");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creation-advice/status`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "GET",
+      timeout: 20000,
+    });
+    const data = await parseJson<CreationAdviceStatusResult>(response);
+    throwIfError(response, data);
+    return data.data as CreationAdviceStatusResult;
   } catch (e) {
     rethrow(e);
   }

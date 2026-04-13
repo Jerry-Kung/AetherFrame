@@ -18,6 +18,7 @@ from app.prompts.material.standard_photo import (
 )
 from app.repositories.material_repository import INDEX_TO_SHOT_TYPE, MaterialCharacterRepository
 from app.services.material_service import chara_profile_generation_service
+from app.services.material_service import creation_advice_generation_service
 from app.services.material_service import material_file_service
 from app.services.file_service import FileDeleteError, FileSaveError, FileValidationError
 from app.services.material_service import standard_photo_generation_service
@@ -661,6 +662,129 @@ class MaterialService:
 
     async def _run_chara_profile_task_async(self, character_id: str, task_id: str) -> None:
         await asyncio.to_thread(self._run_chara_profile_task_sync, character_id, task_id)
+
+    async def _run_creation_advice_task_async(self, character_id: str, task_id: str) -> None:
+        await asyncio.to_thread(self._run_creation_advice_task_sync, character_id, task_id)
+
+    def start_creation_advice_task(
+        self,
+        character_id: str,
+        background_tasks: Optional[BackgroundTasks] = None,
+    ) -> Dict[str, Any]:
+        char = self.repo.get_by_id(character_id)
+        if not char:
+            raise ValueError("角色不存在")
+        missing = material_file_service.list_missing_chara_profile_prerequisite_files(character_id)
+        if missing:
+            names = "、".join(missing)
+            raise ValueError(
+                f"生成创作建议前请先完成角色小档案并保存下列文件（缺失或为空）：{names}"
+            )
+
+        material_file_service.clear_creation_advice_artifacts(character_id)
+        task = self.repo.upsert_creation_advice_task(
+            character_id=character_id,
+            status="processing",
+            error_message=None,
+            current_step=None,
+        )
+
+        if background_tasks:
+            background_tasks.add_task(self._run_creation_advice_task_async, character_id, task.id)
+        else:
+            self._run_creation_advice_task_sync(character_id, task.id)
+
+        task = self.repo.get_creation_advice_task_by_id(task.id)
+        return {"task_id": task.id, "status": task.status}
+
+    def _run_creation_advice_task_sync(self, character_id: str, task_id: str) -> None:
+        bind = self.db.get_bind()
+        db = Session(bind=bind, autocommit=False, autoflush=False)
+        try:
+            repo = MaterialCharacterRepository(db)
+            task = repo.get_creation_advice_task_by_id(task_id)
+            if not task:
+                return
+            char = repo.get_by_id(character_id)
+            if not char:
+                repo.update_creation_advice_task(
+                    task_id,
+                    {"status": "failed", "error_message": "角色不存在", "current_step": None},
+                )
+                return
+
+            try:
+                bio = json.loads(char.bio_json or "{}")
+                if not isinstance(bio, dict):
+                    bio = {}
+            except json.JSONDecodeError:
+                bio = {}
+
+            def on_step(step: str) -> None:
+                repo.update_creation_advice_task(task_id, {"current_step": step})
+
+            try:
+                advice_md, _seed_draft = creation_advice_generation_service.run_creation_advice_pipeline(
+                    character_id=character_id,
+                    bio=bio,
+                    on_step=on_step,
+                )
+            except Exception as e:
+                logger.error(f"生成创作建议任务执行失败: {e}", exc_info=True)
+                repo.update_creation_advice_task(
+                    task_id,
+                    {"status": "failed", "error_message": str(e), "current_step": None},
+                )
+                return
+
+            bio["creative_advice"] = advice_md
+            repo.update(character_id, {"bio_json": json.dumps(bio, ensure_ascii=False)})
+            MaterialService(db)._after_character_material_changed(character_id)
+            repo.update_creation_advice_task(
+                task_id,
+                {
+                    "status": "completed",
+                    "error_message": None,
+                    "current_step": "done",
+                },
+            )
+        finally:
+            db.close()
+
+    def get_creation_advice_task_status(self, character_id: str) -> Optional[Dict[str, Any]]:
+        task = self.repo.get_creation_advice_task_by_character_id(character_id)
+        if not task:
+            return None
+        seed_draft: Optional[Dict[str, List[str]]] = None
+        if task.status == "completed":
+            raw = material_file_service.read_creation_seed_draft_json(character_id)
+            if isinstance(raw, dict):
+                cs = raw.get("character_specific")
+                gn = raw.get("general")
+
+                def _str_list(v: Any) -> List[str]:
+                    if not isinstance(v, list):
+                        return []
+                    out: List[str] = []
+                    for x in v:
+                        if isinstance(x, str) and x.strip():
+                            out.append(x)
+                    return out
+
+                seed_draft = {
+                    "character_specific": _str_list(cs),
+                    "general": _str_list(gn),
+                }
+        return {
+            "task_id": task.id,
+            "character_id": task.character_id,
+            "status": task.status,
+            "error_message": task.error_message,
+            "current_step": task.current_step,
+            "created_at": task.created_at,
+            "updated_at": task.updated_at,
+            "seed_draft": seed_draft,
+        }
 
     def start_chara_profile_task(
         self,

@@ -1,3 +1,4 @@
+import json
 import os
 import logging
 import uuid
@@ -75,6 +76,14 @@ CHARA_PROFILE_ARTIFACT_NAMES = (
     "visual_understanding_official.md",
     "visual_understanding_fanart.md",
     "chara_profile_final.md",
+)
+
+# 生成创作建议任务产出（与角色小档案四件套分离，勿在 clear_chara_profile_artifacts 中删除）
+CREATION_ADVICE_MD_FILENAME = "creation_advice.md"
+CREATION_SEED_DRAFT_JSON_FILENAME = "creation_seed_draft.json"
+CREATION_ADVICE_ARTIFACT_NAMES = (
+    CREATION_ADVICE_MD_FILENAME,
+    CREATION_SEED_DRAFT_JSON_FILENAME,
 )
 
 
@@ -426,3 +435,74 @@ def read_chara_profile_markdown(character_id: str, filename: str) -> Optional[st
         return None
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
+
+
+def list_missing_chara_profile_prerequisite_files(character_id: str) -> List[str]:
+    """生成创作建议前置：四个角色小档案 Markdown 均须存在且非空。返回缺失或为空文件名列表。"""
+    missing: List[str] = []
+    d = get_chara_profile_dir(character_id)
+    for name in CHARA_PROFILE_ARTIFACT_NAMES:
+        path = os.path.join(d, name)
+        if not os.path.isfile(path):
+            missing.append(name)
+            continue
+        try:
+            if os.path.getsize(path) == 0:
+                missing.append(name)
+        except OSError:
+            missing.append(name)
+    return missing
+
+
+def clear_creation_advice_artifacts(character_id: str) -> None:
+    """新一轮「生成创作建议」任务前清空上轮产出。"""
+    d = get_chara_profile_dir(character_id)
+    if not os.path.isdir(d):
+        return
+    for name in CREATION_ADVICE_ARTIFACT_NAMES:
+        path = os.path.join(d, name)
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError as e:
+                logger.warning(f"删除创作建议产出文件失败 {path}: {e}")
+
+
+def write_creation_advice_markdown(character_id: str, content: str) -> str:
+    ensure_character_dirs(character_id)
+    d = get_chara_profile_dir(character_id)
+    ensure_dir_exists(d)
+    path = os.path.join(d, CREATION_ADVICE_MD_FILENAME)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return path
+
+
+def read_creation_advice_markdown(character_id: str) -> Optional[str]:
+    path = os.path.join(get_chara_profile_dir(character_id), CREATION_ADVICE_MD_FILENAME)
+    if not os.path.isfile(path):
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def write_creation_seed_draft_json(character_id: str, data: Dict) -> str:
+    ensure_character_dirs(character_id)
+    d = get_chara_profile_dir(character_id)
+    ensure_dir_exists(d)
+    path = os.path.join(d, CREATION_SEED_DRAFT_JSON_FILENAME)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return path
+
+
+def read_creation_seed_draft_json(character_id: str) -> Optional[Dict]:
+    path = os.path.join(get_chara_profile_dir(character_id), CREATION_SEED_DRAFT_JSON_FILENAME)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        return raw if isinstance(raw, dict) else None
+    except (json.JSONDecodeError, OSError):
+        return None

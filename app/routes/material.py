@@ -32,6 +32,9 @@ from app.schemas.material import (
     CharaProfileStartRequest,
     CharaProfileStartResponse,
     CharaProfileStatusResponse,
+    CreationAdviceStartResponse,
+    CreationAdviceStatusResponse,
+    CreationAdviceSeedDraftData,
     StandardPhotoSelectRequest,
     StandardPhotoStartRequest,
     StandardPhotoStartResponse,
@@ -566,6 +569,54 @@ async def get_chara_profile_status(
         success=True,
         data=CharaProfileStatusResponse(**task).model_dump(mode="json"),
         message="获取角色小档案任务状态成功",
+    )
+
+
+@router.post("/characters/{character_id}/creation-advice/start", response_model=ApiResponse)
+async def start_creation_advice(
+    character_id: str,
+    background_tasks: BackgroundTasks,
+    service: MaterialService = Depends(get_material_service),
+):
+    character_id = ensure_valid_character_id(character_id)
+    logger.info(f"API 请求 - 启动生成创作建议任务: {character_id}")
+    try:
+        data = service.start_creation_advice_task(
+            character_id=character_id,
+            background_tasks=background_tasks,
+        )
+        return ApiResponse(
+            success=True,
+            data=CreationAdviceStartResponse(**data).model_dump(mode="json"),
+            message="生成创作建议任务已启动",
+        )
+    except ValueError as e:
+        msg = str(e)
+        if msg == "角色不存在":
+            raise HTTPException(status_code=404, detail=msg) from e
+        raise HTTPException(status_code=400, detail=msg) from e
+    except Exception as e:
+        logger.error(f"API 错误 - 启动生成创作建议任务失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="启动生成创作建议任务失败")
+
+
+@router.get("/characters/{character_id}/creation-advice/status", response_model=ApiResponse)
+async def get_creation_advice_status(
+    character_id: str,
+    service: MaterialService = Depends(get_material_service),
+):
+    character_id = ensure_valid_character_id(character_id)
+    task = service.get_creation_advice_task_status(character_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="生成创作建议任务不存在")
+    seed = task.get("seed_draft")
+    seed_model = CreationAdviceSeedDraftData(**seed) if seed else None
+    payload = {k: v for k, v in task.items() if k != "seed_draft"}
+    payload["seed_draft"] = seed_model
+    return ApiResponse(
+        success=True,
+        data=CreationAdviceStatusResponse(**payload).model_dump(mode="json"),
+        message="获取生成创作建议任务状态成功",
     )
 
 

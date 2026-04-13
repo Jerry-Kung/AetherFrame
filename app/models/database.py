@@ -240,6 +240,7 @@ def init_db():
             MaterialCharacter,
             MaterialCharacterRawImage,
             MaterialCharaProfileTask,
+            MaterialCreationAdviceTask,
             MaterialStandardPhotoTask,
         )
         from app.models.creation import CreationPromptPrecreationTask, CreationQuickCreateTask  # noqa: F401
