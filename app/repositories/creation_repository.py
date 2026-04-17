@@ -136,6 +136,7 @@ class CreationQuickCreateRepository:
         self,
         *,
         character_id: str,
+        seed_prompt: str,
         n: int,
         aspect_ratio: str,
         selected_prompts: List[Dict[str, Any]],
@@ -146,6 +147,7 @@ class CreationQuickCreateRepository:
         task = CreationQuickCreateTask(
             id=task_id,
             character_id=character_id,
+            seed_prompt=seed_prompt,
             n=n,
             aspect_ratio=aspect_ratio,
             selected_prompts_json=json.dumps(selected_prompts, ensure_ascii=False),

@@ -49,12 +49,18 @@ def _create_five_standard_refs(character_id: str) -> None:
 
 
 class TestQuickCreateService:
+    @patch("app.services.creation_service.quick_create_service.yibu_gemini_infer")
     @patch("app.services.creation_service.quick_create_service.generate_image_with_nano_banana_pro")
-    def test_quick_create_success(self, mock_generate, db_session, temp_data_dir):
+    def test_quick_create_success(
+        self, mock_generate, mock_review_infer, db_session, temp_data_dir
+    ):
         from app.services.creation_service.quick_create_service import QuickCreateService
 
         _create_character_and_prompt_task(db_session, "mchar_qc_ok")
         _create_five_standard_refs("mchar_qc_ok")
+        mock_review_infer.return_value = (
+            '{"review_result": true, "review_reason": "looks good"}'
+        )
 
         def _ok(**kwargs):
             output_path = kwargs["output_path"]
@@ -77,6 +83,7 @@ class TestQuickCreateService:
         status = service.get_task_status(start["task_id"])
         assert status is not None
         assert status["status"] == "completed"
+        assert status["seed_prompt"] == "seed"
         assert status["results"] is not None
         assert status["results"][0]["success_count"] == 2
         assert len(status["results"][0]["generated_images"]) == 2
@@ -110,12 +117,18 @@ class TestQuickCreateService:
         assert calls["count"] == 4
         assert status["results"] is None
 
+    @patch("app.services.creation_service.quick_create_service.yibu_gemini_infer")
     @patch("app.services.creation_service.quick_create_service.generate_image_with_nano_banana_pro")
-    def test_quick_create_default_use_latest_cards(self, mock_generate, db_session, temp_data_dir):
+    def test_quick_create_default_use_latest_cards(
+        self, mock_generate, mock_review_infer, db_session, temp_data_dir
+    ):
         from app.services.creation_service.quick_create_service import QuickCreateService
 
         _create_character_and_prompt_task(db_session, "mchar_qc_default")
         _create_five_standard_refs("mchar_qc_default")
+        mock_review_infer.return_value = (
+            '{"review_result": true, "review_reason": "looks good"}'
+        )
 
         def _ok(**kwargs):
             output_path = kwargs["output_path"]
@@ -141,6 +154,48 @@ class TestQuickCreateService:
         assert status["results"] is not None
         assert len(status["results"]) == 2
         assert all(x["success_count"] == 1 for x in status["results"])
+
+    @patch("app.services.creation_service.quick_create_service.yibu_gemini_infer")
+    @patch("app.services.creation_service.quick_create_service.generate_image_with_nano_banana_pro")
+    def test_quick_create_review_rejects_and_deletes_images(
+        self, mock_generate, mock_review_infer, db_session, temp_data_dir
+    ):
+        from app.services.creation_service.quick_create_service import QuickCreateService
+
+        _create_character_and_prompt_task(db_session, "mchar_qc_review_reject")
+        _create_five_standard_refs("mchar_qc_review_reject")
+        mock_review_infer.return_value = (
+            '{"review_result": false, "review_reason": "pose mismatch"}'
+        )
+
+        created_paths = []
+
+        def _ok(**kwargs):
+            output_path = kwargs["output_path"]
+            file_name = kwargs["file_name"]
+            os.makedirs(output_path, exist_ok=True)
+            full = os.path.join(output_path, file_name)
+            with open(full, "wb") as f:
+                f.write(b"img")
+            created_paths.append(full)
+            return True
+
+        mock_generate.side_effect = _ok
+
+        service = QuickCreateService(db_session)
+        start = service.start_quick_create(
+            character_id="mchar_qc_review_reject",
+            selected_prompts=[{"id": "p1", "fullPrompt": "prompt body 1"}],
+            n=2,
+            aspect_ratio="1:1",
+            background_tasks=None,
+        )
+        status = service.get_task_status(start["task_id"])
+        assert status is not None
+        assert status["status"] == "failed"
+        assert status["results"] is None
+        assert len(created_paths) == 4
+        assert all(not os.path.exists(p) for p in created_paths)
 
     def test_quick_create_invalid_aspect_ratio(self, db_session, temp_data_dir):
         from app.services.creation_service.quick_create_service import QuickCreateService

@@ -95,6 +95,7 @@ class QuickCreatePromptResultItem(BaseModel):
 class QuickCreateStatusResponse(BaseModel):
     task_id: str
     character_id: str
+    seed_prompt: str
     status: str
     error_message: Optional[str] = None
     current_step: Optional[str] = None
@@ -109,6 +110,7 @@ class QuickCreateHistoryItem(BaseModel):
     id: str
     task_id: str
     character_id: str
+    seed_prompt: str
     chara_name: str
     chara_avatar: str = ""
     prompt_count: int

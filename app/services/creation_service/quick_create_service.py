@@ -20,6 +20,8 @@ from app.services.material_service.material_file_service import (
     standard_reference_paths_for_multimodal_prompt,
 )
 from app.tools.llm.nano_banana_pro import generate_image_with_nano_banana_pro
+from app.tools.llm.yibu_llm_infer import yibu_gemini_infer
+from app.prompts.creation.prompt_review import prompt_review
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,40 @@ def _parse_json_list(raw: Optional[str]) -> List[Dict[str, Any]]:
     return []
 
 
+def _parse_llm_json_object(text: str) -> Dict[str, Any]:
+    s = (text or "").strip()
+    if s.startswith("```"):
+        lines = s.split("\n")
+        if lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        s = "\n".join(lines).strip()
+    start = s.find("{")
+    end = s.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("响应中未找到可解析的 JSON 对象")
+    return json.loads(s[start : end + 1])
+
+
+def _review_generated_image(
+    *,
+    full_path: str,
+    seed_prompt: str,
+    creation_prompt: str,
+) -> tuple[bool, str]:
+    image_path = [full_path]
+    prompt = prompt_review.format(
+        seed_prompt=seed_prompt,
+        creation_prompt=creation_prompt,
+    )
+    response = yibu_gemini_infer(prompt, image_path=image_path, thinking_level="high")
+    parsed = _parse_llm_json_object(response)
+    review_result = bool(parsed.get("review_result", False))
+    review_reason = str(parsed.get("review_reason") or "").strip()
+    return review_result, review_reason
+
+
 def _sync_quick_create_history_files_for_task_id(db: Session, task_id: str) -> None:
     qrepo = CreationQuickCreateRepository(db)
     mrepo = MaterialCharacterRepository(db)
@@ -83,6 +119,7 @@ def _sync_quick_create_history_files_for_task_id(db: Session, task_id: str) -> N
         "id": task.id,
         "task_id": task.id,
         "character_id": task.character_id,
+        "seed_prompt": task.seed_prompt,
         "chara_name": chara_name,
         "chara_avatar": "",
         "prompt_count": len(selected_prompts),
@@ -116,6 +153,7 @@ def _sync_quick_create_history_files_for_task_id(db: Session, task_id: str) -> N
                 "id": t.id,
                 "task_id": t.id,
                 "character_id": t.character_id,
+                "seed_prompt": t.seed_prompt,
                 "chara_name": c.name if c else "未知角色",
                 "chara_avatar": "",
                 "prompt_count": len(selected),
@@ -251,6 +289,7 @@ def run_quick_create_task_sync(task_id: str, session_factory=SessionLocal) -> No
         task_meta = {
             "task_id": task.id,
             "character_id": task.character_id,
+            "seed_prompt": task.seed_prompt,
             "n": task.n,
             "aspect_ratio": task.aspect_ratio,
             "selected_prompts": selected,
@@ -295,9 +334,41 @@ def run_quick_create_task_sync(task_id: str, session_factory=SessionLocal) -> No
                     continue
                 full_path = os.path.join(prompt_dir, file_name)
                 if os.path.isfile(full_path):
-                    success += 1
-                    total_success += 1
-                    images.append(os.path.relpath(full_path, task.work_dir))
+                    try:
+                        reviewed, reason = _review_generated_image(
+                            full_path=full_path,
+                            seed_prompt=task.seed_prompt,
+                            creation_prompt=full_prompt,
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "图片审核异常，按不通过处理: task_id=%s prompt_id=%s file=%s error=%s",
+                            task_id,
+                            prompt_id,
+                            full_path,
+                            e,
+                            exc_info=True,
+                        )
+                        reviewed, reason = False, f"审核异常: {e}"
+
+                    if reviewed:
+                        success += 1
+                        total_success += 1
+                        images.append(os.path.relpath(full_path, task.work_dir))
+                    else:
+                        logger.info(
+                            "图片审核不通过，删除并重试: task_id=%s prompt_id=%s file=%s reason=%s",
+                            task_id,
+                            prompt_id,
+                            full_path,
+                            reason or "未提供",
+                        )
+                        try:
+                            os.remove(full_path)
+                        except FileNotFoundError:
+                            pass
+                        except Exception:
+                            logger.warning("删除审核失败图片出错: %s", full_path, exc_info=True)
 
             results.append(
                 {
@@ -377,6 +448,7 @@ class QuickCreateService:
             "id": task.id,
             "task_id": task.id,
             "character_id": task.character_id,
+            "seed_prompt": task.seed_prompt,
             "chara_name": chara_name,
             "chara_avatar": "",
             "prompt_count": len(selected_prompts),
@@ -407,6 +479,7 @@ class QuickCreateService:
                     "id": detail["id"],
                     "task_id": detail["task_id"],
                     "character_id": detail["character_id"],
+                    "seed_prompt": detail["seed_prompt"],
                     "chara_name": detail["chara_name"],
                     "chara_avatar": detail["chara_avatar"],
                     "prompt_count": detail["prompt_count"],
@@ -531,6 +604,9 @@ class QuickCreateService:
         latest = self.pre_repo.get_latest_completed_by_character_id(character_id)
         if not latest:
             raise ValueError("未找到可用的 Prompt 预生成结果")
+        seed_prompt = (latest.seed_prompt or "").strip()
+        if not seed_prompt:
+            raise ValueError("未找到可用的 seed_prompt，请先执行 Prompt 预生成")
         cards = json.loads(latest.result_json or "[]")
         resolved = _resolve_selected_prompts(
             selected_prompts=selected_prompts,
@@ -541,6 +617,7 @@ class QuickCreateService:
 
         task = self.quick_repo.create(
             character_id=character_id,
+            seed_prompt=seed_prompt,
             n=n,
             aspect_ratio=aspect_ratio,
             selected_prompts=selected_prompts,
@@ -572,6 +649,7 @@ class QuickCreateService:
         return {
             "task_id": task.id,
             "character_id": task.character_id,
+            "seed_prompt": task.seed_prompt,
             "status": task.status,
             "error_message": task.error_message,
             "current_step": task.current_step,

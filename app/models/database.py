@@ -230,6 +230,40 @@ def migrate_repair_tasks_add_aspect_ratio() -> None:
         raise
 
 
+def migrate_creation_quick_create_tasks_add_seed_prompt() -> None:
+    """
+    轻量迁移：为 creation_quick_create_tasks 表补充 seed_prompt 列。
+    """
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='creation_quick_create_tasks'"
+                )
+            ).fetchone()
+            if row is None:
+                return
+            cols = conn.execute(
+                text("PRAGMA table_info(creation_quick_create_tasks)")
+            ).fetchall()
+            names = {c[1] for c in cols}
+            if "seed_prompt" in names:
+                return
+            conn.execute(
+                text(
+                    "ALTER TABLE creation_quick_create_tasks ADD COLUMN seed_prompt TEXT NOT NULL DEFAULT ''"
+                )
+            )
+        logger.info("已迁移: creation_quick_create_tasks 增加 seed_prompt 列")
+    except Exception as e:
+        logger.error(
+            f"迁移 creation_quick_create_tasks.seed_prompt 失败: {e}", exc_info=True
+        )
+        raise
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
@@ -251,6 +285,7 @@ def init_db():
         migrate_material_raw_images_add_type()
         migrate_material_characters_add_setting_source_filename()
         migrate_repair_tasks_add_aspect_ratio()
+        migrate_creation_quick_create_tasks_add_seed_prompt()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:

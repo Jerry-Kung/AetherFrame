@@ -305,6 +305,7 @@ async def get_quick_create_status(
     payload = QuickCreateStatusResponse(
         task_id=raw["task_id"],
         character_id=raw["character_id"],
+        seed_prompt=raw["seed_prompt"],
         status=raw["status"],
         error_message=raw.get("error_message"),
         current_step=raw.get("current_step"),

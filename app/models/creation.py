@@ -54,6 +54,7 @@ class CreationQuickCreateTask(Base):
     )
     status = Column(String(20), nullable=False, index=True, default="pending")
     error_message = Column(Text, nullable=True)
+    seed_prompt = Column(Text, nullable=False, default="")
     n = Column(Integer, nullable=False)
     aspect_ratio = Column(String(20), nullable=False, default="16:9")
     selected_prompts_json = Column(Text, nullable=False, default="[]")
