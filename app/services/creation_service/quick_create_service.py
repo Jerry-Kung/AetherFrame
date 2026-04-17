@@ -94,6 +94,35 @@ def _review_generated_image(
     return review_result, review_reason
 
 
+def _archive_rejected_image(
+    *,
+    task_work_dir: str,
+    prompt_id: str,
+    full_path: str,
+    review_result: bool,
+    review_reason: str,
+) -> None:
+    junk_dir = os.path.join(task_work_dir, "junk_images")
+    directory_service.ensure_dir_exists(junk_dir)
+
+    original_name = os.path.basename(full_path)
+    safe_prompt_id = _safe_segment(prompt_id)
+    unique_name = f"{safe_prompt_id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{original_name}"
+    archived_image_path = os.path.join(junk_dir, unique_name)
+    shutil.move(full_path, archived_image_path)
+
+    review_payload = {
+        "prompt_id": prompt_id,
+        "review_result": review_result,
+        "review_reason": review_reason,
+        "original_image_path": full_path,
+        "archived_image_path": archived_image_path,
+        "created_at": datetime.now().isoformat(),
+    }
+    review_file_path = f"{archived_image_path}.review.json"
+    _write_json(review_file_path, review_payload)
+
+
 def _sync_quick_create_history_files_for_task_id(db: Session, task_id: str) -> None:
     qrepo = CreationQuickCreateRepository(db)
     mrepo = MaterialCharacterRepository(db)
@@ -320,7 +349,7 @@ def run_quick_create_task_sync(task_id: str, session_factory=SessionLocal) -> No
             attempts = 0
             success = 0
             images: List[str] = []
-            max_attempts = 2 * task.n
+            max_attempts = 3 * task.n
             while success < task.n and attempts < max_attempts:
                 attempts += 1
                 file_name = f"image_{success + 1}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
@@ -357,18 +386,26 @@ def run_quick_create_task_sync(task_id: str, session_factory=SessionLocal) -> No
                         images.append(os.path.relpath(full_path, task.work_dir))
                     else:
                         logger.info(
-                            "图片审核不通过，删除并重试: task_id=%s prompt_id=%s file=%s reason=%s",
+                            "图片审核不通过，归档到 junk_images 并重试: task_id=%s prompt_id=%s file=%s reason=%s",
                             task_id,
                             prompt_id,
                             full_path,
                             reason or "未提供",
                         )
                         try:
-                            os.remove(full_path)
+                            _archive_rejected_image(
+                                task_work_dir=task.work_dir,
+                                prompt_id=prompt_id,
+                                full_path=full_path,
+                                review_result=False,
+                                review_reason=reason or "未提供",
+                            )
                         except FileNotFoundError:
                             pass
                         except Exception:
-                            logger.warning("删除审核失败图片出错: %s", full_path, exc_info=True)
+                            logger.warning(
+                                "归档审核失败图片出错: %s", full_path, exc_info=True
+                            )
 
             results.append(
                 {
