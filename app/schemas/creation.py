@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PromptPrecreationStartRequest(BaseModel):
@@ -83,13 +83,49 @@ class QuickCreateStartResponse(BaseModel):
     status: str
 
 
+class QuickCreateImageReview(BaseModel):
+    """一键创作单图审核结果（仅 usable / repair_needed 会出现在成功结果中）"""
+
+    status: Literal["usable", "repair_needed"]
+    overall_quality: int = Field(..., ge=0, le=100)
+    summary: str = ""
+    major_issues: List[str] = Field(default_factory=list)
+    optimization_suggestions: List[str] = Field(default_factory=list)
+
+
+class QuickCreateGeneratedImage(BaseModel):
+    """相对 task 工作目录的图片路径，及可选的审核详情（旧数据可能无 review）"""
+
+    path: str
+    review: Optional[QuickCreateImageReview] = None
+
+
 class QuickCreatePromptResultItem(BaseModel):
     prompt_id: str
     full_prompt: str
     attempt_count: int
     success_count: int
     requested_count: int
-    generated_images: List[str] = Field(default_factory=list)
+    generated_images: List[QuickCreateGeneratedImage] = Field(default_factory=list)
+
+    @field_validator("generated_images", mode="before")
+    @classmethod
+    def coerce_generated_images(cls, raw: Any) -> List[Any]:
+        if not isinstance(raw, list):
+            return []
+        out: List[Dict[str, Any]] = []
+        for item in raw:
+            if isinstance(item, str):
+                p = item.strip().replace("\\", "/")
+                if p:
+                    out.append({"path": p, "review": None})
+            elif isinstance(item, dict):
+                p = str(item.get("path") or item.get("relative_path") or "").strip().replace("\\", "/")
+                if not p:
+                    continue
+                rev = item.get("review")
+                out.append({"path": p, "review": rev})
+        return out
 
 
 class QuickCreateStatusResponse(BaseModel):

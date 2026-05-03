@@ -4,7 +4,7 @@ import logging
 import os
 import shutil
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
@@ -76,12 +76,60 @@ def _parse_llm_json_object(text: str) -> Dict[str, Any]:
     return json.loads(s[start : end + 1])
 
 
+def _coerce_str_list(val: Any) -> List[str]:
+    if isinstance(val, list):
+        return [str(x).strip() for x in val if str(x).strip()]
+    return []
+
+
+def _coerce_overall_quality(val: Any) -> int:
+    try:
+        q = int(float(val))
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(100, q))
+
+
+def _normalize_review_status(raw: Any) -> Optional[str]:
+    """解析 LLM 输出的 status，返回 usable | repair_needed | unrecoverable 之一。"""
+    if raw is None:
+        return None
+    s = str(raw).strip().lower()
+    if not s:
+        return None
+    for sep in ("/", "|", "／"):
+        if sep in s:
+            s = s.split(sep)[0].strip()
+            break
+    s = s.replace(" ", "_")
+    if s in ("usable", "repair_needed", "unrecoverable"):
+        return s
+    if "unrecoverable" in str(raw).lower():
+        return "unrecoverable"
+    return None
+
+
+def _review_payload_from_parsed(parsed: Dict[str, Any], status: str) -> Dict[str, Any]:
+    """统一可序列化的 review 字典（含 junk 路径下的 unrecoverable）。"""
+    return {
+        "status": status,
+        "overall_quality": _coerce_overall_quality(parsed.get("overall_quality")),
+        "summary": str(parsed.get("summary") or "").strip(),
+        "major_issues": _coerce_str_list(parsed.get("major_issues")),
+        "optimization_suggestions": _coerce_str_list(parsed.get("optimization_suggestions")),
+    }
+
+
 def _review_generated_image(
     *,
     full_path: str,
     seed_prompt: str,
     creation_prompt: str,
-) -> tuple[bool, str]:
+) -> Tuple[Literal["keep", "junk"], Dict[str, Any]]:
+    """
+    调用 LLM 审核单图。返回 (keep|junk, review_dict)。
+    keep 时 review_dict 仅含 usable / repair_needed；junk 时含 unrecoverable 或解析失败说明。
+    """
     image_path = [full_path]
     prompt = prompt_review.format(
         seed_prompt=seed_prompt,
@@ -89,9 +137,35 @@ def _review_generated_image(
     )
     response = yibu_gemini_infer(prompt, image_path=image_path, thinking_level="high")
     parsed = _parse_llm_json_object(response)
-    review_result = bool(parsed.get("review_result", False))
-    review_reason = str(parsed.get("review_reason") or "").strip()
-    return review_result, review_reason
+    status = _normalize_review_status(parsed.get("status"))
+    if status is None:
+        return (
+            "junk",
+            {
+                "status": "unrecoverable",
+                "overall_quality": 0,
+                "summary": "审核结果无法解析（status 无效或缺失）",
+                "major_issues": [],
+                "optimization_suggestions": ["模型未返回合法的 status 字段"],
+            },
+        )
+    if status == "unrecoverable":
+        return ("junk", _review_payload_from_parsed(parsed, "unrecoverable"))
+    if status in ("usable", "repair_needed"):
+        payload = _review_payload_from_parsed(parsed, status)
+        if not payload["summary"]:
+            payload["summary"] = "（模型未返回总结）"
+        return ("keep", payload)
+    return (
+        "junk",
+        {
+            "status": "unrecoverable",
+            "overall_quality": 0,
+            "summary": f"未知审核状态: {status}",
+            "major_issues": [],
+            "optimization_suggestions": [],
+        },
+    )
 
 
 def _archive_rejected_image(
@@ -99,8 +173,7 @@ def _archive_rejected_image(
     task_work_dir: str,
     prompt_id: str,
     full_path: str,
-    review_result: bool,
-    review_reason: str,
+    review: Dict[str, Any],
 ) -> None:
     junk_dir = os.path.join(task_work_dir, "junk_images")
     directory_service.ensure_dir_exists(junk_dir)
@@ -113,11 +186,10 @@ def _archive_rejected_image(
 
     review_payload = {
         "prompt_id": prompt_id,
-        "review_result": review_result,
-        "review_reason": review_reason,
         "original_image_path": full_path,
         "archived_image_path": archived_image_path,
         "created_at": datetime.now().isoformat(),
+        "review": review,
     }
     review_file_path = f"{archived_image_path}.review.json"
     _write_json(review_file_path, review_payload)
@@ -348,7 +420,7 @@ def run_quick_create_task_sync(task_id: str, session_factory=SessionLocal) -> No
 
             attempts = 0
             success = 0
-            images: List[str] = []
+            images: List[Dict[str, Any]] = []
             max_attempts = 3 * task.n
             while success < task.n and attempts < max_attempts:
                 attempts += 1
@@ -364,7 +436,7 @@ def run_quick_create_task_sync(task_id: str, session_factory=SessionLocal) -> No
                 full_path = os.path.join(prompt_dir, file_name)
                 if os.path.isfile(full_path):
                     try:
-                        reviewed, reason = _review_generated_image(
+                        decision, review_payload = _review_generated_image(
                             full_path=full_path,
                             seed_prompt=task.seed_prompt,
                             creation_prompt=full_prompt,
@@ -378,27 +450,34 @@ def run_quick_create_task_sync(task_id: str, session_factory=SessionLocal) -> No
                             e,
                             exc_info=True,
                         )
-                        reviewed, reason = False, f"审核异常: {e}"
+                        decision = "junk"
+                        review_payload = {
+                            "status": "unrecoverable",
+                            "overall_quality": 0,
+                            "summary": f"审核异常: {e}",
+                            "major_issues": [],
+                            "optimization_suggestions": [],
+                        }
 
-                    if reviewed:
+                    if decision == "keep":
                         success += 1
                         total_success += 1
-                        images.append(os.path.relpath(full_path, task.work_dir))
+                        rel = os.path.relpath(full_path, task.work_dir).replace("\\", "/")
+                        images.append({"path": rel, "review": review_payload})
                     else:
                         logger.info(
-                            "图片审核不通过，归档到 junk_images 并重试: task_id=%s prompt_id=%s file=%s reason=%s",
+                            "图片审核不通过，归档到 junk_images 并重试: task_id=%s prompt_id=%s file=%s summary=%s",
                             task_id,
                             prompt_id,
                             full_path,
-                            reason or "未提供",
+                            review_payload.get("summary") or review_payload.get("status") or "未提供",
                         )
                         try:
                             _archive_rejected_image(
                                 task_work_dir=task.work_dir,
                                 prompt_id=prompt_id,
                                 full_path=full_path,
-                                review_result=False,
-                                review_reason=reason or "未提供",
+                                review=review_payload,
                             )
                         except FileNotFoundError:
                             pass

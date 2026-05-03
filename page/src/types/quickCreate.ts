@@ -1,7 +1,18 @@
+export interface AiComment {
+  id: string;
+  imageId: string;
+  overallRating: "good" | "needsFix";
+  score: number;
+  summary: string;
+  issues: string[];
+  fixSuggestions: string[];
+}
+
 export interface QuickCreateImage {
   id: string;
   url: string;
   promptId: string;
+  aiComment?: AiComment | null;
 }
 
 export interface QuickCreateGroup {

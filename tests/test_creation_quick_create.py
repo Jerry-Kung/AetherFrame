@@ -1,7 +1,30 @@
+import json
 import os
 from unittest.mock import patch
 
 import pytest
+
+MOCK_REVIEW_USABLE_JSON = json.dumps(
+    {
+        "status": "usable",
+        "overall_quality": 88,
+        "summary": "整体观感良好，可进入后续流程",
+        "major_issues": ["手指略僵硬"],
+        "optimization_suggestions": ["可对手部做小范围重绘增强"],
+    },
+    ensure_ascii=False,
+)
+
+MOCK_REVIEW_UNRECOVERABLE_JSON = json.dumps(
+    {
+        "status": "unrecoverable",
+        "overall_quality": 12,
+        "summary": "主体严重崩坏",
+        "major_issues": ["多余肢体", "面部扭曲"],
+        "optimization_suggestions": ["建议重新生成整图"],
+    },
+    ensure_ascii=False,
+)
 
 def _create_character_and_prompt_task(db_session, character_id: str = "mchar_test_quick") -> None:
     from app.repositories.creation_repository import CreationPromptPrecreationRepository
@@ -58,9 +81,7 @@ class TestQuickCreateService:
 
         _create_character_and_prompt_task(db_session, "mchar_qc_ok")
         _create_five_standard_refs("mchar_qc_ok")
-        mock_review_infer.return_value = (
-            '{"review_result": true, "review_reason": "looks good"}'
-        )
+        mock_review_infer.return_value = MOCK_REVIEW_USABLE_JSON
 
         def _ok(**kwargs):
             output_path = kwargs["output_path"]
@@ -87,6 +108,11 @@ class TestQuickCreateService:
         assert status["results"] is not None
         assert status["results"][0]["success_count"] == 2
         assert len(status["results"][0]["generated_images"]) == 2
+        for img in status["results"][0]["generated_images"]:
+            assert isinstance(img, dict)
+            assert "path" in img and img["path"]
+            assert img["review"]["status"] == "usable"
+            assert img["review"]["overall_quality"] == 88
 
     @patch("app.services.creation_service.quick_create_service.generate_image_with_nano_banana_pro")
     def test_quick_create_retry_limited_by_3n(self, mock_generate, db_session, temp_data_dir):
@@ -126,9 +152,7 @@ class TestQuickCreateService:
 
         _create_character_and_prompt_task(db_session, "mchar_qc_default")
         _create_five_standard_refs("mchar_qc_default")
-        mock_review_infer.return_value = (
-            '{"review_result": true, "review_reason": "looks good"}'
-        )
+        mock_review_infer.return_value = MOCK_REVIEW_USABLE_JSON
 
         def _ok(**kwargs):
             output_path = kwargs["output_path"]
@@ -164,9 +188,7 @@ class TestQuickCreateService:
 
         _create_character_and_prompt_task(db_session, "mchar_qc_review_reject")
         _create_five_standard_refs("mchar_qc_review_reject")
-        mock_review_infer.return_value = (
-            '{"review_result": false, "review_reason": "pose mismatch"}'
-        )
+        mock_review_infer.return_value = MOCK_REVIEW_UNRECOVERABLE_JSON
 
         created_paths = []
 
@@ -205,6 +227,11 @@ class TestQuickCreateService:
         archived_reviews = [x for x in junk_files if x.endswith(".review.json")]
         assert len(archived_images) == 6
         assert len(archived_reviews) == 6
+        sample_sidecar = os.path.join(junk_dir, archived_reviews[0])
+        with open(sample_sidecar, encoding="utf-8") as f:
+            side = json.load(f)
+        assert side["review"]["status"] == "unrecoverable"
+        assert side["review"]["summary"] == "主体严重崩坏"
 
     def test_quick_create_invalid_aspect_ratio(self, db_session, temp_data_dir):
         from app.services.creation_service.quick_create_service import QuickCreateService
@@ -244,9 +271,7 @@ class TestQuickCreateService:
 
         _create_character_and_prompt_task(db_session, "mchar_qc_delete_junk")
         _create_five_standard_refs("mchar_qc_delete_junk")
-        mock_review_infer.return_value = (
-            '{"review_result": false, "review_reason": "pose mismatch"}'
-        )
+        mock_review_infer.return_value = MOCK_REVIEW_UNRECOVERABLE_JSON
 
         def _ok(**kwargs):
             output_path = kwargs["output_path"]

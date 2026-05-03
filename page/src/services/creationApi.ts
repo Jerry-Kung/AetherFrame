@@ -124,13 +124,28 @@ export interface QuickCreateStartResponse {
   status: string;
 }
 
+/** 一键创作单图审核（仅 usable / repair_needed 会出现在成功结果中） */
+export interface QuickCreateImageReview {
+  status: "usable" | "repair_needed";
+  overall_quality: number;
+  summary: string;
+  major_issues: string[];
+  optimization_suggestions: string[];
+}
+
+export interface QuickCreateGeneratedImage {
+  path: string;
+  review?: QuickCreateImageReview | null;
+}
+
 export interface QuickCreatePromptResultItem {
   prompt_id: string;
   full_prompt: string;
   attempt_count: number;
   success_count: number;
   requested_count: number;
-  generated_images: string[];
+  /** 新接口为 { path, review }；历史数据可能为纯 path 字符串 */
+  generated_images: Array<string | QuickCreateGeneratedImage>;
 }
 
 export interface QuickCreateStatusResponse {

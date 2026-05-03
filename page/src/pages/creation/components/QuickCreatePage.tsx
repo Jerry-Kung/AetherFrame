@@ -5,10 +5,16 @@ import { DEFAULT_CHARA_AVATAR_PLACEHOLDER } from "@/types/material";
 import { ApiError } from "@/services/api";
 import * as creationApi from "@/services/creationApi";
 import {
+  mapQuickCreateResultsToGroups,
+  quickCreateImageFromApiEntry,
+} from "@/utils/quickCreateReview";
+import {
   type QuickCreateRecord,
   type QuickCreateGroup,
   type QuickCreateImage,
+  type AiComment,
 } from "@/types/quickCreate";
+import AiCommentModal from "./AiCommentModal";
 
 type GenStatus = "idle" | "generating" | "done";
 
@@ -410,31 +416,66 @@ function PromptSelectCard({
   );
 }
 
-function ResultImage({ img, onClick }: { img: QuickCreateImage; onClick: () => void }) {
+function ResultImage({
+  img,
+  onClick,
+  onViewComment,
+}: {
+  img: QuickCreateImage;
+  onClick: () => void;
+  onViewComment: () => void;
+}) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="relative group rounded-xl overflow-hidden cursor-pointer transition-all duration-200 w-full"
+    <div
+      className="relative group rounded-xl overflow-hidden w-full"
       style={{ border: "1px solid rgba(253,164,175,0.2)" }}
     >
-      <div className="w-full aspect-square">
-        <img
-          src={img.url}
-          alt=""
-          className="w-full h-full object-cover object-top"
-          draggable={false}
-        />
-      </div>
-      <div
-        className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-        style={{ background: "rgba(244,114,182,0.25)" }}
+      <button
+        type="button"
+        onClick={onClick}
+        className="relative w-full cursor-pointer transition-all duration-200 text-left block"
+        aria-label="查看大图"
       >
-        <div className="w-8 h-8 flex items-center justify-center rounded-full bg-white/80">
-          <i className="ri-zoom-in-line text-rose-500 text-sm"></i>
+        <div className="w-full aspect-square">
+          <img
+            src={img.url}
+            alt=""
+            className="w-full h-full object-cover object-top"
+            draggable={false}
+          />
         </div>
-      </div>
-    </button>
+        <div
+          className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
+          style={{ background: "rgba(244,114,182,0.25)" }}
+        >
+          <div className="w-8 h-8 flex items-center justify-center rounded-full bg-white/80">
+            <i className="ri-zoom-in-line text-rose-500 text-sm"></i>
+          </div>
+        </div>
+      </button>
+
+      {img.aiComment && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onViewComment();
+          }}
+          className="absolute bottom-2 right-2 z-10 flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs cursor-pointer transition-all duration-200 whitespace-nowrap hover:opacity-90 pointer-events-auto"
+          style={{
+            fontFamily: "'ZCOOL KuaiLe', cursive",
+            background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+            color: "white",
+            boxShadow: "0 2px 10px rgba(244,114,182,0.4)",
+          }}
+        >
+          <span className="w-3 h-3 flex items-center justify-center" aria-hidden>
+            <i className="ri-robot-2-line text-xs"></i>
+          </span>
+          AI 评论
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -442,10 +483,12 @@ function ResultGroup({
   group,
   cols,
   onImageClick,
+  onViewComment,
 }: {
   group: QuickCreateGroup;
   cols: number;
   onImageClick: (images: QuickCreateImage[], index: number) => void;
+  onViewComment: (img: QuickCreateImage, promptTitle: string) => void;
 }) {
   return (
     <div
@@ -480,7 +523,12 @@ function ResultGroup({
         }}
       >
         {group.images.map((img, idx) => (
-          <ResultImage key={img.id} img={img} onClick={() => onImageClick(group.images, idx)} />
+          <ResultImage
+            key={img.id}
+            img={img}
+            onClick={() => onImageClick(group.images, idx)}
+            onViewComment={() => onViewComment(img, group.promptTitle)}
+          />
         ))}
       </div>
     </div>
@@ -703,6 +751,11 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
   const [hintIndex, setHintIndex] = useState(0);
   const [resultGroups, setResultGroups] = useState<QuickCreateGroup[]>([]);
   const [lightbox, setLightbox] = useState<ImageLightbox | null>(null);
+  const [viewingComment, setViewingComment] = useState<{
+    comment: AiComment;
+    imageUrl: string;
+    promptTitle: string;
+  } | null>(null);
   const [historyRecords, setHistoryRecords] = useState<QuickCreateRecord[]>([]);
   const [viewingRecord, setViewingRecord] = useState<QuickCreateRecord | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
@@ -770,11 +823,9 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
         promptId: r.prompt_id,
         promptTitle: r.prompt_id,
         promptPreview: promptMetaMap.get(r.prompt_id)?.slice(0, 80) || r.full_prompt.slice(0, 80),
-        images: (r.generated_images ?? []).map((img, i) => ({
-          id: `${detail.task_id}-${r.prompt_id}-${i}`,
-          promptId: r.prompt_id,
-          url: creationApi.buildQuickCreateResultImageUrl(detail.task_id, img),
-        })),
+        images: (r.generated_images ?? []).map((img, i) =>
+          quickCreateImageFromApiEntry(detail.task_id, r.prompt_id, i, img)
+        ),
       }));
     },
     []
@@ -1018,17 +1069,7 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
             applyRecordToView(record);
           } catch {
             const rawResults = st.results ?? [];
-            const groups: QuickCreateGroup[] = rawResults.map((r) => ({
-              promptId: r.prompt_id,
-              promptTitle: r.prompt_id,
-              promptPreview: r.full_prompt.slice(0, 80),
-              images: (r.generated_images ?? []).map((img, i) => ({
-                id: `${r.prompt_id}-${i}-${Date.now()}`,
-                promptId: r.prompt_id,
-                url: creationApi.buildQuickCreateResultImageUrl(tid, img),
-              })),
-            }));
-            setResultGroups(groups);
+            setResultGroups(mapQuickCreateResultsToGroups(tid, rawResults));
             setGenStatus("done");
           }
         } catch (e) {
@@ -1201,6 +1242,17 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
   }, []);
 
   const closeLightbox = useCallback(() => setLightbox(null), []);
+
+  const handleViewComment = useCallback((img: QuickCreateImage, promptTitle: string) => {
+    if (!img.aiComment) return;
+    setViewingComment({
+      comment: img.aiComment,
+      imageUrl: img.url,
+      promptTitle,
+    });
+  }, []);
+
+  const closeComment = useCallback(() => setViewingComment(null), []);
 
   const prevImage = useCallback(() => {
     setLightbox((prev) =>
@@ -1607,6 +1659,7 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
                   group={group}
                   cols={gridColsForGroup(group.images.length)}
                   onImageClick={openLightbox}
+                  onViewComment={handleViewComment}
                 />
               ))}
             </div>
@@ -1713,6 +1766,15 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
           onClose={closeLightbox}
           onPrev={prevImage}
           onNext={nextImage}
+        />
+      )}
+
+      {viewingComment && (
+        <AiCommentModal
+          comment={viewingComment.comment}
+          imageUrl={viewingComment.imageUrl}
+          promptTitle={viewingComment.promptTitle}
+          onClose={closeComment}
         />
       )}
 
