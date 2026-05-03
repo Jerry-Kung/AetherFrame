@@ -371,11 +371,7 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
   }, []);
 
   const loadStatus = useCallback(async (): Promise<materialApi.StandardPhotoStatusResult | null> => {
-    try {
-      return await materialApi.getStandardPhotoStatus(characterId);
-    } catch {
-      return null;
-    }
+    return await materialApi.getStandardPhotoStatus(characterId);
   }, [characterId]);
 
   /** 刷新或重新进入页面时，从后端恢复当前标准照任务阶段（config / generating / result） */
@@ -386,37 +382,36 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
       try {
         const status = await materialApi.getStandardPhotoStatus(characterId);
         if (cancelled) return;
-        setShotType(status.shot_type as ShotType);
-        setAspectRatio(status.aspect_ratio as AspectRatio);
-        setGenCount(normalizeGenCount(status.output_count));
-        setSelectedRefIds(new Set(status.selected_raw_image_ids));
         setSaveSuccess(false);
         setPollError(null);
-        if (status.status === "processing" || status.status === "pending") {
-          setPageState("generating");
-        } else if (status.status === "completed") {
-          if (isContinueConfigFlagSet(characterId)) {
-            setResultImages([]);
-            setPageState("config");
-          } else {
-            setResultImages(status.result_images || []);
-            setPageState("result");
-          }
-        } else if (status.status === "failed") {
+        if (status === null) {
           setPageState("config");
-          setPollError(status.error_message || "标准照生成失败，请修改参数后重试");
         } else {
-          setPageState("config");
+          setShotType(status.shot_type as ShotType);
+          setAspectRatio(status.aspect_ratio as AspectRatio);
+          setGenCount(normalizeGenCount(status.output_count));
+          setSelectedRefIds(new Set(status.selected_raw_image_ids));
+          if (status.status === "processing" || status.status === "pending") {
+            setPageState("generating");
+          } else if (status.status === "completed") {
+            if (isContinueConfigFlagSet(characterId)) {
+              setResultImages([]);
+              setPageState("config");
+            } else {
+              setResultImages(status.result_images || []);
+              setPageState("result");
+            }
+          } else if (status.status === "failed") {
+            setPageState("config");
+            setPollError(status.error_message || "标准照生成失败，请修改参数后重试");
+          } else {
+            setPageState("config");
+          }
         }
       } catch (e) {
         if (cancelled) return;
-        if (e instanceof ApiError && e.status === 404) {
-          setPageState("config");
-          setPollError(null);
-        } else {
-          setPageState("config");
-          setPollError(e instanceof ApiError ? e.message : "加载任务状态失败");
-        }
+        setPageState("config");
+        setPollError(e instanceof ApiError ? e.message : "加载任务状态失败");
       } finally {
         if (!cancelled) setHydrated(true);
       }
@@ -434,6 +429,10 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
       try {
         const status = await materialApi.getStandardPhotoStatus(characterId);
         if (!alive) return;
+        if (status === null) {
+          setPollError("无法获取任务状态，请刷新页面");
+          return;
+        }
         if (status.status === "completed") {
           setResultImages(status.result_images || []);
           setPageState("result");

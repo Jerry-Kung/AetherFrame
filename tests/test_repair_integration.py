@@ -11,6 +11,7 @@
 
 使用 test_data 目录下的真实测试文件
 """
+
 import os
 import time
 import logging
@@ -21,16 +22,13 @@ from fastapi.testclient import TestClient
 # 配置日志
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
 # 测试数据目录
-TEST_DATA_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)),
-    "test_data"
-)
+TEST_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test_data")
 MAIN_IMAGE_PATH = os.path.join(TEST_DATA_DIR, "pictures_to_be_revised.jpg")
 PROMPT_PATH = os.path.join(TEST_DATA_DIR, "revise_prompt.txt")
 REFS_DIR = os.path.join(TEST_DATA_DIR, "refs_3d")
@@ -40,10 +38,12 @@ REFS_DIR = os.path.join(TEST_DATA_DIR, "refs_3d")
 # Fixtures
 # ==========================================
 
+
 @pytest.fixture(scope="module")
 def test_client():
     """创建 FastAPI 测试客户端"""
     from app.main import app
+
     return TestClient(app)
 
 
@@ -67,7 +67,7 @@ def reference_image_files():
     files = []
     if os.path.exists(REFS_DIR):
         for filename in os.listdir(REFS_DIR):
-            if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+            if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
                 filepath = os.path.join(REFS_DIR, filename)
                 with open(filepath, "rb") as f:
                     files.append((filename, BytesIO(f.read())))
@@ -77,6 +77,7 @@ def reference_image_files():
 # ==========================================
 # 集成测试类
 # ==========================================
+
 
 class TestRepairIntegration:
     """图片修补模块完整集成测试"""
@@ -102,8 +103,8 @@ class TestRepairIntegration:
             json={
                 "name": "集成测试任务 - 图片修补",
                 "prompt": test_prompt,
-                "output_count": 2
-            }
+                "output_count": 2,
+            },
         )
 
         assert response.status_code == 200, f"创建任务失败: {response.text}"
@@ -143,7 +144,9 @@ class TestRepairIntegration:
 
         response = test_client.post(
             f"/api/repair/tasks/{TestRepairIntegration._task_id}/main-image",
-            files={"file": ("pictures_to_be_revised.jpg", main_image_file, "image/jpeg")}
+            files={
+                "file": ("pictures_to_be_revised.jpg", main_image_file, "image/jpeg")
+            },
         )
 
         assert response.status_code == 200, f"上传主图失败: {response.text}"
@@ -160,7 +163,9 @@ class TestRepairIntegration:
         logger.info(f"✓ 主图上传成功: filename={upload_data['filename']}")
 
         # 验证可以获取任务详情并看到主图已上传
-        response = test_client.get(f"/api/repair/tasks/{TestRepairIntegration._task_id}")
+        response = test_client.get(
+            f"/api/repair/tasks/{TestRepairIntegration._task_id}"
+        )
         assert response.status_code == 200
         task_detail = response.json()["data"]
         assert task_detail["has_main_image"] is True
@@ -192,7 +197,7 @@ class TestRepairIntegration:
 
         response = test_client.post(
             f"/api/repair/tasks/{TestRepairIntegration._task_id}/reference-images",
-            files=files
+            files=files,
         )
 
         assert response.status_code == 200, f"上传参考图失败: {response.text}"
@@ -207,10 +212,14 @@ class TestRepairIntegration:
         assert upload_data["total"] == len(reference_image_files)
         assert upload_data["task_id"] == TestRepairIntegration._task_id
 
-        logger.info(f"✓ 参考图上传完成: 成功={len(upload_data['uploaded'])}, 失败={len(upload_data['failed'])}")
+        logger.info(
+            f"✓ 参考图上传完成: 成功={len(upload_data['uploaded'])}, 失败={len(upload_data['failed'])}"
+        )
 
         # 验证可以获取任务详情并看到参考图数量
-        response = test_client.get(f"/api/repair/tasks/{TestRepairIntegration._task_id}")
+        response = test_client.get(
+            f"/api/repair/tasks/{TestRepairIntegration._task_id}"
+        )
         assert response.status_code == 200
         task_detail = response.json()["data"]
         assert task_detail["reference_image_count"] == len(upload_data["uploaded"])
@@ -230,7 +239,9 @@ class TestRepairIntegration:
 
         assert TestRepairIntegration._task_id is not None
 
-        response = test_client.get(f"/api/repair/tasks/{TestRepairIntegration._task_id}")
+        response = test_client.get(
+            f"/api/repair/tasks/{TestRepairIntegration._task_id}"
+        )
 
         assert response.status_code == 200
 
@@ -246,7 +257,9 @@ class TestRepairIntegration:
         assert isinstance(task_detail["reference_images"], list)
 
         logger.info(f"✓ 获取任务详情成功: {task_detail['name']}")
-        logger.info(f"  - 主图: {task_detail['main_image']['filename'] if task_detail['main_image'] else '无'}")
+        logger.info(
+            f"  - 主图: {task_detail['main_image']['filename'] if task_detail['main_image'] else '无'}"
+        )
         logger.info(f"  - 参考图数量: {len(task_detail['reference_images'])}")
 
     def test_5_start_repair_task(self, test_client):
@@ -266,9 +279,7 @@ class TestRepairIntegration:
 
         response = test_client.post(
             f"/api/repair/tasks/{TestRepairIntegration._task_id}/start",
-            json={
-                "use_reference_images": True
-            }
+            json={"use_reference_images": True},
         )
 
         # 注意：由于实际调用AI服务可能耗时较长，这里我们主要验证流程
@@ -280,7 +291,10 @@ class TestRepairIntegration:
 
             start_data = data["data"]
             assert start_data["task_id"] == TestRepairIntegration._task_id
-            assert start_data["status"] in ["processing", "pending"]  # 可能是 pending 如果是 mock
+            assert start_data["status"] in [
+                "processing",
+                "pending",
+            ]  # 可能是 pending 如果是 mock
 
             logger.info(f"✓ 修补任务启动成功: status={start_data['status']}")
         else:
@@ -303,7 +317,9 @@ class TestRepairIntegration:
 
         assert TestRepairIntegration._task_id is not None
 
-        response = test_client.get(f"/api/repair/tasks/{TestRepairIntegration._task_id}/status")
+        response = test_client.get(
+            f"/api/repair/tasks/{TestRepairIntegration._task_id}/status"
+        )
 
         assert response.status_code == 200
 
@@ -347,7 +363,9 @@ class TestRepairIntegration:
         if TestRepairIntegration._task_id:
             assert TestRepairIntegration._task_id in task_ids, "新创建的任务应在列表中"
 
-        logger.info(f"✓ 获取任务列表成功: 总数={list_data['total']}, 返回={len(list_data['tasks'])}")
+        logger.info(
+            f"✓ 获取任务列表成功: 总数={list_data['total']}, 返回={len(list_data['tasks'])}"
+        )
 
     def test_8_cleanup(self, test_client):
         """
@@ -366,7 +384,9 @@ class TestRepairIntegration:
             return
 
         # 删除任务
-        response = test_client.delete(f"/api/repair/tasks/{TestRepairIntegration._task_id}")
+        response = test_client.delete(
+            f"/api/repair/tasks/{TestRepairIntegration._task_id}"
+        )
 
         # 即使删除失败也不要让测试失败，只记录日志
         if response.status_code == 200:
@@ -377,7 +397,9 @@ class TestRepairIntegration:
             logger.warning(f"删除任务失败: {response.status_code}")
 
         # 验证任务不存在
-        response = test_client.get(f"/api/repair/tasks/{TestRepairIntegration._task_id}")
+        response = test_client.get(
+            f"/api/repair/tasks/{TestRepairIntegration._task_id}"
+        )
         assert response.status_code in [200, 404]  # 可能返回200但data为null，或404
 
         if response.status_code == 200:
@@ -389,6 +411,7 @@ class TestRepairIntegration:
 # ==========================================
 # Prompt 模板集成测试
 # ==========================================
+
 
 class TestPromptTemplateIntegration:
     """Prompt 模板集成测试"""
@@ -427,7 +450,7 @@ class TestPromptTemplateIntegration:
                 "text": "这是一个用于集成测试的 prompt 模板。请对图片进行修补。",
                 "description": "集成测试用简短说明",
                 "tags": ["皮肤", "脸部"],
-            }
+            },
         )
 
         assert response.status_code == 200
@@ -442,7 +465,9 @@ class TestPromptTemplateIntegration:
         assert template_data.get("tags") == ["皮肤", "脸部"]
 
         TestPromptTemplateIntegration._template_id = template_data["id"]
-        logger.info(f"✓ 模板创建成功: template_id={TestPromptTemplateIntegration._template_id}")
+        logger.info(
+            f"✓ 模板创建成功: template_id={TestPromptTemplateIntegration._template_id}"
+        )
 
     def test_3_get_template(self, test_client):
         """测试获取模板详情"""
@@ -484,7 +509,7 @@ class TestPromptTemplateIntegration:
                 "text": "这是更新后的 prompt 模板内容。",
                 "description": "更新后的说明文案",
                 "tags": ["水印"],
-            }
+            },
         )
 
         assert response.status_code == 200
@@ -524,6 +549,7 @@ class TestPromptTemplateIntegration:
 # ==========================================
 # 架构验证测试
 # ==========================================
+
 
 class TestArchitectureValidation:
     """架构验证测试 - 验证代码架构合理性"""
@@ -598,7 +624,7 @@ class TestArchitectureValidation:
         from app.services.file_service import (
             FileValidationError,
             FileSaveError,
-            FileDeleteError
+            FileDeleteError,
         )
 
         # 验证自定义异常类存在
@@ -618,9 +644,15 @@ if __name__ == "__main__":
     logger.info("图片修补模块集成测试")
     logger.info("=" * 60)
     logger.info(f"测试数据目录: {TEST_DATA_DIR}")
-    logger.info(f"主图文件: {MAIN_IMAGE_PATH} ({'存在' if os.path.exists(MAIN_IMAGE_PATH) else '不存在'})")
-    logger.info(f"Prompt 文件: {PROMPT_PATH} ({'存在' if os.path.exists(PROMPT_PATH) else '不存在'})")
-    logger.info(f"参考图目录: {REFS_DIR} ({'存在' if os.path.exists(REFS_DIR) else '不存在'})")
+    logger.info(
+        f"主图文件: {MAIN_IMAGE_PATH} ({'存在' if os.path.exists(MAIN_IMAGE_PATH) else '不存在'})"
+    )
+    logger.info(
+        f"Prompt 文件: {PROMPT_PATH} ({'存在' if os.path.exists(PROMPT_PATH) else '不存在'})"
+    )
+    logger.info(
+        f"参考图目录: {REFS_DIR} ({'存在' if os.path.exists(REFS_DIR) else '不存在'})"
+    )
     logger.info("=" * 60)
 
     pytest.main([__file__, "-v", "-s"])

@@ -43,12 +43,25 @@ async function fetchWithTimeout(
   }
 }
 
-async function parseJsonApiResponse<T>(response: Response): Promise<ApiResponse<T>> {
-  try {
-    return await response.json();
-  } catch {
-    throw new ApiError("响应解析失败", response.status);
+/** 读取 body 后解析 JSON，避免 response.json() 失败时无法区分空响应 / HTML 网关页 */
+export async function parseResponseBodyAsJson<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  if (!text.trim()) {
+    throw new ApiError(`服务器返回空响应（HTTP ${response.status}）`, response.status);
   }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const preview = text.slice(0, 160).replace(/\s+/g, " ");
+    throw new ApiError(
+      `响应不是合法 JSON（HTTP ${response.status}）: ${preview}${text.length > 160 ? "…" : ""}`,
+      response.status
+    );
+  }
+}
+
+async function parseJsonApiResponse<T>(response: Response): Promise<ApiResponse<T>> {
+  return parseResponseBodyAsJson<ApiResponse<T>>(response);
 }
 
 function throwIfHttpOrBusinessError<T>(

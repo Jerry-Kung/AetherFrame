@@ -10,8 +10,8 @@ import time
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -22,49 +22,49 @@ YIBU_API_KEY = "sk-fcrGfFltSSsEhyPm0kwRiXyoogcoqwDYrEPlOZDPqAmB8EgV"
 def get_image_mime_type(image_path: str) -> str:
     """
     根据文件扩展名获取图片的MIME类型
-    
+
     Args:
         image_path: 图片文件路径
-    
+
     Returns:
         MIME类型字符串
     """
     ext = os.path.splitext(image_path)[1].lower()
     mime_types = {
-        '.png': 'image/png',
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.gif': 'image/gif',
-        '.webp': 'image/webp',
-        '.bmp': 'image/bmp'
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".bmp": "image/bmp",
     }
-    return mime_types.get(ext, 'image/png')
+    return mime_types.get(ext, "image/png")
 
 
 def image_to_base64(image_path: str) -> tuple[str, str]:
     """
     将图片文件转换为base64编码
-    
+
     Args:
         image_path: 图片文件路径
-    
+
     Returns:
         (mime_type, base64_data) 元组
     """
     mime_type = get_image_mime_type(image_path)
-    with open(image_path, 'rb') as f:
-        base64_data = base64.b64encode(f.read()).decode('utf-8')
+    with open(image_path, "rb") as f:
+        base64_data = base64.b64encode(f.read()).decode("utf-8")
     return mime_type, base64_data
 
 
 def truncate_text(text: str, max_length: int = 100) -> str:
     """
     截断文本，只显示开头部分
-    
+
     Args:
         text: 原始文本
         max_length: 最大显示长度
-    
+
     Returns:
         截断后的文本
     """
@@ -82,11 +82,11 @@ def yibu_gemini_infer(
     top_p: float = 1.0,
     thinking_level: str = "medium",
     host: str = "yibuapi.com",
-    timeout: int = 300
+    timeout: int = 300,
 ) -> str:
     """
     使用一步API调用Gemini模型进行推理，支持图片理解
-    
+
     Args:
         prompt: 用户输入的提示词
         image_path: 图片路径列表，最多支持5张图片，默认为空
@@ -97,10 +97,10 @@ def yibu_gemini_infer(
         thinking_level: 思考层级，可选值为 "low"、"medium"、"high"，默认为 "medium"
         host: API主机地址
         timeout: 请求超时时间（秒）
-    
+
     Returns:
         模型返回的纯文本结果（已过滤thinking部分）
-    
+
     Raises:
         Exception: API请求失败或解析错误时抛出异常
         ValueError: 参数无效时抛出异常
@@ -110,85 +110,66 @@ def yibu_gemini_infer(
     logger.info(f"模型: {model}")
     logger.info(f"思考层级: {thinking_level}")
     logger.info(f"温度参数: {temperature}, top_p: {top_p}")
-    logger.info(f"系统指令长度: {len(system_instruction)}, 内容: {truncate_text(system_instruction)}")
+    logger.info(
+        f"系统指令长度: {len(system_instruction)}, 内容: {truncate_text(system_instruction)}"
+    )
     logger.info(f"用户提示长度: {len(prompt)}, 内容: {truncate_text(prompt)}")
-    
+
     # 验证thinking_level参数
     valid_thinking_levels = ["low", "medium", "high"]
     if thinking_level not in valid_thinking_levels:
         logger.error(f"无效的thinking_level参数: {thinking_level}")
         raise ValueError(f"thinking_level必须是以下值之一: {valid_thinking_levels}")
-    
+
     # 验证image_path参数
     if image_path is None:
         image_path = []
     if len(image_path) > 5:
         logger.error(f"图片数量超过限制: {len(image_path)}张")
         raise ValueError("image_path最多支持5张图片")
-    
+
     logger.info(f"图片数量: {len(image_path)}张")
-    
+
     # 构建parts列表
     parts = []
-    
+
     # 添加图片（在text之前）
     for idx, img_path in enumerate(image_path):
         if not os.path.exists(img_path):
             logger.error(f"图片文件不存在: {img_path}")
             raise ValueError(f"图片文件不存在: {img_path}")
-        
+
         file_size = os.path.getsize(img_path)
-        logger.info(f"处理图片 {idx+1}/{len(image_path)}: {img_path} (大小: {file_size} bytes)")
-        
+        logger.info(
+            f"处理图片 {idx+1}/{len(image_path)}: {img_path} (大小: {file_size} bytes)"
+        )
+
         mime_type, base64_data = image_to_base64(img_path)
         logger.info(f"  - MIME类型: {mime_type}, base64长度: {len(base64_data)}")
-        
-        parts.append({
-            "inline_data": {
-                "mime_type": mime_type,
-                "data": base64_data
-            }
-        })
-    
+
+        parts.append({"inline_data": {"mime_type": mime_type, "data": base64_data}})
+
     # 添加文本提示
-    parts.append({
-        "text": prompt
-    })
-    
+    parts.append({"text": prompt})
+
     # 构建请求体
     payload = {
-        "systemInstruction": {
-            "parts": [
-                {
-                    "text": system_instruction
-                }
-            ]
-        },
-        "contents": [
-            {
-                "role": "user",
-                "parts": parts
-            }
-        ],
+        "systemInstruction": {"parts": [{"text": system_instruction}]},
+        "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {
             "temperature": temperature,
             "topP": top_p,
-            "thinkingConfig": {
-                "thinkingLevel": thinking_level
-            }
-        }
+            "thinkingConfig": {"thinkingLevel": thinking_level},
+        },
     }
-    
+
     # 设置请求头
-    headers = {
-        'x-goog-api-key': YIBU_API_KEY,
-        'Content-Type': 'application/json'
-    }
-    
+    headers = {"x-goog-api-key": YIBU_API_KEY, "Content-Type": "application/json"}
+
     # 发送请求
     logger.info(f"发送API请求到: https://{host}/v1beta/models/{model}:generateContent")
     request_start_time = datetime.now()
-    
+
     max_retries = 2  # 额外重试 2 次
     total_attempts = 1 + max_retries
 
@@ -207,16 +188,12 @@ def yibu_gemini_infer(
             data = res.read()
 
             request_duration = (datetime.now() - request_start_time).total_seconds()
-            logger.info(
-                f"API响应状态码: {res.status}, 耗时: {request_duration:.2f}秒"
-            )
+            logger.info(f"API响应状态码: {res.status}, 耗时: {request_duration:.2f}秒")
 
             if res.status != 200:
                 error_msg = data.decode("utf-8")
                 logger.error(f"API请求失败: {error_msg}")
-                raise Exception(
-                    f"API请求失败，状态码: {res.status}, 响应: {error_msg}"
-                )
+                raise Exception(f"API请求失败，状态码: {res.status}, 响应: {error_msg}")
 
             # 解析响应
             logger.info("解析API响应...")
@@ -286,13 +263,13 @@ if __name__ == "__main__":
             system_instruction="你是一只可爱的小猪，回复必须以'哼哼'开头。",
         )
         print("纯文本响应:", response)
-        
+
         # 图片理解示例（需要实际图片文件）
         # response = yibu_gemini_infer(
         #     prompt="describe this image",
         #     image_path=["D:/Huawei/Prompts/AI_image/Project/video_creation/template/temp1.jpg"]
         # )
         # print("图片理解响应:", response)
-        
+
     except Exception as e:
         print("错误:", str(e))

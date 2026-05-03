@@ -1,7 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { CharaProfile, RawImageType } from "@/types/material";
-import { DEFAULT_CHARA_AVATAR_PLACEHOLDER, toCharaProfile, summaryToListProfile } from "@/types/material";
+import type {
+  ApiCharacterDetail,
+  CharaProfile,
+  OfficialSeedPrompts,
+  RawImageType,
+} from "@/types/material";
+import {
+  DEFAULT_CHARA_AVATAR_PLACEHOLDER,
+  toCharaProfile,
+  summaryToListProfile,
+  officialSeedPromptsToApiPayload,
+  cloneOfficialSeedPrompts,
+  emptyOfficialSeedPrompts,
+} from "@/types/material";
 import * as materialApi from "@/services/materialApi";
 import { ApiError } from "@/services/api";
 import CuteConfirmModal from "@/pages/repair/components/CuteConfirmModal";
@@ -12,6 +24,7 @@ import CharaSidebar from "./components/CharaSidebar";
 import RawMaterialTab from "./components/RawMaterialTab";
 import ProcessTaskTab, { type ProcessSubTaskId } from "./components/ProcessTaskTab";
 import OfficialContentTab from "./components/OfficialContentTab";
+import AvatarPickerModal from "./components/AvatarPickerModal";
 
 const decorations = [
   { size: 280, top: "-6%", left: "-5%", opacity: 0.15, delay: "0s" },
@@ -34,8 +47,6 @@ const MAIN_TABS: { id: MainTabId; label: string; icon: string }[] = [
   { id: "process", label: "加工任务", icon: "ri-hammer-line" },
   { id: "official", label: "正式内容", icon: "ri-trophy-line" },
 ];
-
-const SETTING_DEBOUNCE_MS = 600;
 
 function downloadDataUrl(url: string, filename: string) {
   const a = document.createElement("a");
@@ -63,8 +74,7 @@ export default function MaterialPage() {
   const [preview, setPreview] = useState<{ urls: string[]; index: number; altPrefix: string } | null>(
     null
   );
-
-  const settingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -80,6 +90,14 @@ export default function MaterialPage() {
       return next;
     });
   }, []);
+
+  /** 稳定引用，避免加工任务子页（如创作建议 hydrate）因父组件重渲染而反复重置 */
+  const handleCharacterDetailUpdated = useCallback(
+    (detail: ApiCharacterDetail) => {
+      mergeChara(toCharaProfile(detail));
+    },
+    [mergeChara]
+  );
 
   const patchCharaFields = useCallback((id: string, patch: Partial<CharaProfile>) => {
     setCharas((prev) =>
@@ -132,12 +150,25 @@ export default function MaterialPage() {
     };
   }, [selectedId, mergeChara, showToast]);
 
+  /** 进入「正式内容」时拉取最新详情，确保角色小档案等与加工任务保存的 bio_json 一致 */
   useEffect(() => {
-    if (settingDebounceRef.current) {
-      clearTimeout(settingDebounceRef.current);
-      settingDebounceRef.current = null;
-    }
-  }, [selectedId]);
+    if (!selectedId || mainTab !== "official") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = await materialApi.getCharacter(selectedId);
+        if (cancelled) return;
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        if (!cancelled) {
+          showToast(e instanceof ApiError ? e.message : "刷新正式内容失败");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, mainTab, mergeChara, showToast]);
 
   const selected = useMemo(
     () => charas.find((c) => c.id === selectedId) ?? null,
@@ -246,38 +277,60 @@ export default function MaterialPage() {
     showToast("已导出 JSON 档案（本地预览用）");
   }, [selected, showToast]);
 
-  const handleSettingTextChange = useCallback(
-    (v: string) => {
-      if (!selected) return;
-      const id = selected.id;
-      patchCharaFields(id, { settingText: v });
-      if (settingDebounceRef.current) clearTimeout(settingDebounceRef.current);
-      settingDebounceRef.current = setTimeout(() => {
-        settingDebounceRef.current = null;
-        void (async () => {
-          try {
-            const d = await materialApi.putSettingText(id, v);
-            mergeChara(toCharaProfile(d));
-          } catch (e) {
-            showToast(e instanceof ApiError ? e.message : "保存设定失败");
-          }
-        })();
-      }, SETTING_DEBOUNCE_MS);
-    },
-    [selected, patchCharaFields, mergeChara, showToast]
-  );
-
-  const handleImportSettingFile = useCallback(
-    async (file: File) => {
+  const handleAvatarConfirm = useCallback(
+    async (croppedDataUrl: string) => {
       if (!selected) return;
       try {
-        const d = await materialApi.putSettingFile(selected.id, file);
+        const res = await fetch(croppedDataUrl);
+        const blob = await res.blob();
+        const file = new File([blob], "avatar.png", { type: blob.type || "image/png" });
+        const d = await materialApi.uploadCharacterAvatar(selected.id, file);
         mergeChara(toCharaProfile(d));
+        setAvatarPickerOpen(false);
+        showToast("头像已更新");
       } catch (e) {
-        showToast(e instanceof ApiError ? e.message : "上传设定文件失败");
+        showToast(e instanceof ApiError ? e.message : "更新头像失败");
       }
     },
     [selected, mergeChara, showToast]
+  );
+
+  const handleSettingCommit = useCallback(
+    async (text: string) => {
+      if (!selected) {
+        throw new Error("未选择角色");
+      }
+      const id = selected.id;
+      try {
+        const d = await materialApi.putSettingText(id, text, true);
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "保存设定失败");
+        throw e;
+      }
+    },
+    [selected, mergeChara, showToast]
+  );
+
+  const handleSettingImportedFromFile = useCallback(
+    async (text: string, file: File) => {
+      if (!selected) return;
+      const id = selected.id;
+      patchCharaFields(id, { settingText: text, settingFileName: file.name });
+      try {
+        const d = await materialApi.putSettingFile(id, file);
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "上传设定文件失败");
+        try {
+          const d2 = await materialApi.getCharacter(id);
+          mergeChara(toCharaProfile(d2));
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+    [selected, patchCharaFields, mergeChara, showToast]
   );
 
   const handleUploadRawFiles = useCallback(
@@ -361,6 +414,76 @@ export default function MaterialPage() {
     },
     [selected, mergeChara, showToast]
   );
+
+  const handleSaveSeedPrompts = useCallback(
+    async (payload: OfficialSeedPrompts) => {
+      if (!selected) return;
+      try {
+        const d = await materialApi.patchCharacterBio(selected.id, {
+          official_seed_prompts: officialSeedPromptsToApiPayload(payload),
+        });
+        mergeChara(toCharaProfile(d));
+        showToast("正式种子提示词已保存");
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "保存种子提示词失败");
+      }
+    },
+    [selected, mergeChara, showToast]
+  );
+
+  const handleToggleUsedSeed = useCallback(
+    async (next: OfficialSeedPrompts) => {
+      if (!selected) return;
+      try {
+        const d = await materialApi.patchCharacterBio(selected.id, {
+          official_seed_prompts: officialSeedPromptsToApiPayload(next),
+        });
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "更新使用状态失败");
+      }
+    },
+    [selected, mergeChara, showToast]
+  );
+
+  const handleDeleteSeed = useCallback(
+    async (scope: keyof Pick<OfficialSeedPrompts, "characterSpecific" | "general">, id: string) => {
+      if (!selected) return;
+      const seeds = selected.bio.officialSeedPrompts;
+      if (!seeds) return;
+      const next = cloneOfficialSeedPrompts(seeds);
+      next[scope] = next[scope].filter((s) => s.id !== id);
+      try {
+        const d = await materialApi.patchCharacterBio(selected.id, {
+          official_seed_prompts: officialSeedPromptsToApiPayload(next),
+        });
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "删除种子提示词失败");
+      }
+    },
+    [selected, mergeChara, showToast]
+  );
+
+  const handleClearSeeds = useCallback(async () => {
+    if (!selected) return;
+    /** 后端需写入空结构；toCharaProfile 解析时空数组会归一为 officialSeedPrompts === null */
+    const empty = emptyOfficialSeedPrompts();
+    try {
+      const d = await materialApi.patchCharacterBio(selected.id, {
+        official_seed_prompts: officialSeedPromptsToApiPayload(empty),
+      });
+      mergeChara(toCharaProfile(d));
+      showToast("已清空全部正式种子提示词");
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "清空种子提示词失败");
+    }
+  }, [selected, mergeChara, showToast]);
+
+  const handleGoProfileTask = useCallback(() => {
+    setMainTab("process");
+    setProcessSubTask("profile");
+  }, []);
 
   const onPreviewDownload = useCallback((url: string, idx: number) => {
     const name = `image-${idx + 1}.png`;
@@ -535,7 +658,8 @@ export default function MaterialPage() {
               </div>
               <div className="mx-5 h-px bg-rose-100/60 shrink-0" />
 
-              <div className="flex-1 min-h-0 overflow-hidden px-5 py-4">
+              <div className="flex-1 min-h-0 overflow-hidden px-5 py-4 flex flex-col">
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden min-w-0 pr-1">
                 {!selected ? (
                   <div className="h-full flex items-center justify-center text-rose-300/50 text-sm select-none">
                     ← 请先选择或新建一位角色
@@ -544,8 +668,9 @@ export default function MaterialPage() {
                   <RawMaterialTab
                     characterId={selected.id}
                     settingText={selected.settingText}
-                    onSettingTextChange={handleSettingTextChange}
-                    onImportSettingFile={handleImportSettingFile}
+                    settingFileName={selected.settingFileName}
+                    onSettingCommit={handleSettingCommit}
+                    onSettingImportedFromFile={handleSettingImportedFromFile}
                     rawImages={selected.rawImages}
                     onUploadRawFiles={handleUploadRawFiles}
                     onRemoveRawImage={handleRemoveRawImage}
@@ -558,10 +683,11 @@ export default function MaterialPage() {
                     onSubTaskChange={setProcessSubTask}
                     charaName={selected.name}
                     chara={selected}
-                    onCharacterUpdated={(detail) => mergeChara(toCharaProfile(detail))}
+                    onCharacterUpdated={handleCharacterDetailUpdated}
                     showToast={showToast}
                     onGoRaw={handleGoRaw}
                     onGoStandard={handleGoStandard}
+                    onSaveSeedPrompts={handleSaveSeedPrompts}
                   />
                 ) : (
                   <OfficialContentTab
@@ -569,8 +695,13 @@ export default function MaterialPage() {
                     bio={selected.bio}
                     onPhotoClick={handleOfficialPhotoClick}
                     onOfficialPhotoDelete={handleOfficialPhotoDelete}
+                    onGoProfileTask={handleGoProfileTask}
+                    onToggleUsedSeed={handleToggleUsedSeed}
+                    onDeleteSeed={handleDeleteSeed}
+                    onClearSeeds={handleClearSeeds}
                   />
                 )}
+                </div>
               </div>
             </div>
 
@@ -583,6 +714,7 @@ export default function MaterialPage() {
                 onEdit={openEdit}
                 onStartProcess={handleStartProcess}
                 onExport={handleExport}
+                onChangeAvatar={selected ? () => setAvatarPickerOpen(true) : undefined}
               />
             </div>
           </div>
@@ -654,6 +786,15 @@ export default function MaterialPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {selected && (
+        <AvatarPickerModal
+          isOpen={avatarPickerOpen}
+          chara={selected}
+          onCancel={() => setAvatarPickerOpen(false)}
+          onConfirm={(url) => void handleAvatarConfirm(url)}
+        />
       )}
 
       {preview && (

@@ -1,8 +1,12 @@
 /**
  * 素材加工模块 /api/material
  */
-import type { ApiCharacterDetail, ApiCharacterSummary } from "@/types/material";
-import { ApiError } from "@/services/api";
+import type {
+  ApiCharacterDetail,
+  ApiCharacterSummary,
+  OfficialSeedPromptsApiPatch,
+} from "@/types/material";
+import { ApiError, parseResponseBodyAsJson } from "@/services/api";
 
 const API_BASE = "/api/material";
 const DEFAULT_TIMEOUT = 30000;
@@ -33,11 +37,7 @@ async function fetchWithTimeout(
 }
 
 async function parseJson<T>(response: Response): Promise<ApiEnvelope<T>> {
-  try {
-    return await response.json();
-  } catch {
-    throw new ApiError("响应解析失败", response.status);
-  }
+  return parseResponseBodyAsJson<ApiEnvelope<T>>(response);
 }
 
 function assertValidCharacterId(characterId: string, action: string): void {
@@ -129,6 +129,25 @@ export async function createCharacter(body: {
   }
 }
 
+/** 上传裁剪后的角色头像（写入独立 avatar 目录，与官方/同人参考图分离） */
+export async function uploadCharacterAvatar(
+  characterId: string,
+  file: File
+): Promise<ApiCharacterDetail> {
+  assertValidCharacterId(characterId, "上传角色头像");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/avatar`;
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const response = await fetchWithTimeout(url, { method: "POST", body: form });
+    const data = await parseJson<ApiCharacterDetail>(response);
+    throwIfError(response, data);
+    return data.data as ApiCharacterDetail;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
 export async function patchCharacter(
   id: string,
   body: { name?: string; display_name?: string | null }
@@ -159,14 +178,21 @@ export async function deleteCharacter(id: string): Promise<void> {
   }
 }
 
-export async function putSettingText(characterId: string, settingText: string): Promise<ApiCharacterDetail> {
+export async function putSettingText(
+  characterId: string,
+  settingText: string,
+  clearSettingSource = false
+): Promise<ApiCharacterDetail> {
   assertValidCharacterId(characterId, "保存角色设定");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/setting`;
   try {
     const response = await fetchWithTimeout(url, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ setting_text: settingText }),
+      body: JSON.stringify({
+        setting_text: settingText,
+        clear_setting_source: clearSettingSource,
+      }),
     });
     const data = await parseJson<ApiCharacterDetail>(response);
     throwIfError(response, data);
@@ -310,6 +336,27 @@ export interface CharaProfileStatusResult {
   updated_at: string;
 }
 
+export interface CreationAdviceStartResult {
+  task_id: string;
+  status: string;
+}
+
+export interface CreationAdviceSeedDraft {
+  character_specific: string[];
+  general: string[];
+}
+
+export interface CreationAdviceStatusResult {
+  task_id: string;
+  character_id: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  error_message: string | null;
+  current_step: string | null;
+  created_at: string;
+  updated_at: string;
+  seed_draft: CreationAdviceSeedDraft | null;
+}
+
 export async function startCharaProfileTask(
   characterId: string,
   body: { selected_fanart_ids: string[] }
@@ -344,6 +391,44 @@ export async function getCharaProfileStatus(
     const data = await parseJson<CharaProfileStatusResult>(response);
     throwIfError(response, data);
     return data.data as CharaProfileStatusResult;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function startCreationAdviceTask(
+  characterId: string
+): Promise<CreationAdviceStartResult> {
+  assertValidCharacterId(characterId, "启动生成创作建议任务");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creation-advice/start`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+      timeout: 120000,
+    });
+    const data = await parseJson<CreationAdviceStartResult>(response);
+    throwIfError(response, data);
+    return data.data as CreationAdviceStartResult;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function getCreationAdviceStatus(
+  characterId: string
+): Promise<CreationAdviceStatusResult> {
+  assertValidCharacterId(characterId, "查询生成创作建议任务状态");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creation-advice/status`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "GET",
+      timeout: 20000,
+    });
+    const data = await parseJson<CreationAdviceStatusResult>(response);
+    throwIfError(response, data);
+    return data.data as CreationAdviceStatusResult;
   } catch (e) {
     rethrow(e);
   }
@@ -390,14 +475,14 @@ export async function retryStandardPhotoTask(characterId: string): Promise<Stand
 
 export async function getStandardPhotoStatus(
   characterId: string
-): Promise<StandardPhotoStatusResult> {
+): Promise<StandardPhotoStatusResult | null> {
   assertValidCharacterId(characterId, "查询标准照任务状态");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/standard-photo/status`;
   try {
     const response = await fetchWithTimeout(url, { method: "GET" });
-    const data = await parseJson<StandardPhotoStatusResult>(response);
+    const data = await parseJson<StandardPhotoStatusResult | null>(response);
     throwIfError(response, data);
-    return data.data as StandardPhotoStatusResult;
+    return data.data ?? null;
   } catch (e) {
     rethrow(e);
   }
@@ -440,18 +525,33 @@ export async function deleteOfficialPhotoSlot(
   }
 }
 
-/** 保存角色小档案 */
-export async function saveCharaProfile(
+export type PatchCharacterBioBody = {
+  chara_profile?: string;
+  creative_advice?: string;
+  official_seed_prompts?: OfficialSeedPromptsApiPatch;
+};
+
+/** 合并更新角色 bio（chara_profile / creative_advice / official_seed_prompts 至少一项） */
+export async function patchCharacterBio(
   characterId: string,
-  charaProfile: string
+  body: PatchCharacterBioBody
 ): Promise<ApiCharacterDetail> {
-  assertValidCharacterId(characterId, "保存角色小档案");
+  assertValidCharacterId(characterId, "更新角色档案");
+  const payload: Record<string, unknown> = {};
+  if (body.chara_profile !== undefined) payload.chara_profile = body.chara_profile;
+  if (body.creative_advice !== undefined) payload.creative_advice = body.creative_advice;
+  if (body.official_seed_prompts !== undefined) {
+    payload.official_seed_prompts = body.official_seed_prompts;
+  }
+  if (Object.keys(payload).length === 0) {
+    throw new ApiError("至少需要一项 bio 更新字段", 400);
+  }
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/bio`;
   try {
     const response = await fetchWithTimeout(url, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chara_profile: charaProfile }),
+      body: JSON.stringify(payload),
     });
     const data = await parseJson<ApiCharacterDetail>(response);
     throwIfError(response, data);
@@ -461,23 +561,18 @@ export async function saveCharaProfile(
   }
 }
 
+/** 保存角色小档案 */
+export async function saveCharaProfile(
+  characterId: string,
+  charaProfile: string
+): Promise<ApiCharacterDetail> {
+  return patchCharacterBio(characterId, { chara_profile: charaProfile });
+}
+
 /** 保存角色创作建议 */
 export async function saveCreativeAdvice(
   characterId: string,
   creativeAdvice: string
 ): Promise<ApiCharacterDetail> {
-  assertValidCharacterId(characterId, "保存创作建议");
-  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/bio`;
-  try {
-    const response = await fetchWithTimeout(url, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ creative_advice: creativeAdvice }),
-    });
-    const data = await parseJson<ApiCharacterDetail>(response);
-    throwIfError(response, data);
-    return data.data as ApiCharacterDetail;
-  } catch (e) {
-    rethrow(e);
-  }
+  return patchCharacterBio(characterId, { creative_advice: creativeAdvice });
 }

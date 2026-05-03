@@ -5,7 +5,7 @@ export const STATUS_LABEL: Record<CharaStatus, string> = {
   idle: "还没开始",
   draft: "资料待补充",
   processing: "加工进行中",
-  done: "已整理完成",
+  done: "资料已完善",
 };
 
 export const STATUS_STYLE: Record<
@@ -65,6 +65,24 @@ export const ALL_STANDARD_PHOTO_TYPES: StandardPhotoType[] = [
   "face_close",
 ];
 
+/** 正式种子提示词单条（与 bio_json.official_seed_prompts 对应） */
+export interface SeedPrompt {
+  id: string;
+  text: string;
+  /** 是否在创作流程中标记为「已使用」（仅展示，不参与「保存为正式内容」的筛选） */
+  used: boolean;
+  /**
+   * 创作建议页：勾选则纳入「保存为正式种子提示词」；持久化到 bio 时不会写入该字段。
+   * 从接口读入的旧数据若无该字段，视为 true（与历史「全部保存」行为兼容）。
+   */
+  selected: boolean;
+}
+
+export interface OfficialSeedPrompts {
+  characterSpecific: SeedPrompt[];
+  general: SeedPrompt[];
+}
+
 export interface CharaBio {
   displayName: string;
   age: string;
@@ -74,6 +92,8 @@ export interface CharaBio {
   appearance: string;
   charaProfile?: string;
   creativeAdvice?: string;
+  /** 已保存至正式内容的种子提示词；未保存过为 null */
+  officialSeedPrompts?: OfficialSeedPrompts | null;
 }
 
 export interface CharaStandardPhoto {
@@ -90,6 +110,8 @@ export interface CharaProfile {
   status: CharaStatus;
   updatedAt: string;
   settingText: string;
+  /** 最近一次通过 .txt/.md 导入的源文件名；仅前端会话内展示，后端未持久化时可丢失 */
+  settingFileName: string;
   rawImages: CharaRawImage[];
   officialPhotos: [string | null, string | null, string | null, string | null, string | null];
   standardPhotos: CharaStandardPhoto[];
@@ -125,7 +147,87 @@ function emptyBio(displayName: string): CharaBio {
     personality: "待补充",
     ability: "待补充",
     appearance: "待补充",
+    officialSeedPrompts: null,
   };
+}
+
+function parseSeedPromptItem(x: unknown, index: number): SeedPrompt | null {
+  if (!x || typeof x !== "object") return null;
+  const o = x as Record<string, unknown>;
+  const id = typeof o.id === "string" && o.id.length > 0 ? o.id : `seed-${index}`;
+  const text = typeof o.text === "string" ? o.text : "";
+  const used = o.used === true;
+  const selected = o.selected === false ? false : true;
+  return { id, text, used, selected };
+}
+
+function parseSeedPromptArray(raw: unknown): SeedPrompt[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(parseSeedPromptItem).filter((x): x is SeedPrompt => x !== null);
+}
+
+/** 从 API bio 字典解析 official_seed_prompts */
+export function parseOfficialSeedPromptsFromBio(bio: Record<string, unknown>): OfficialSeedPrompts | null {
+  const raw =
+    bio.official_seed_prompts ??
+    (bio as { officialSeedPrompts?: unknown }).officialSeedPrompts;
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const characterSpecific = parseSeedPromptArray(
+    o.character_specific ?? o.characterSpecific
+  );
+  const general = parseSeedPromptArray(o.general);
+  if (characterSpecific.length === 0 && general.length === 0) return null;
+  return { characterSpecific, general };
+}
+
+/** PATCH /characters/:id/bio 的 official_seed_prompts（与后端 OfficialSeedPromptsPatch 一致） */
+export type OfficialSeedPromptsApiPatch = {
+  character_specific: { id: string; text: string; used: boolean }[];
+  general: { id: string; text: string; used: boolean }[];
+};
+
+/** 写入 PATCH 请求体用的 snake_case 结构 */
+export function officialSeedPromptsToApiPayload(p: OfficialSeedPrompts): OfficialSeedPromptsApiPatch {
+  const row = (s: SeedPrompt) => ({ id: s.id, text: s.text, used: s.used });
+  return {
+    character_specific: p.characterSpecific.map(row),
+    general: p.general.map(row),
+  };
+}
+
+/**
+ * 创作建议种子列表 → 写入正式内容：只保留勾选项，并清空 used（避免与「标记使用」混用）。
+ */
+export function pickOfficialSeedsForSave(draft: OfficialSeedPrompts): OfficialSeedPrompts {
+  return {
+    characterSpecific: draft.characterSpecific
+      .filter((s) => s.selected)
+      .map((s) => ({ ...s, used: false })),
+    general: draft.general.filter((s) => s.selected).map((s) => ({ ...s, used: false })),
+  };
+}
+
+export function emptyOfficialSeedPrompts(): OfficialSeedPrompts {
+  return { characterSpecific: [], general: [] };
+}
+
+export function cloneOfficialSeedPrompts(p: OfficialSeedPrompts): OfficialSeedPrompts {
+  return {
+    characterSpecific: p.characterSpecific.map((s) => ({ ...s })),
+    general: p.general.map((s) => ({ ...s })),
+  };
+}
+
+/**
+ * 角色小档案正文：仅取自 bio_json 中加工任务写入的 `chara_profile`（及兼容 camelCase）。
+ * 不使用年龄/性格等占位字段冒充小档案正文。
+ */
+export function extractCharaProfileMarkdown(bio: Record<string, unknown>): string {
+  const raw = bio.chara_profile ?? bio.charaProfile;
+  if (typeof raw !== "string") return "";
+  return raw;
 }
 
 /**
@@ -160,6 +262,8 @@ export interface ApiCharacterDetail {
   status: string;
   updated_at: string;
   setting_text: string;
+  /** 后端持久化的设定文件来源名（.txt/.md 上传）；缺省或空表示无 */
+  setting_source_filename?: string;
   raw_images: { id: string; url: string; type: RawImageType; tags: string[] }[];
   official_photos: (string | null)[];
   standard_photos?: { id: string; type: StandardPhotoType; url: string; created_at: string }[];
@@ -182,6 +286,10 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
   const str = (v: unknown, fallback: string) =>
     typeof v === "string" && v.length > 0 ? v : fallback;
 
+  const bioRecord: Record<string, unknown> =
+    b && typeof b === "object" && !Array.isArray(b) ? (b as Record<string, unknown>) : {};
+  const seeds = parseOfficialSeedPromptsFromBio(bioRecord);
+
   const bio: CharaBio = {
     displayName: str(
       b.display_name ?? (b as { displayName?: unknown }).displayName,
@@ -192,8 +300,9 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
     personality: str(b.personality, "待补充"),
     ability: str(b.ability, "待补充"),
     appearance: str(b.appearance, "待补充"),
-    charaProfile: str(b.charaProfile ?? (b as { chara_profile?: unknown }).chara_profile, ""),
+    charaProfile: extractCharaProfileMarkdown(bioRecord),
     creativeAdvice: str(b.creativeAdvice ?? (b as { creative_advice?: unknown }).creative_advice, ""),
+    officialSeedPrompts: seeds,
   };
 
   const photos = d.official_photos || [];
@@ -233,6 +342,10 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
     status: asCharaStatus(d.status),
     updatedAt: d.updated_at,
     settingText: d.setting_text ?? "",
+    settingFileName:
+      typeof d.setting_source_filename === "string" && d.setting_source_filename.length > 0
+        ? d.setting_source_filename
+        : "",
     rawImages: (d.raw_images || []).map((r) => ({
       id: r.id,
       url: r.url,
@@ -257,6 +370,7 @@ export function summaryToListProfile(s: ApiCharacterSummary): CharaProfile {
     updatedAt:
       typeof s.updated_at === "string" ? s.updated_at : new Date(s.updated_at).toISOString(),
     settingText: "",
+    settingFileName: "",
     rawImages: [],
     officialPhotos: [null, null, null, null, null],
     standardPhotos: [],

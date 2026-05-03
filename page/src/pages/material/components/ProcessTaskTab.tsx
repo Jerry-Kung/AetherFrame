@@ -1,4 +1,4 @@
-import type { CharaProfile } from "@/types/material";
+import type { CharaProfile, OfficialSeedPrompts } from "@/types/material";
 import type { ApiCharacterDetail } from "@/types/material";
 import PhotoTaskPage from "./PhotoTaskPage";
 import CharaProfilePage from "./CharaProfilePage";
@@ -14,6 +14,7 @@ interface ProcessTaskTabProps {
   showToast: (msg: string) => void;
   onGoRaw: () => void;
   onGoStandard: () => void;
+  onSaveSeedPrompts: (payload: OfficialSeedPrompts) => void | Promise<void>;
 }
 
 const SUB_TASKS: { id: ProcessSubTaskId; label: string; icon: string; desc: string }[] = [
@@ -40,6 +41,7 @@ const ProcessTaskTab = ({
   showToast,
   onGoRaw,
   onGoStandard,
+  onSaveSeedPrompts,
 }: ProcessTaskTabProps) => {
   const active = SUB_TASKS.find((s) => s.id === subTask)!;
 
@@ -84,6 +86,7 @@ const ProcessTaskTab = ({
             showToast={showToast}
             onGoRaw={onGoRaw}
             onGoPhoto={onGoStandard}
+            onSaveSeedPrompts={onSaveSeedPrompts}
           />
         ) : (
           <div className="p-6 flex flex-col items-center justify-center flex-1 text-center min-h-[200px]">

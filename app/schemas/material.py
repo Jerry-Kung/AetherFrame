@@ -3,10 +3,11 @@
 """
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal
 
 from pydantic import BaseModel, Field, ConfigDict, model_validator
+
+from app.schemas.serialization import ApiDateTime
 
 RawImageType = Literal["official", "fanart"]
 ShotType = Literal["full_front", "full_side", "half_front", "half_side", "face_close"]
@@ -30,6 +31,10 @@ class CharacterUpdate(BaseModel):
 
 class SettingTextUpdate(BaseModel):
     setting_text: str = Field(..., description="角色设定全文（UTF-8）")
+    clear_setting_source: bool = Field(
+        False,
+        description="为 true 时清除设定来源文件名（如用户完成手动编辑保存）；默认 false 以保留导入 .txt/.md 时的来源标记",
+    )
 
 
 class RawImageTagsUpdate(BaseModel):
@@ -60,7 +65,7 @@ class CharacterSummary(BaseModel):
     name: str
     display_name: str
     status: str
-    updated_at: datetime
+    updated_at: ApiDateTime
     raw_image_count: int
     setting_preview: str
     avatar_url: str = ""
@@ -74,8 +79,12 @@ class CharacterDetail(BaseModel):
     display_name: str
     avatar_url: str
     status: str
-    updated_at: datetime
+    updated_at: ApiDateTime
     setting_text: str
+    setting_source_filename: str = Field(
+        default="",
+        description="最近一次通过 .txt/.md 上传写入设定时的原始文件名；纯 JSON 编辑且未 clear 时保持不变",
+    )
     raw_images: List[RawImageItem]
     official_photos: List[Optional[str]] = Field(
         default_factory=lambda: [None, None, None, None, None],
@@ -132,8 +141,8 @@ class StandardPhotoStatusResponse(BaseModel):
     error_message: Optional[str] = None
     selected_raw_image_ids: List[str] = Field(default_factory=list)
     result_images: List[str] = Field(default_factory=list)
-    created_at: datetime
-    updated_at: datetime
+    created_at: ApiDateTime
+    updated_at: ApiDateTime
 
 
 class StandardPhotoSelectRequest(BaseModel):
@@ -168,16 +177,73 @@ class CharaProfileStatusResponse(BaseModel):
     error_message: Optional[str] = None
     current_step: Optional[str] = None
     selected_fanart_ids: List[str] = Field(default_factory=list)
-    created_at: datetime
-    updated_at: datetime
+    created_at: ApiDateTime
+    updated_at: ApiDateTime
+
+
+class CreationAdviceStartResponse(BaseModel):
+    task_id: str
+    status: str
+
+
+class CreationAdviceSeedDraftData(BaseModel):
+    character_specific: List[str] = Field(default_factory=list)
+    general: List[str] = Field(default_factory=list)
+
+
+class CreationAdviceStatusResponse(BaseModel):
+    task_id: str
+    character_id: str
+    status: str
+    error_message: Optional[str] = None
+    current_step: Optional[str] = None
+    created_at: ApiDateTime
+    updated_at: ApiDateTime
+    seed_draft: Optional[CreationAdviceSeedDraftData] = Field(
+        None, description="仅 status=completed 时返回本次生成的候选种子列表"
+    )
+
+
+class OfficialSeedPromptRowIn(BaseModel):
+    """正式种子单条；与前端 `officialSeedPromptsToApiPayload` 的 id / text / used 对齐。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(..., min_length=1, max_length=256)
+    text: str = Field(default="", max_length=100_000)
+    used: bool = False
+
+
+class OfficialSeedPromptsPatch(BaseModel):
+    """
+    PATCH bio 时整体替换 `bio_json.official_seed_prompts`。
+    用于正式内容页：单条删除、标记使用、一键清空（两侧均为空时服务端移除该字段）。
+    """
+
+    character_specific: List[OfficialSeedPromptRowIn] = Field(
+        default_factory=list,
+        description="角色专属正式种子",
+    )
+    general: List[OfficialSeedPromptRowIn] = Field(
+        default_factory=list,
+        description="通用正式种子",
+    )
 
 
 class BioPatchRequest(BaseModel):
     chara_profile: Optional[str] = Field(None, description="角色小档案全文（Markdown）")
     creative_advice: Optional[str] = Field(None, description="创作建议全文")
+    official_seed_prompts: Optional[OfficialSeedPromptsPatch] = Field(
+        None,
+        description="正式种子提示词；character_specific 与 general 均为空时服务端从 bio 中移除该字段",
+    )
 
     @model_validator(mode="after")
     def at_least_one_field(self):
-        if self.chara_profile is None and self.creative_advice is None:
-            raise ValueError("至少提供 chara_profile 或 creative_advice 之一")
+        if (
+            self.chara_profile is None
+            and self.creative_advice is None
+            and self.official_seed_prompts is None
+        ):
+            raise ValueError("至少提供 chara_profile、creative_advice、official_seed_prompts 之一")
         return self

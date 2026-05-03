@@ -2,6 +2,7 @@
 图片生成集成测试用例
 包含：ImageGenerationService、RepairTaskService 启动与校验、API 相关说明
 """
+
 import asyncio
 import os
 import shutil
@@ -12,8 +13,8 @@ from unittest.mock import patch
 # 配置日志
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 # ==========================================
 # 第一部分：ImageGenerationService 测试
 # ==========================================
+
 
 class TestImageGenerationService:
     """测试 ImageGenerationService"""
@@ -31,11 +33,12 @@ class TestImageGenerationService:
 
         # 创建测试图片文件
         import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             main_image = f.name
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             ref1 = f.name
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             ref2 = f.name
 
         try:
@@ -44,7 +47,7 @@ class TestImageGenerationService:
             content = image_generation_service.build_repair_content(
                 prompt_template=prompt,
                 main_image_path=main_image,
-                reference_image_paths=[ref1, ref2]
+                reference_image_paths=[ref1, ref2],
             )
 
             # 验证内容结构
@@ -68,7 +71,8 @@ class TestImageGenerationService:
         from app.services.repair_service import image_generation_service
 
         import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             main_image = f.name
 
         try:
@@ -77,7 +81,7 @@ class TestImageGenerationService:
             content = image_generation_service.build_repair_content(
                 prompt_template=prompt,
                 main_image_path=main_image,
-                reference_image_paths=[]
+                reference_image_paths=[],
             )
 
             # 验证内容结构
@@ -97,17 +101,19 @@ class TestImageGenerationService:
             image_generation_service.build_repair_content(
                 prompt_template="修复图片",
                 main_image_path="/non/existent/path.png",
-                reference_image_paths=[]
+                reference_image_paths=[],
             )
 
-    @patch('app.services.repair_service.image_generation_service.generate_image_with_nano_banana_pro')
+    @patch(
+        "app.services.repair_service.image_generation_service.generate_image_with_nano_banana_pro"
+    )
     def test_generate_repair_images_success(self, mock_generate, temp_data_dir):
         """测试 generate_repair_images - 成功"""
         from app.services.repair_service import image_generation_service
         import tempfile
 
         # 创建测试图片
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             main_image = f.name
 
         temp_dir = None
@@ -119,18 +125,20 @@ class TestImageGenerationService:
             def side_effect(Content, output_path, file_name, aspect_ratio):
                 # 创建一个模拟的输出文件
                 os.makedirs(output_path, exist_ok=True)
-                with open(os.path.join(output_path, file_name), 'wb') as f:
-                    f.write(b'test')
+                with open(os.path.join(output_path, file_name), "wb") as f:
+                    f.write(b"test")
                 return True
 
             mock_generate.side_effect = side_effect
 
-            result_paths, error_msg, temp_dir = image_generation_service.generate_repair_images(
-                task_id="test-task-001",
-                prompt_template="修复图片",
-                main_image_path=main_image,
-                reference_image_paths=[],
-                output_count=2
+            result_paths, error_msg, temp_dir = (
+                image_generation_service.generate_repair_images(
+                    task_id="test-task-001",
+                    prompt_template="修复图片",
+                    main_image_path=main_image,
+                    reference_image_paths=[],
+                    output_count=2,
+                )
             )
 
             assert error_msg is None
@@ -142,24 +150,28 @@ class TestImageGenerationService:
             if temp_dir and os.path.isdir(temp_dir):
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
-    @patch('app.services.repair_service.image_generation_service.generate_image_with_nano_banana_pro')
+    @patch(
+        "app.services.repair_service.image_generation_service.generate_image_with_nano_banana_pro"
+    )
     def test_generate_repair_images_all_fail(self, mock_generate, temp_data_dir):
         """测试 generate_repair_images - 全部失败"""
         from app.services.repair_service import image_generation_service
         import tempfile
 
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             main_image = f.name
 
         try:
             mock_generate.return_value = False
 
-            result_paths, error_msg, temp_dir = image_generation_service.generate_repair_images(
-                task_id="test-task-001",
-                prompt_template="修复图片",
-                main_image_path=main_image,
-                reference_image_paths=[],
-                output_count=2
+            result_paths, error_msg, temp_dir = (
+                image_generation_service.generate_repair_images(
+                    task_id="test-task-001",
+                    prompt_template="修复图片",
+                    main_image_path=main_image,
+                    reference_image_paths=[],
+                    output_count=2,
+                )
             )
 
             assert len(result_paths) == 0
@@ -169,13 +181,17 @@ class TestImageGenerationService:
         finally:
             os.unlink(main_image)
 
-    @patch('app.services.repair_service.image_generation_service.generate_image_with_nano_banana_pro')
-    def test_generate_repair_images_passes_aspect_ratio_to_nano(self, mock_generate, temp_data_dir):
+    @patch(
+        "app.services.repair_service.image_generation_service.generate_image_with_nano_banana_pro"
+    )
+    def test_generate_repair_images_passes_aspect_ratio_to_nano(
+        self, mock_generate, temp_data_dir
+    ):
         """generate_repair_images 将 aspect_ratio 原样传给 nano_banana_pro"""
         from app.services.repair_service import image_generation_service
         import tempfile
 
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             main_image = f.name
 
         temp_dir = None
@@ -185,19 +201,21 @@ class TestImageGenerationService:
             def side_effect(Content, output_path, file_name, aspect_ratio):
                 seen["aspect_ratio"] = aspect_ratio
                 os.makedirs(output_path, exist_ok=True)
-                with open(os.path.join(output_path, file_name), 'wb') as fp:
-                    fp.write(b'test')
+                with open(os.path.join(output_path, file_name), "wb") as fp:
+                    fp.write(b"test")
                 return True
 
             mock_generate.side_effect = side_effect
 
-            result_paths, error_msg, temp_dir = image_generation_service.generate_repair_images(
-                task_id="test-task-ar",
-                prompt_template="修复图片",
-                main_image_path=main_image,
-                reference_image_paths=[],
-                output_count=1,
-                aspect_ratio="9:16",
+            result_paths, error_msg, temp_dir = (
+                image_generation_service.generate_repair_images(
+                    task_id="test-task-ar",
+                    prompt_template="修复图片",
+                    main_image_path=main_image,
+                    reference_image_paths=[],
+                    output_count=1,
+                    aspect_ratio="9:16",
+                )
             )
 
             assert error_msg is None
@@ -212,6 +230,7 @@ class TestImageGenerationService:
 # ==========================================
 # 第二部分：RepairTaskService 启动与流水线（与生产路径一致）
 # ==========================================
+
 
 class TestRepairTaskServiceStart:
     """测试 RepairTaskService.start_task（无 BackgroundTasks 时同步执行流水线）"""
@@ -254,8 +273,12 @@ class TestRepairTaskServiceStart:
         with pytest.raises(ValueError, match="任务不存在"):
             asyncio.run(run())
 
-    @patch("app.services.repair_service.image_generation_service.generate_repair_images")
-    def test_start_task_success(self, mock_generate, db_session, repair_task_service, test_task, temp_data_dir):
+    @patch(
+        "app.services.repair_service.image_generation_service.generate_repair_images"
+    )
+    def test_start_task_success(
+        self, mock_generate, db_session, repair_task_service, test_task, temp_data_dir
+    ):
         """模拟 generate_repair_images，经 repair_execution 流水线落盘并更新状态"""
         from app.services.repair_service import repair_file_service
         import tempfile
@@ -309,7 +332,9 @@ class TestRepairTaskServiceStart:
                 except Exception:
                     pass
 
-    @patch("app.services.repair_service.image_generation_service.generate_repair_images")
+    @patch(
+        "app.services.repair_service.image_generation_service.generate_repair_images"
+    )
     def test_start_task_from_completed_clears_old_results(
         self, mock_generate, db_session, repair_task_service, test_task, temp_data_dir
     ):
@@ -388,6 +413,7 @@ class TestRepairTaskServiceStart:
 # 第四部分：集成测试（使用 test_data 目录）
 # ==========================================
 
+
 class TestIntegrationWithTestData:
     """使用 test_data 目录的集成测试"""
 
@@ -425,7 +451,7 @@ class TestIntegrationWithTestData:
         # 查找可能的图片文件
         main_image = None
         for filename in os.listdir(test_data_dir):
-            if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+            if filename.lower().endswith((".png", ".jpg", ".jpeg")):
                 main_image = os.path.join(test_data_dir, filename)
                 break
 
@@ -443,9 +469,11 @@ class TestIntegrationWithTestData:
         # 查找 prompt 文件
         prompt = "修复图片"
         for filename in os.listdir(test_data_dir):
-            if filename.endswith('.txt'):
+            if filename.endswith(".txt"):
                 try:
-                    with open(os.path.join(test_data_dir, filename), 'r', encoding='utf-8') as f:
+                    with open(
+                        os.path.join(test_data_dir, filename), "r", encoding="utf-8"
+                    ) as f:
                         prompt = f.read().strip()
                     break
                 except:
@@ -455,7 +483,7 @@ class TestIntegrationWithTestData:
         reference_paths = []
         if refs_dir and os.path.exists(refs_dir):
             for filename in os.listdir(refs_dir):
-                if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                if filename.lower().endswith((".png", ".jpg", ".jpeg")):
                     reference_paths.append(os.path.join(refs_dir, filename))
 
         logger.info(f"测试数据 - 主图: {main_image}")
@@ -466,7 +494,7 @@ class TestIntegrationWithTestData:
         content = image_generation_service.build_repair_content(
             prompt_template=prompt,
             main_image_path=main_image,
-            reference_image_paths=reference_paths
+            reference_image_paths=reference_paths,
         )
 
         # 验证

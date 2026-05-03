@@ -10,11 +10,9 @@ from unittest.mock import patch
 import pytest
 from starlette.datastructures import UploadFile
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+from app.datetime_display import configure_logging
+
+configure_logging(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -138,6 +136,29 @@ class TestMaterialCharacterService:
         up = UploadFile(filename="note.md", file=BytesIO(raw))
         char = material_svc.update_setting_from_upload(char.id, up)
         assert char.setting_text == "# hello\n中文"
+        assert char.setting_source_filename == "note.md"
+
+    def test_setting_text_preserves_source_filename_by_default(self, material_svc):
+        char = material_svc.create_character("SrcKeep")
+        raw = b"alpha"
+        char = material_svc.update_setting_from_upload(
+            char.id, UploadFile(filename="a.txt", file=BytesIO(raw))
+        )
+        assert char.setting_source_filename == "a.txt"
+        char = material_svc.update_setting_text(char.id, "beta")
+        assert char.setting_text == "beta"
+        assert char.setting_source_filename == "a.txt"
+
+    def test_setting_text_clear_setting_source(self, material_svc):
+        char = material_svc.create_character("SrcClear")
+        raw = b"x"
+        char = material_svc.update_setting_from_upload(
+            char.id, UploadFile(filename="f.md", file=BytesIO(raw))
+        )
+        assert char.setting_source_filename == "f.md"
+        char = material_svc.update_setting_text(char.id, "y", clear_setting_source=True)
+        assert char.setting_text == "y"
+        assert char.setting_source_filename is None
 
     def test_upload_raw_images_and_path(self, material_svc, sample_png):
         char = material_svc.create_character("C")
@@ -182,6 +203,82 @@ class TestMaterialCharacterService:
         char = material_svc.patch_character(char.id, name="New", display_name="NewDisp")
         assert char.name == "New"
         assert char.display_name == "NewDisp"
+
+    def test_upload_character_avatar_sets_file_and_detail_url(self, material_svc, sample_png):
+        char = material_svc.create_character("AvatarChar")
+        up = UploadFile(filename="avatar.png", file=BytesIO(sample_png))
+        char2 = material_svc.upload_character_avatar(char.id, up)
+        assert char2.avatar_filename == "avatar.png"
+        detail = material_svc.character_to_detail_dict(material_svc.get_character(char.id))
+        assert detail["avatar_url"] == (
+            f"/api/material/characters/{char.id}/images/avatar/{char2.avatar_filename}"
+        )
+        assert detail["raw_images"] == []
+        path = material_svc.get_avatar_image_path(char.id, char2.avatar_filename)
+        assert path and os.path.isfile(path)
+
+    def test_upload_character_avatar_list_summary_prefers_avatar_slot(self, material_svc, sample_png):
+        char = material_svc.create_character("AvSlot")
+        material_svc.upload_raw_images(
+            char.id,
+            [UploadFile(filename="older.png", file=BytesIO(sample_png))],
+            [["立绘"]],
+        )
+        material_svc.upload_character_avatar(
+            char.id,
+            UploadFile(filename="face.png", file=BytesIO(sample_png)),
+        )
+        char3 = material_svc.get_character(char.id)
+        items, _ = material_svc.list_character_summaries()
+        row = next(x for x in items if x["id"] == char.id)
+        assert char3.avatar_filename in row["avatar_url"]
+        assert row["avatar_url"] == (
+            f"/api/material/characters/{char.id}/images/avatar/{char3.avatar_filename}"
+        )
+
+    def test_upload_character_avatar_unknown_character_raises(self, material_svc, sample_png):
+        up = UploadFile(filename="a.png", file=BytesIO(sample_png))
+        with pytest.raises(ValueError, match="角色不存在"):
+            material_svc.upload_character_avatar("mchar_nonexistent_xx", up)
+
+    def test_material_complete_sets_done_status(self, material_svc, sample_png):
+        char = material_svc.create_character("Complete")
+        material_svc.update_setting_text(char.id, "角色设定说明内容")
+        material_svc.upload_raw_images(
+            char.id,
+            [UploadFile(filename="r.png", file=BytesIO(sample_png))],
+            [["立绘"]],
+        )
+        urls = [f"https://slot{i}.example/s.png" for i in range(5)]
+        bio = json.dumps({"chara_profile": "# 小档案\n正文已生成"}, ensure_ascii=False)
+        material_svc.repo.update(
+            char.id,
+            {
+                "official_photos_json": json.dumps(urls, ensure_ascii=False),
+                "bio_json": bio,
+            },
+        )
+        material_svc._after_character_material_changed(char.id)
+        assert material_svc.get_character(char.id).status == "done"
+
+    def test_material_done_demotes_when_standard_slot_cleared(self, material_svc, sample_png):
+        char = material_svc.create_character("Demote")
+        material_svc.update_setting_text(char.id, "设定")
+        material_svc.upload_raw_images(
+            char.id,
+            [UploadFile(filename="r.png", file=BytesIO(sample_png))],
+            None,
+        )
+        urls = [f"https://x{i}.test/p.png" for i in range(5)]
+        bio = json.dumps({"chara_profile": "档案"}, ensure_ascii=False)
+        material_svc.repo.update(
+            char.id,
+            {"official_photos_json": json.dumps(urls, ensure_ascii=False), "bio_json": bio},
+        )
+        material_svc._after_character_material_changed(char.id)
+        assert material_svc.get_character(char.id).status == "done"
+        material_svc.clear_official_photo_slot(char.id, 0)
+        assert material_svc.get_character(char.id).status == "draft"
 
     def test_delete_raw_image_removes_file(self, material_svc, sample_png):
         char = material_svc.create_character("D")
@@ -428,3 +525,176 @@ class TestMaterialCharacterService:
         assert bio["chara_profile"] == "profile_keep"
         assert bio["creative_advice"] == "advice_only"
         assert bio["other"] == 1
+
+    def test_patch_character_bio_official_seed_prompts(self, material_svc):
+        char = material_svc.create_character("SeedBio")
+        material_svc.repo.update(
+            char.id,
+            {"bio_json": '{"chara_profile": "p", "creative_advice": "a"}'},
+        )
+        payload = {
+            "character_specific": [{"id": "1", "text": "专属", "used": False}],
+            "general": [{"id": "2", "text": "通用", "used": True}],
+        }
+        material_svc.patch_character_bio(char.id, official_seed_prompts=payload)
+        char2 = material_svc.get_character(char.id)
+        bio = json.loads(char2.bio_json)
+        assert bio["chara_profile"] == "p"
+        assert bio["creative_advice"] == "a"
+        assert bio["official_seed_prompts"] == payload
+
+    def test_patch_character_bio_official_seed_prompts_clear_removes_key(self, material_svc):
+        char = material_svc.create_character("SeedClear")
+        material_svc.repo.update(
+            char.id,
+            {
+                "bio_json": json.dumps(
+                    {
+                        "chara_profile": "p",
+                        "official_seed_prompts": {
+                            "character_specific": [{"id": "1", "text": "a", "used": False}],
+                            "general": [{"id": "2", "text": "b", "used": True}],
+                        },
+                    },
+                    ensure_ascii=False,
+                )
+            },
+        )
+        material_svc.patch_character_bio(
+            char.id,
+            official_seed_prompts={"character_specific": [], "general": []},
+        )
+        char2 = material_svc.get_character(char.id)
+        bio = json.loads(char2.bio_json)
+        assert bio["chara_profile"] == "p"
+        assert "official_seed_prompts" not in bio
+
+    def test_patch_character_bio_official_seed_prompts_delete_one_row(self, material_svc):
+        char = material_svc.create_character("SeedDel")
+        material_svc.repo.update(
+            char.id,
+            {
+                "bio_json": json.dumps(
+                    {
+                        "official_seed_prompts": {
+                            "character_specific": [
+                                {"id": "1", "text": "keep", "used": False},
+                                {"id": "2", "text": "gone", "used": True},
+                            ],
+                            "general": [{"id": "g1", "text": "gen", "used": False}],
+                        }
+                    },
+                    ensure_ascii=False,
+                )
+            },
+        )
+        payload = {
+            "character_specific": [{"id": "1", "text": "keep", "used": False}],
+            "general": [{"id": "g1", "text": "gen", "used": False}],
+        }
+        material_svc.patch_character_bio(char.id, official_seed_prompts=payload)
+        bio = json.loads(material_svc.get_character(char.id).bio_json)
+        assert bio["official_seed_prompts"] == payload
+
+    def test_start_creation_advice_missing_prerequisite(self, material_svc):
+        char = material_svc.create_character("CADV0")
+        with pytest.raises(ValueError, match="text_understanding"):
+            material_svc.start_creation_advice_task(char.id, background_tasks=None)
+
+    def test_creation_advice_task_success(self, material_svc):
+        from app.services.material_service import material_file_service
+
+        char = material_svc.create_character("CADV1")
+        cp_dir = material_file_service.get_chara_profile_dir(char.id)
+        os.makedirs(cp_dir, exist_ok=True)
+        for name in material_file_service.CHARA_PROFILE_ARTIFACT_NAMES:
+            with open(os.path.join(cp_dir, name), "w", encoding="utf-8") as f:
+                f.write("body\n")
+
+        calls = []
+
+        def fake_infer(prompt: str, **_kw):
+            calls.append(prompt)
+            if "请以JSON格式给出你的输出" in prompt:
+                return '{"character_specific": ["种子A"], "general": ["通用B"]}'
+            return "# 创作建议\n\n段落"
+
+        with patch(
+            "app.services.material_service.creation_advice_generation_service.yibu_gemini_infer",
+            side_effect=fake_infer,
+        ):
+            material_svc.start_creation_advice_task(char.id, background_tasks=None)
+
+        st = material_svc.get_creation_advice_task_status(char.id)
+        assert st["status"] == "completed"
+        assert st["current_step"] == "done"
+        assert st["seed_draft"] == {"character_specific": ["种子A"], "general": ["通用B"]}
+        adv_path = os.path.join(cp_dir, material_file_service.CREATION_ADVICE_MD_FILENAME)
+        assert os.path.isfile(adv_path)
+        char2 = material_svc.get_character(char.id)
+        bio = json.loads(char2.bio_json)
+        assert bio["creative_advice"] == "# 创作建议\n\n段落"
+        assert len(calls) == 2
+
+    def test_creation_advice_history_seeds_in_second_prompt(self, material_svc):
+        from app.services.material_service import material_file_service
+
+        char = material_svc.create_character("CADV2")
+        material_svc.repo.update(
+            char.id,
+            {
+                "bio_json": json.dumps(
+                    {
+                        "official_seed_prompts": {
+                            "character_specific": [{"id": "1", "text": "历史专属一句", "used": False}],
+                            "general": [],
+                        }
+                    },
+                    ensure_ascii=False,
+                )
+            },
+        )
+        cp_dir = material_file_service.get_chara_profile_dir(char.id)
+        os.makedirs(cp_dir, exist_ok=True)
+        for name in material_file_service.CHARA_PROFILE_ARTIFACT_NAMES:
+            with open(os.path.join(cp_dir, name), "w", encoding="utf-8") as f:
+                f.write("x\n")
+
+        calls = []
+
+        def capture(prompt: str, **_kw):
+            calls.append(prompt)
+            if "请以JSON格式给出你的输出" in prompt:
+                return '{"character_specific": [], "general": []}'
+            return "adv"
+
+        with patch(
+            "app.services.material_service.creation_advice_generation_service.yibu_gemini_infer",
+            side_effect=capture,
+        ):
+            material_svc.start_creation_advice_task(char.id, background_tasks=None)
+
+        assert len(calls) == 2
+        assert "历史专属一句" in calls[1]
+
+    def test_parse_seed_prompt_llm_json_strips_fence(self):
+        from app.services.material_service.creation_advice_generation_service import (
+            parse_seed_prompt_llm_json,
+        )
+
+        raw = '```json\n{"character_specific": ["a"], "general": ["b"]}\n```'
+        d = parse_seed_prompt_llm_json(raw)
+        assert d == {"character_specific": ["a"], "general": ["b"]}
+
+    def test_build_history_seed_prompts_empty_and_filled(self):
+        from app.services.material_service.history_seed_prompts import build_history_seed_prompts
+
+        assert build_history_seed_prompts({}) == "（暂无历史正式种子提示词）"
+        bio = {
+            "official_seed_prompts": {
+                "character_specific": [{"id": "1", "text": "  甲  ", "used": False}],
+                "general": [{"id": "2", "text": "乙", "used": True}],
+            }
+        }
+        assert "- 甲" in build_history_seed_prompts(bio)
+        assert "- 乙" in build_history_seed_prompts(bio)

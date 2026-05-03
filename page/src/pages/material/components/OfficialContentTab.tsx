@@ -1,11 +1,18 @@
-import { useMemo, useState } from "react";
-import type { CharaBio } from "@/types/material";
+import { useCallback, useMemo, useState } from "react";
+import type { CharaBio, OfficialSeedPrompts } from "@/types/material";
+import { cloneOfficialSeedPrompts } from "@/types/material";
+
+type SeedScope = keyof Pick<OfficialSeedPrompts, "characterSpecific" | "general">;
 
 interface OfficialContentTabProps {
   officialPhotos: [string | null, string | null, string | null, string | null, string | null];
   bio: CharaBio;
   onPhotoClick: (slotIndex: number) => void;
   onOfficialPhotoDelete: (slotIndex: number) => void | Promise<void>;
+  onGoProfileTask?: () => void;
+  onToggleUsedSeed: (next: OfficialSeedPrompts) => void | Promise<void>;
+  onDeleteSeed: (scope: SeedScope, id: string) => void | Promise<void>;
+  onClearSeeds: () => void | Promise<void>;
 }
 
 const PHOTO_LABELS = [
@@ -16,15 +23,6 @@ const PHOTO_LABELS = [
   "脸部特写",
 ] as const;
 
-const BIO_FIELDS: { key: keyof CharaBio; label: string }[] = [
-  { key: "displayName", label: "姓名" },
-  { key: "age", label: "年龄" },
-  { key: "height", label: "身高" },
-  { key: "personality", label: "性格" },
-  { key: "ability", label: "能力" },
-  { key: "appearance", label: "外观" },
-];
-
 type StandardPhotoItem = {
   id: string;
   slotIndex: number;
@@ -32,13 +30,135 @@ type StandardPhotoItem = {
   url: string;
 };
 
+type SeedSubTab = "character" | "general";
+
+function SeedPromptRow({
+  s,
+  scope,
+  togglingId,
+  deletingId,
+  onToggleUsed,
+  onRequestDelete,
+}: {
+  s: { id: string; text: string; used: boolean };
+  scope: SeedScope;
+  togglingId: string | null;
+  deletingId: string | null;
+  onToggleUsed: (scope: SeedScope, id: string) => void;
+  onRequestDelete: (scope: SeedScope, id: string, text: string) => void;
+}) {
+  return (
+    <li
+      className="rounded-2xl border border-rose-100/80 px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"
+      style={{ background: "rgba(255,255,255,0.85)" }}
+    >
+      <p className="text-sm text-rose-800/90 leading-relaxed flex-1 min-w-0">{s.text}</p>
+      <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+        <button
+          type="button"
+          disabled={togglingId === s.id || deletingId === s.id}
+          onClick={() => onToggleUsed(scope, s.id)}
+          className="text-xs px-3 py-1.5 rounded-xl cursor-pointer transition-all disabled:opacity-50 whitespace-nowrap"
+          style={{
+            fontFamily: "'ZCOOL KuaiLe', cursive",
+            background: s.used ? "rgba(110,231,183,0.2)" : "rgba(253,164,175,0.12)",
+            color: s.used ? "#059669" : "#db2777",
+            border: s.used ? "1px solid rgba(110,231,183,0.35)" : "1px solid rgba(244,114,182,0.25)",
+          }}
+        >
+          {togglingId === s.id ? "…" : s.used ? "已使用" : "标记使用"}
+        </button>
+        <button
+          type="button"
+          disabled={deletingId === s.id || togglingId === s.id}
+          onClick={() => onRequestDelete(scope, s.id, s.text)}
+          className="w-9 h-9 flex items-center justify-center rounded-xl cursor-pointer transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed text-rose-400 hover:text-red-600 hover:bg-red-50 hover:border-red-300/80 hover:shadow-sm hover:shadow-red-100"
+          style={{ border: "1px solid rgba(244,114,182,0.2)" }}
+          title="删除此条种子提示词"
+          aria-label="删除此条种子提示词"
+        >
+          <i className="ri-delete-bin-line text-lg" />
+        </button>
+      </div>
+    </li>
+  );
+}
+
+function SeedSection({
+  items,
+  scope,
+  togglingId,
+  deletingId,
+  onToggleUsed,
+  onRequestDelete,
+}: {
+  items: { id: string; text: string; used: boolean }[];
+  scope: SeedScope;
+  togglingId: string | null;
+  deletingId: string | null;
+  onToggleUsed: (scope: SeedScope, id: string) => void;
+  onRequestDelete: (scope: SeedScope, id: string, text: string) => void;
+}) {
+  if (items.length === 0) {
+    return (
+      <div
+        className="rounded-2xl border border-dashed border-rose-200/70 flex flex-col items-center justify-center py-10 px-4 text-center"
+        style={{ background: "rgba(253,164,175,0.05)" }}
+      >
+        <i className="ri-inbox-2-line text-rose-300 text-xl mb-2" />
+        <p className="text-sm text-rose-400/80" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
+          该分类下暂无提示词
+        </p>
+      </div>
+    );
+  }
+  return (
+    <ul className="flex flex-col gap-2">
+      {items.map((s) => (
+        <SeedPromptRow
+          key={s.id}
+          s={s}
+          scope={scope}
+          togglingId={togglingId}
+          deletingId={deletingId}
+          onToggleUsed={onToggleUsed}
+          onRequestDelete={onRequestDelete}
+        />
+      ))}
+    </ul>
+  );
+}
+
+function countUsedSeeds(p: OfficialSeedPrompts | null | undefined): number {
+  if (!p) return 0;
+  return (
+    p.characterSpecific.filter((s) => s.used).length + p.general.filter((s) => s.used).length
+  );
+}
+
 const OfficialContentTab = ({
   officialPhotos,
   bio,
   onPhotoClick,
   onOfficialPhotoDelete,
+  onGoProfileTask,
+  onToggleUsedSeed,
+  onDeleteSeed,
+  onClearSeeds,
 }: OfficialContentTabProps) => {
   const [deletePhotoId, setDeletePhotoId] = useState<string | null>(null);
+  const [seedSubTab, setSeedSubTab] = useState<SeedSubTab>("character");
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [seedDeleteTarget, setSeedDeleteTarget] = useState<{
+    scope: SeedScope;
+    id: string;
+    text: string;
+  } | null>(null);
+  const [clearSeedsOpen, setClearSeedsOpen] = useState(false);
+  const [deletingSeedId, setDeletingSeedId] = useState<string | null>(null);
+  const [clearingSeeds, setClearingSeeds] = useState(false);
+  /** 正式内容页角色小档案正文默认折叠，避免长文撑破布局并挡住下方模块 */
+  const [charaProfileExpanded, setCharaProfileExpanded] = useState(false);
 
   const standardPhotos: StandardPhotoItem[] = useMemo(
     () =>
@@ -54,8 +174,14 @@ const OfficialContentTab = ({
   );
 
   const filledCount = standardPhotos.length;
-
   const photoPendingDelete = standardPhotos.find((p) => p.id === deletePhotoId);
+
+  const charaProfileText = (bio.charaProfile ?? "").trim();
+  const officialSeeds = bio.officialSeedPrompts ?? null;
+  const hasSeedRows =
+    !!officialSeeds &&
+    (officialSeeds.characterSpecific.length > 0 || officialSeeds.general.length > 0);
+  const usedSeedCount = countUsedSeeds(officialSeeds);
 
   const handleConfirmDelete = () => {
     if (photoPendingDelete === undefined) return;
@@ -68,8 +194,62 @@ const OfficialContentTab = ({
     setDeletePhotoId(null);
   };
 
+  const flipUsed = useCallback(
+    async (scope: keyof Pick<OfficialSeedPrompts, "characterSpecific" | "general">, id: string) => {
+      if (!officialSeeds) return;
+      const next = cloneOfficialSeedPrompts(officialSeeds);
+      const arr = next[scope];
+      const idx = arr.findIndex((s) => s.id === id);
+      if (idx < 0) return;
+      arr[idx] = { ...arr[idx], used: !arr[idx].used };
+      setTogglingId(id);
+      try {
+        await onToggleUsedSeed(next);
+      } finally {
+        setTogglingId(null);
+      }
+    },
+    [officialSeeds, onToggleUsedSeed]
+  );
+
+  const requestSeedDelete = useCallback((scope: SeedScope, id: string, text: string) => {
+    setSeedDeleteTarget({ scope, id, text });
+  }, []);
+
+  const cancelSeedDelete = useCallback(() => {
+    if (deletingSeedId) return;
+    setSeedDeleteTarget(null);
+  }, [deletingSeedId]);
+
+  const confirmSeedDelete = useCallback(async () => {
+    if (!seedDeleteTarget) return;
+    const { scope, id } = seedDeleteTarget;
+    setDeletingSeedId(id);
+    try {
+      await onDeleteSeed(scope, id);
+      setSeedDeleteTarget(null);
+    } finally {
+      setDeletingSeedId(null);
+    }
+  }, [seedDeleteTarget, onDeleteSeed]);
+
+  const cancelClearSeeds = useCallback(() => {
+    if (clearingSeeds) return;
+    setClearSeedsOpen(false);
+  }, [clearingSeeds]);
+
+  const confirmClearSeeds = useCallback(async () => {
+    setClearingSeeds(true);
+    try {
+      await onClearSeeds();
+      setClearSeedsOpen(false);
+    } finally {
+      setClearingSeeds(false);
+    }
+  }, [onClearSeeds]);
+
   return (
-    <div className="flex flex-col gap-6 min-h-0 overflow-y-auto pr-1">
+    <div className="flex flex-col gap-6 min-h-0">
       <section>
         <h3
           className="text-sm font-semibold text-rose-700/80 mb-3 flex items-center gap-2 flex-wrap"
@@ -172,27 +352,199 @@ const OfficialContentTab = ({
         )}
       </section>
 
-      <section>
-        <h3
-          className="text-sm font-semibold text-rose-700/80 mb-3 flex items-center gap-1.5"
-          style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
-        >
-          <i className="ri-contacts-line text-rose-400" />
-          角色小档案
-        </h3>
-        <div
-          className="rounded-2xl overflow-hidden border border-rose-100/80"
-          style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.85) 0%, rgba(255,250,252,0.9) 100%)" }}
-        >
-          <dl className="divide-y divide-rose-100/60">
-            {BIO_FIELDS.map(({ key, label }) => (
-              <div key={key} className="grid grid-cols-[5rem_1fr] sm:grid-cols-[6.5rem_1fr] gap-2 px-4 py-3 text-sm">
-                <dt className="text-rose-400/80 font-medium shrink-0">{label}</dt>
-                <dd className="text-rose-800/85 leading-relaxed break-words">{bio[key]}</dd>
-              </div>
-            ))}
-          </dl>
+      <section className="min-w-0">
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h3
+            className="text-sm font-semibold text-rose-700/80 flex items-center gap-1.5 min-w-0"
+            style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+          >
+            <i className="ri-file-list-3-line text-rose-400 shrink-0" />
+            <span className="truncate">角色小档案</span>
+          </h3>
+          <button
+            type="button"
+            onClick={() => setCharaProfileExpanded((v) => !v)}
+            className="shrink-0 flex items-center gap-1 text-xs px-2.5 py-1 rounded-xl cursor-pointer transition-all hover:opacity-90 border border-rose-200/80 bg-white/80 text-rose-600"
+            style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+            aria-expanded={charaProfileExpanded}
+          >
+            <i className={charaProfileExpanded ? "ri-arrow-up-s-line" : "ri-arrow-down-s-line"} />
+            {charaProfileExpanded ? "收起" : "展开"}
+          </button>
         </div>
+        <p className="text-[11px] text-rose-400/55 leading-snug mb-2 pl-0.5">
+          正文与「加工任务 → 角色小档案」中保存并写入服务器的档案一致（bio_json.chara_profile）。
+        </p>
+
+        {!charaProfileExpanded ? (
+          <p className="text-xs text-rose-400/75 leading-relaxed pl-0.5" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
+            {charaProfileText
+              ? `已保存正文（约 ${charaProfileText.length} 字），点击「展开」查看；下方种子提示词等模块可滚动浏览。`
+              : "尚未在加工任务中生成并保存小档案正文。点击「展开」查看说明与入口。"}
+          </p>
+        ) : charaProfileText ? (
+          <div
+            className="rounded-2xl border border-rose-100/80 overflow-hidden min-w-0"
+            style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(255,250,252,0.95) 100%)" }}
+          >
+            <div className="max-h-[min(55vh,28rem)] overflow-y-auto overflow-x-hidden px-4 py-4 text-sm text-rose-800/90 leading-relaxed whitespace-pre-wrap break-words">
+              {bio.charaProfile}
+            </div>
+          </div>
+        ) : (
+          <div
+            className="rounded-2xl border border-dashed border-rose-200/80 flex flex-col items-center justify-center py-10 px-6 text-center"
+            style={{ background: "rgba(253,164,175,0.06)" }}
+          >
+            <i className="ri-quill-pen-line text-rose-300 text-2xl mb-2" />
+            <p className="text-sm text-rose-400/80 max-w-md leading-relaxed mb-4" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
+              还没有从加工任务生成并保存的角色小档案正文。完成标准照后，在「加工任务 → 角色小档案」中整理并保存即可在此查看。
+            </p>
+            {onGoProfileTask && (
+              <button
+                type="button"
+                onClick={onGoProfileTask}
+                className="text-xs px-4 py-2 rounded-xl cursor-pointer transition-all hover:opacity-90"
+                style={{
+                  fontFamily: "'ZCOOL KuaiLe', cursive",
+                  background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+                  color: "white",
+                  boxShadow: "0 2px 10px rgba(244,114,182,0.25)",
+                }}
+              >
+                去生成小档案
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h3
+            className="text-sm font-semibold text-rose-700/80 flex items-center gap-2 flex-wrap min-w-0"
+            style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+          >
+            <span className="flex items-center gap-1.5 min-w-0">
+              <i className="ri-seedling-line text-rose-400 shrink-0" />
+              <span className="truncate">种子提示词</span>
+            </span>
+            <span className="text-xs font-medium text-rose-400/90 bg-rose-50/90 px-2.5 py-0.5 rounded-full border border-rose-100/80 shrink-0">
+              已用 {usedSeedCount} 条
+            </span>
+          </h3>
+          {hasSeedRows && (
+            <button
+              type="button"
+              onClick={() => setClearSeedsOpen(true)}
+              className="shrink-0 text-xs px-3 py-1.5 rounded-xl cursor-pointer transition-all hover:opacity-90 whitespace-nowrap"
+              style={{
+                fontFamily: "'ZCOOL KuaiLe', cursive",
+                background: "rgba(253,164,175,0.12)",
+                color: "#db2777",
+                border: "1px solid rgba(244,114,182,0.28)",
+              }}
+            >
+              一键清空
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-rose-400/70 mb-3" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
+          来自加工任务中保存的正式种子；可随时标记是否已在创作中使用。
+        </p>
+
+        {!hasSeedRows ? (
+          <div
+            className="rounded-2xl border border-dashed border-rose-200/80 flex flex-col items-center justify-center py-12 px-6 text-center"
+            style={{ background: "rgba(253,164,175,0.06)" }}
+          >
+            <i className="ri-inbox-line text-rose-300 text-2xl mb-2" />
+            <p className="text-sm text-rose-400/80 max-w-md leading-relaxed mb-4" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
+              暂无正式种子提示词。请在加工任务中生成创作建议后，在「种子提示词」Tab 勾选并保存为正式内容。
+            </p>
+            {onGoProfileTask && (
+              <button
+                type="button"
+                onClick={onGoProfileTask}
+                className="text-xs px-4 py-2 rounded-xl cursor-pointer transition-all hover:opacity-90"
+                style={{
+                  fontFamily: "'ZCOOL KuaiLe', cursive",
+                  background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+                  color: "white",
+                  boxShadow: "0 2px 10px rgba(244,114,182,0.25)",
+                }}
+              >
+                去加工任务
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            <div
+              className="inline-flex items-center gap-1 p-1 rounded-2xl mb-3"
+              style={{
+                background: "rgba(253,164,175,0.1)",
+                border: "1px solid rgba(253,164,175,0.2)",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setSeedSubTab("character")}
+                className="px-3 py-1.5 rounded-xl text-xs sm:text-sm transition-all cursor-pointer whitespace-nowrap"
+                style={{
+                  fontFamily: "'ZCOOL KuaiLe', cursive",
+                  background:
+                    seedSubTab === "character"
+                      ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
+                      : "transparent",
+                  color: seedSubTab === "character" ? "white" : "#f472b6",
+                  boxShadow: seedSubTab === "character" ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
+                }}
+              >
+                角色专属
+                {officialSeeds && (
+                  <span className="ml-1 opacity-80">({officialSeeds.characterSpecific.length})</span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSeedSubTab("general")}
+                className="px-3 py-1.5 rounded-xl text-xs sm:text-sm transition-all cursor-pointer whitespace-nowrap"
+                style={{
+                  fontFamily: "'ZCOOL KuaiLe', cursive",
+                  background:
+                    seedSubTab === "general"
+                      ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
+                      : "transparent",
+                  color: seedSubTab === "general" ? "white" : "#f472b6",
+                  boxShadow: seedSubTab === "general" ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
+                }}
+              >
+                通用种子
+                {officialSeeds && <span className="ml-1 opacity-80">({officialSeeds.general.length})</span>}
+              </button>
+            </div>
+            {seedSubTab === "character" ? (
+              <SeedSection
+                items={officialSeeds!.characterSpecific}
+                scope="characterSpecific"
+                togglingId={togglingId}
+                deletingId={deletingSeedId}
+                onToggleUsed={(scope, id) => void flipUsed(scope, id)}
+                onRequestDelete={requestSeedDelete}
+              />
+            ) : (
+              <SeedSection
+                items={officialSeeds!.general}
+                scope="general"
+                togglingId={togglingId}
+                deletingId={deletingSeedId}
+                onToggleUsed={(scope, id) => void flipUsed(scope, id)}
+                onRequestDelete={requestSeedDelete}
+              />
+            )}
+          </>
+        )}
       </section>
 
       {deletePhotoId && (
@@ -258,6 +610,154 @@ const OfficialContentTab = ({
                 }}
               >
                 确认删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {seedDeleteTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }}
+          onClick={cancelSeedDelete}
+          role="presentation"
+        >
+          <div
+            className="relative w-full max-w-md rounded-3xl overflow-hidden"
+            style={{ background: "rgba(255,255,255,0.97)", border: "1px solid rgba(253,164,175,0.3)" }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="official-seed-delete-title"
+          >
+            <div className="flex flex-col items-center pt-7 pb-4 px-6">
+              <div
+                className="w-14 h-14 flex items-center justify-center rounded-2xl mb-4"
+                style={{
+                  background: "linear-gradient(135deg, rgba(253,164,175,0.15) 0%, rgba(244,114,182,0.1) 100%)",
+                  border: "1.5px solid rgba(244,114,182,0.2)",
+                }}
+              >
+                <i className="ri-delete-bin-2-line text-rose-400 text-2xl" />
+              </div>
+              <h3
+                id="official-seed-delete-title"
+                className="text-base font-bold text-rose-600 mb-1.5"
+                style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+              >
+                确认删除这条种子提示词？
+              </h3>
+              <p className="text-xs text-rose-400/75 mb-2 text-center">删除后无法恢复，请核对正文是否为你要删的那一条。</p>
+              <div
+                className="w-full max-h-40 overflow-y-auto rounded-2xl border border-rose-100/90 px-3 py-2.5 text-left mt-1"
+                style={{ background: "rgba(253,164,175,0.06)" }}
+              >
+                <p className="text-sm text-rose-800/90 leading-relaxed whitespace-pre-wrap break-words">
+                  {seedDeleteTarget.text}
+                </p>
+              </div>
+            </div>
+
+            <div className="h-px mx-5" style={{ background: "rgba(253,164,175,0.2)" }} />
+
+            <div className="flex gap-3 p-4">
+              <button
+                type="button"
+                onClick={cancelSeedDelete}
+                disabled={deletingSeedId !== null}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all duration-200 whitespace-nowrap disabled:opacity-50"
+                style={{
+                  background: "rgba(253,164,175,0.08)",
+                  color: "#f472b6",
+                  border: "1px solid rgba(244,114,182,0.2)",
+                  fontFamily: "'ZCOOL KuaiLe', cursive",
+                }}
+              >
+                再想想
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmSeedDelete()}
+                disabled={deletingSeedId !== null}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all duration-200 whitespace-nowrap text-white disabled:opacity-60"
+                style={{
+                  background: "linear-gradient(135deg, #fb7185 0%, #f472b6 100%)",
+                  fontFamily: "'ZCOOL KuaiLe', cursive",
+                }}
+              >
+                {deletingSeedId ? "删除中…" : "确认删除"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {clearSeedsOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }}
+          onClick={cancelClearSeeds}
+          role="presentation"
+        >
+          <div
+            className="relative w-full max-w-md rounded-3xl overflow-hidden"
+            style={{ background: "rgba(255,255,255,0.97)", border: "1px solid rgba(253,164,175,0.3)" }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="official-seed-clear-title"
+          >
+            <div className="flex flex-col items-center pt-7 pb-4 px-6">
+              <div
+                className="w-14 h-14 flex items-center justify-center rounded-2xl mb-4"
+                style={{
+                  background: "linear-gradient(135deg, rgba(253,164,175,0.15) 0%, rgba(244,114,182,0.1) 100%)",
+                  border: "1.5px solid rgba(244,114,182,0.2)",
+                }}
+              >
+                <i className="ri-error-warning-line text-rose-400 text-2xl" />
+              </div>
+              <h3
+                id="official-seed-clear-title"
+                className="text-base font-bold text-rose-600 mb-2 text-center"
+                style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+              >
+                确认清空全部种子提示词？
+              </h3>
+              <p className="text-sm text-rose-500/90 text-center leading-relaxed" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
+                「角色专属」与「通用种子」两个分类下的所有条目都会被删除，清空后将回到无数据引导页。
+              </p>
+            </div>
+
+            <div className="h-px mx-5" style={{ background: "rgba(253,164,175,0.2)" }} />
+
+            <div className="flex gap-3 p-4">
+              <button
+                type="button"
+                onClick={cancelClearSeeds}
+                disabled={clearingSeeds}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all duration-200 whitespace-nowrap disabled:opacity-50"
+                style={{
+                  background: "rgba(253,164,175,0.08)",
+                  color: "#f472b6",
+                  border: "1px solid rgba(244,114,182,0.2)",
+                  fontFamily: "'ZCOOL KuaiLe', cursive",
+                }}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmClearSeeds()}
+                disabled={clearingSeeds}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all duration-200 whitespace-nowrap text-white disabled:opacity-60"
+                style={{
+                  background: "linear-gradient(135deg, #fb7185 0%, #f472b6 100%)",
+                  fontFamily: "'ZCOOL KuaiLe', cursive",
+                }}
+              >
+                {clearingSeeds ? "清空中…" : "确认清空"}
               </button>
             </div>
           </div>

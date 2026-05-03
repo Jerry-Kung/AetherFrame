@@ -58,6 +58,56 @@ def get_beautify_dir() -> str:
     return os.path.join(get_data_dir(), "beautify")
 
 
+def get_prompt_precreation_task_dir(character_id: str, task_id: str) -> str:
+    """Prompt 预生成任务工作目录：data/beautify/prompt_precreation/{character_id}/{task_id}/"""
+    return os.path.join(get_beautify_dir(), "prompt_precreation", character_id, task_id)
+
+
+def get_prompt_precreation_history_dir() -> str:
+    """Prompt 预生成历史目录：data/beautify/prompt_precreation/history/"""
+    return os.path.join(get_beautify_dir(), "prompt_precreation", "history")
+
+
+def get_prompt_precreation_history_records_dir() -> str:
+    """Prompt 预生成历史记录详情目录：data/beautify/prompt_precreation/history/records/"""
+    return os.path.join(get_prompt_precreation_history_dir(), "records")
+
+
+def get_prompt_precreation_history_index_path() -> str:
+    """Prompt 预生成历史索引文件：data/beautify/prompt_precreation/history/index.json"""
+    return os.path.join(get_prompt_precreation_history_dir(), "index.json")
+
+
+def get_prompt_precreation_history_record_path(history_id: str) -> str:
+    """Prompt 预生成历史详情文件路径：data/beautify/prompt_precreation/history/records/{history_id}.json"""
+    return os.path.join(get_prompt_precreation_history_records_dir(), f"{history_id}.json")
+
+
+def get_quick_create_task_dir(character_id: str, task_id: str) -> str:
+    """一键创作任务工作目录：data/beautify/quick_create/{character_id}/{task_id}/"""
+    return os.path.join(get_beautify_dir(), "quick_create", character_id, task_id)
+
+
+def get_quick_create_history_dir() -> str:
+    """一键创作历史目录：data/beautify/quick_create/history/"""
+    return os.path.join(get_beautify_dir(), "quick_create", "history")
+
+
+def get_quick_create_history_records_dir() -> str:
+    """一键创作历史详情目录：data/beautify/quick_create/history/records/"""
+    return os.path.join(get_quick_create_history_dir(), "records")
+
+
+def get_quick_create_history_index_path() -> str:
+    """一键创作历史索引文件：data/beautify/quick_create/history/index.json"""
+    return os.path.join(get_quick_create_history_dir(), "index.json")
+
+
+def get_quick_create_history_record_path(history_id: str) -> str:
+    """一键创作历史详情文件路径：data/beautify/quick_create/history/records/{history_id}.json"""
+    return os.path.join(get_quick_create_history_records_dir(), f"{history_id}.json")
+
+
 def get_temp_dir() -> str:
     """获取临时文件目录"""
     return os.path.join(get_data_dir(), "temp")
@@ -148,6 +198,10 @@ def initialize_data_directory() -> None:
     ensure_dir_exists(get_material_dir())
     ensure_dir_exists(get_material_characters_dir())
     ensure_dir_exists(get_beautify_dir())
+    ensure_dir_exists(get_prompt_precreation_history_dir())
+    ensure_dir_exists(get_prompt_precreation_history_records_dir())
+    ensure_dir_exists(get_quick_create_history_dir())
+    ensure_dir_exists(get_quick_create_history_records_dir())
     logger.info("预留模块目录已确保")
 
     logger.info("data 目录结构初始化完成")

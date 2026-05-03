@@ -6,6 +6,7 @@ interface CharaSidebarProps {
   onEdit: () => void;
   onStartProcess: () => void;
   onExport: () => void;
+  onChangeAvatar?: () => void;
 }
 
 function briefSummary(c: CharaProfile): string {
@@ -15,7 +16,7 @@ function briefSummary(c: CharaProfile): string {
   return one.length < t.length ? `${one}…` : one;
 }
 
-const CharaSidebar = ({ chara, onEdit, onStartProcess, onExport }: CharaSidebarProps) => {
+const CharaSidebar = ({ chara, onEdit, onStartProcess, onExport, onChangeAvatar }: CharaSidebarProps) => {
   if (!chara) {
     return (
       <div className="flex flex-col h-full items-center justify-center px-4 text-center">
@@ -44,9 +45,37 @@ const CharaSidebar = ({ chara, onEdit, onStartProcess, onExport }: CharaSidebarP
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0">
         <div className="flex flex-col items-center text-center">
-          <div className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-rose-100 shadow-sm">
-            <img src={chara.avatarUrl} alt="" className="w-full h-full object-cover" draggable={false} />
-          </div>
+          {onChangeAvatar ? (
+            <button
+              type="button"
+              onClick={onChangeAvatar}
+              className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-rose-100 shadow-sm cursor-pointer group p-0 bg-transparent text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 focus-visible:ring-offset-2"
+              aria-label="换头像"
+            >
+              <img
+                src={chara.avatarUrl}
+                alt=""
+                className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+                draggable={false}
+              />
+              <div
+                className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
+                style={{ background: "rgba(15,15,25,0.52)" }}
+              >
+                <i className="ri-camera-line text-white text-xl drop-shadow-sm" />
+                <span
+                  className="text-[10px] font-semibold text-white/95 tracking-wide"
+                  style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+                >
+                  换头像
+                </span>
+              </div>
+            </button>
+          ) : (
+            <div className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-rose-100 shadow-sm">
+              <img src={chara.avatarUrl} alt="" className="w-full h-full object-cover" draggable={false} />
+            </div>
+          )}
           <div className="mt-3 flex items-center justify-center gap-2">
             <span className={`w-2 h-2 rounded-full ${st.dot}`} />
             <span

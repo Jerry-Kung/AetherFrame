@@ -1,15 +1,13 @@
 import os
 import logging
-from sqlalchemy import create_engine, text
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+from app.datetime_display import configure_logging
+
+configure_logging(logging.INFO)
 logger = logging.getLogger(__name__)
 
 # 数据库文件路径
@@ -29,12 +27,25 @@ SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
 logger.info(f"数据库连接URL: {SQLALCHEMY_DATABASE_URL}")
 
 # 创建引擎
+# - timeout：连接级 busy 等待（秒），与 PRAGMA busy_timeout 配合缓解并发锁竞争
+# - WAL：读写并发更友好，避免后台任务写库时 API 长时间阻塞事件循环
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30.0},
     echo=False,  # 设置为 True 可以查看 SQL 日志
 )
 logger.info("数据库引擎创建成功")
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_on_connect(dbapi_connection, _connection_record):
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+    finally:
+        cursor.close()
 
 # Session 工厂
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -50,6 +61,9 @@ def get_db():
         logger.debug("获取数据库会话")
         yield db
     except Exception as e:
+        # 路由层主动抛出的 HTTP 错误会经 yield 依赖传回此处，不应记为数据库异常
+        if isinstance(e, StarletteHTTPException):
+            raise
         logger.error(f"数据库会话异常: {e}", exc_info=True)
         raise
     finally:
@@ -154,6 +168,37 @@ def migrate_material_raw_images_add_type() -> None:
         raise
 
 
+def migrate_material_characters_add_setting_source_filename() -> None:
+    """
+    轻量迁移：为 material_characters 表补充 setting_source_filename 列（可空）。
+    历史数据为 NULL，与「无来源文件名」语义一致，不影响既有 setting_text。
+    """
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_characters'"
+                )
+            ).fetchone()
+            if row is None:
+                return
+            cols = conn.execute(text("PRAGMA table_info(material_characters)")).fetchall()
+            names = {c[1] for c in cols}
+            if "setting_source_filename" in names:
+                return
+            conn.execute(
+                text(
+                    "ALTER TABLE material_characters ADD COLUMN setting_source_filename VARCHAR(255)"
+                )
+            )
+        logger.info("已迁移: material_characters 增加 setting_source_filename 列")
+    except Exception as e:
+        logger.error(f"迁移 material_characters.setting_source_filename 失败: {e}", exc_info=True)
+        raise
+
+
 def migrate_repair_tasks_add_aspect_ratio() -> None:
     """
     轻量迁移：为 repair_tasks 表补充 aspect_ratio 列（与前端 / nano_banana_pro 一致）。
@@ -185,6 +230,40 @@ def migrate_repair_tasks_add_aspect_ratio() -> None:
         raise
 
 
+def migrate_creation_quick_create_tasks_add_seed_prompt() -> None:
+    """
+    轻量迁移：为 creation_quick_create_tasks 表补充 seed_prompt 列。
+    """
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='creation_quick_create_tasks'"
+                )
+            ).fetchone()
+            if row is None:
+                return
+            cols = conn.execute(
+                text("PRAGMA table_info(creation_quick_create_tasks)")
+            ).fetchall()
+            names = {c[1] for c in cols}
+            if "seed_prompt" in names:
+                return
+            conn.execute(
+                text(
+                    "ALTER TABLE creation_quick_create_tasks ADD COLUMN seed_prompt TEXT NOT NULL DEFAULT ''"
+                )
+            )
+        logger.info("已迁移: creation_quick_create_tasks 增加 seed_prompt 列")
+    except Exception as e:
+        logger.error(
+            f"迁移 creation_quick_create_tasks.seed_prompt 失败: {e}", exc_info=True
+        )
+        raise
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
@@ -195,14 +274,18 @@ def init_db():
             MaterialCharacter,
             MaterialCharacterRawImage,
             MaterialCharaProfileTask,
+            MaterialCreationAdviceTask,
             MaterialStandardPhotoTask,
         )
+        from app.models.creation import CreationPromptPrecreationTask, CreationQuickCreateTask  # noqa: F401
 
         Base.metadata.create_all(bind=engine)
         migrate_prompt_templates_add_description()
         migrate_prompt_templates_add_tags()
         migrate_material_raw_images_add_type()
+        migrate_material_characters_add_setting_source_filename()
         migrate_repair_tasks_add_aspect_ratio()
+        migrate_creation_quick_create_tasks_add_seed_prompt()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:

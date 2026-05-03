@@ -35,6 +35,10 @@ export default function Home() {
       navigate("/repair");
       return;
     }
+    if (id === "creation") {
+      navigate("/creation");
+      return;
+    }
     setActiveMode(id);
   };
 

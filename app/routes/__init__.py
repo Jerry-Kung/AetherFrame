@@ -2,6 +2,6 @@
 Routes 模块 - 路由定义
 """
 
-from app.routes import pages, api, repair, material
+from app.routes import pages, api, repair, material, creation
 
-__all__ = ["pages", "api", "repair", "material"]
+__all__ = ["pages", "api", "repair", "material", "creation"]

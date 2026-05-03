@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from app.routes import pages, api, repair, material
+from app.routes import pages, api, repair, material, creation
 
 # 配置日志
 logging.basicConfig(
@@ -32,6 +32,9 @@ class _SuppressPollAccessLog(logging.Filter):
             return False
         # 素材加工 · 角色小档案任务状态轮询
         if "/chara-profile/status HTTP" in msg:
+            return False
+        # 创作 · Prompt 预生成任务状态轮询
+        if "/prompt-precreation/tasks/" in msg and "/status HTTP" in msg:
             return False
         return True
 
@@ -124,4 +127,5 @@ async def health_check():
 app.include_router(api.router)
 app.include_router(repair.router)
 app.include_router(material.router)
+app.include_router(creation.router)
 app.include_router(pages.router)

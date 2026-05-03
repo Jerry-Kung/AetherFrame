@@ -2,6 +2,7 @@
 Prompt 模板 API 测试用例
 包含：模板的创建、读取、更新和删除的完整测试
 """
+
 import json
 import os
 import tempfile
@@ -12,8 +13,8 @@ import pytest
 # 配置日志
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ def db_session(temp_data_dir):
     import sys
 
     for key in list(sys.modules.keys()):
-        if key.startswith('app.models') or key.startswith('app.repositories'):
+        if key.startswith("app.models") or key.startswith("app.repositories"):
             del sys.modules[key]
 
     from app.models import database
@@ -74,6 +75,7 @@ def db_session(temp_data_dir):
 # 第一部分：Schemas 测试
 # ==========================================
 
+
 class TestPromptTemplateSchemas:
     """测试 Prompt 模板相关的 Schemas"""
 
@@ -81,10 +83,7 @@ class TestPromptTemplateSchemas:
         """测试 PromptTemplateBase"""
         from app.schemas.repair import PromptTemplateBase
 
-        template = PromptTemplateBase(
-            label="测试模板",
-            text="这是模板内容"
-        )
+        template = PromptTemplateBase(label="测试模板", text="这是模板内容")
 
         assert template.label == "测试模板"
         assert template.text == "这是模板内容"
@@ -104,10 +103,7 @@ class TestPromptTemplateSchemas:
         """测试 PromptTemplateCreate"""
         from app.schemas.repair import PromptTemplateCreate
 
-        template = PromptTemplateCreate(
-            label="创建测试",
-            text="创建测试内容"
-        )
+        template = PromptTemplateCreate(label="创建测试", text="创建测试内容")
 
         assert template.label == "创建测试"
         assert template.text == "创建测试内容"
@@ -136,6 +132,7 @@ class TestPromptTemplateSchemas:
 # ==========================================
 # 第二部分：RepairService 模板操作测试
 # ==========================================
+
 
 class TestRepairServiceTemplateOperations:
     """测试 RepairService 的模板操作方法"""
@@ -187,10 +184,9 @@ class TestRepairServiceTemplateOperations:
 
         service = RepairService(db_session)
 
-        created = service.create_template(PromptTemplateCreate(
-            label="查询测试",
-            text="test"
-        ))
+        created = service.create_template(
+            PromptTemplateCreate(label="查询测试", text="test")
+        )
 
         fetched = service.get_template(created.id)
 
@@ -208,18 +204,19 @@ class TestRepairServiceTemplateOperations:
         service = RepairService(db_session)
         repo = PromptTemplateRepository(db_session)
 
-        repo.create({
-            "label": "内置模板",
-            "text": "内置内容",
-            "is_builtin": True,
-            "sort_order": 1
-        })
+        repo.create(
+            {
+                "label": "内置模板",
+                "text": "内置内容",
+                "is_builtin": True,
+                "sort_order": 1,
+            }
+        )
 
         for i in range(2):
-            service.create_template(PromptTemplateCreate(
-                label=f"自定义模板{i}",
-                text=f"自定义内容{i}"
-            ))
+            service.create_template(
+                PromptTemplateCreate(label=f"自定义模板{i}", text=f"自定义内容{i}")
+            )
 
         templates = service.list_templates()
 
@@ -234,17 +231,19 @@ class TestRepairServiceTemplateOperations:
 
         service = RepairService(db_session)
 
-        template = service.create_template(PromptTemplateCreate(
-            label="旧标签",
-            text="旧内容"
-        ))
+        template = service.create_template(
+            PromptTemplateCreate(label="旧标签", text="旧内容")
+        )
 
-        updated = service.update_template(template.id, PromptTemplateUpdate(
-            label="新标签",
-            text="新内容",
-            description="更新后的说明",
-            tags=["水印"],
-        ))
+        updated = service.update_template(
+            template.id,
+            PromptTemplateUpdate(
+                label="新标签",
+                text="新内容",
+                description="更新后的说明",
+                tags=["水印"],
+            ),
+        )
 
         assert updated is not None
         assert updated.label == "新标签"
@@ -260,10 +259,9 @@ class TestRepairServiceTemplateOperations:
 
         service = RepairService(db_session)
 
-        template = service.create_template(PromptTemplateCreate(
-            label="删除测试",
-            text="test"
-        ))
+        template = service.create_template(
+            PromptTemplateCreate(label="删除测试", text="test")
+        )
 
         success = service.delete_template(template.id)
         assert success is True

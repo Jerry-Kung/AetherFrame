@@ -1,13 +1,14 @@
+import json
 import os
 import logging
 import uuid
 import shutil
 from datetime import datetime
-from typing import Optional, Tuple, List
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import UploadFile
 
-from app.repositories.material_repository import SHOT_TYPE_TO_INDEX
+from app.repositories.material_repository import INDEX_TO_SHOT_TYPE, SHOT_TYPE_TO_INDEX
 from app.services.directory_service import get_material_characters_dir, ensure_dir_exists
 from app.services.file_service import (
     FileValidationError,
@@ -27,6 +28,9 @@ ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 ALLOWED_IMAGE_MIMETYPES = {"image/png", "image/jpeg", "image/webp"}
 RAW_IMAGE_TYPES = {"official", "fanart"}
 
+# 角色头像固定存储名（与前端裁剪 PNG 一致，目录内仅保留此一张）
+AVATAR_STORED_FILENAME = "avatar.png"
+
 
 def get_character_dir(character_id: str) -> str:
     return os.path.join(get_material_characters_dir(), character_id)
@@ -38,6 +42,11 @@ def get_character_raw_dir(character_id: str) -> str:
 
 def get_character_raw_type_dir(character_id: str, raw_image_type: str) -> str:
     return os.path.join(get_character_raw_dir(character_id), raw_image_type)
+
+
+def get_character_avatar_dir(character_id: str) -> str:
+    """角色头像专用目录，与 raw/official、raw/fanart 分离。"""
+    return os.path.join(get_character_dir(character_id), "avatar")
 
 
 def get_character_standard_photo_dir(character_id: str) -> str:
@@ -69,6 +78,14 @@ CHARA_PROFILE_ARTIFACT_NAMES = (
     "chara_profile_final.md",
 )
 
+# 生成创作建议任务产出（与角色小档案四件套分离，勿在 clear_chara_profile_artifacts 中删除）
+CREATION_ADVICE_MD_FILENAME = "creation_advice.md"
+CREATION_SEED_DRAFT_JSON_FILENAME = "creation_seed_draft.json"
+CREATION_ADVICE_ARTIFACT_NAMES = (
+    CREATION_ADVICE_MD_FILENAME,
+    CREATION_SEED_DRAFT_JSON_FILENAME,
+)
+
 
 def copy_task_result_to_official_slot(
     character_id: str, task_id: str, task_result_filename: str, shot_type: str
@@ -93,6 +110,36 @@ def get_standard_slot_image_path(character_id: str, shot_type: str) -> Optional[
     return None
 
 
+# 多模态 Prompt 传入标准参考图：超过总大小则只传全身正面、半身正面、脸部特写
+STANDARD_REF_PROMPT_TOTAL_BYTES_THRESHOLD = 20 * 1024 * 1024
+STANDARD_REF_PROMPT_REDUCED_SHOT_TYPES = ("full_front", "half_front", "face_close")
+
+
+def standard_reference_paths_for_multimodal_prompt(character_id: str) -> Optional[List[str]]:
+    """
+    若 5 个正式槽位齐全，返回供多模态 API 使用的图片路径列表（5 张或按体积缩减为 3 张）。
+    任一路径缺失则返回 None。
+    """
+    by_type: Dict[str, str] = {}
+    paths_ordered: List[str] = []
+    for i in range(5):
+        st = INDEX_TO_SHOT_TYPE[i]
+        p = get_standard_slot_image_path(character_id, st)
+        if not p:
+            return None
+        by_type[st] = p
+        paths_ordered.append(p)
+    total = sum(os.path.getsize(p) for p in paths_ordered)
+    if total > STANDARD_REF_PROMPT_TOTAL_BYTES_THRESHOLD:
+        logger.info(
+            "标准参考图总大小 %s 字节超过阈值 %s，多模态 Prompt 缩减为 3 张",
+            total,
+            STANDARD_REF_PROMPT_TOTAL_BYTES_THRESHOLD,
+        )
+        return [by_type[t] for t in STANDARD_REF_PROMPT_REDUCED_SHOT_TYPES]
+    return paths_ordered
+
+
 def delete_standard_slot_image_file(character_id: str, shot_type: str) -> bool:
     """删除已保存的正式标准参考图槽位文件。若文件不存在则返回 False。"""
     if shot_type not in SHOT_TYPE_TO_INDEX:
@@ -114,6 +161,7 @@ def ensure_character_dirs(character_id: str) -> Tuple[str, str]:
     ensure_dir_exists(raw_dir)
     ensure_dir_exists(get_character_raw_type_dir(character_id, "official"))
     ensure_dir_exists(get_character_raw_type_dir(character_id, "fanart"))
+    ensure_dir_exists(get_character_avatar_dir(character_id))
     ensure_dir_exists(get_character_standard_photo_dir(character_id))
     ensure_dir_exists(get_chara_profile_dir(character_id))
     return char_dir, raw_dir
@@ -182,6 +230,73 @@ def get_raw_image_path(character_id: str, filename: str, raw_image_type: str = "
             continue
         return path
     return None
+
+
+def _clear_avatar_dir_files(character_id: str) -> None:
+    """删除 avatar 目录下已有图片，保证目录内仅保留即将写入的一张。"""
+    d = get_character_avatar_dir(character_id)
+    if not os.path.isdir(d):
+        return
+    for name in os.listdir(d):
+        ext = os.path.splitext(name)[1].lower()
+        if ext not in ALLOWED_IMAGE_EXTENSIONS:
+            continue
+        path = os.path.join(d, name)
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError as e:
+                logger.warning(f"删除旧头像文件失败 {path}: {e}")
+
+
+def save_avatar_image(character_id: str, file: UploadFile) -> str:
+    """
+    将头像保存为 avatar/avatar.png（与 raw 参考图分离）。
+    Returns:
+        固定 stored_filename：avatar.png
+    """
+    ensure_character_dirs(character_id)
+    avatar_dir = get_character_avatar_dir(character_id)
+    ensure_dir_exists(avatar_dir)
+
+    is_valid, err = validate_image_file(file)
+    if not is_valid:
+        raise FileValidationError(err)
+
+    _clear_avatar_dir_files(character_id)
+    return save_uploaded_file(
+        file,
+        save_dir=avatar_dir,
+        save_filename=AVATAR_STORED_FILENAME,
+        allowed_extensions=ALLOWED_IMAGE_EXTENSIONS,
+        allowed_mimetypes=ALLOWED_IMAGE_MIMETYPES,
+    )
+
+
+def get_avatar_image_path(character_id: str, filename: str) -> Optional[str]:
+    """解析 avatar 目录下的文件路径；越界或不存在则返回 None。"""
+    d = get_character_avatar_dir(character_id)
+    path = get_file_path(d, filename)
+    if not path or not os.path.isfile(path):
+        return None
+    real_d = os.path.realpath(d)
+    real_p = os.path.realpath(path)
+    if not real_p.startswith(real_d + os.sep) and real_p != real_d:
+        logger.warning(f"路径越界拒绝: {path}")
+        return None
+    return path
+
+
+def delete_avatar_file(character_id: str, filename: str) -> bool:
+    """删除 avatar 目录下单个文件。"""
+    d = get_character_avatar_dir(character_id)
+    try:
+        if delete_file(d, filename):
+            return True
+        return False
+    except FileDeleteError as e:
+        logger.warning(f"删除头像文件失败: {e}")
+        return False
 
 
 def delete_raw_image_file(character_id: str, stored_filename: str, raw_image_type: str = "official") -> bool:
@@ -320,3 +435,74 @@ def read_chara_profile_markdown(character_id: str, filename: str) -> Optional[st
         return None
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
+
+
+def list_missing_chara_profile_prerequisite_files(character_id: str) -> List[str]:
+    """生成创作建议前置：四个角色小档案 Markdown 均须存在且非空。返回缺失或为空文件名列表。"""
+    missing: List[str] = []
+    d = get_chara_profile_dir(character_id)
+    for name in CHARA_PROFILE_ARTIFACT_NAMES:
+        path = os.path.join(d, name)
+        if not os.path.isfile(path):
+            missing.append(name)
+            continue
+        try:
+            if os.path.getsize(path) == 0:
+                missing.append(name)
+        except OSError:
+            missing.append(name)
+    return missing
+
+
+def clear_creation_advice_artifacts(character_id: str) -> None:
+    """新一轮「生成创作建议」任务前清空上轮产出。"""
+    d = get_chara_profile_dir(character_id)
+    if not os.path.isdir(d):
+        return
+    for name in CREATION_ADVICE_ARTIFACT_NAMES:
+        path = os.path.join(d, name)
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError as e:
+                logger.warning(f"删除创作建议产出文件失败 {path}: {e}")
+
+
+def write_creation_advice_markdown(character_id: str, content: str) -> str:
+    ensure_character_dirs(character_id)
+    d = get_chara_profile_dir(character_id)
+    ensure_dir_exists(d)
+    path = os.path.join(d, CREATION_ADVICE_MD_FILENAME)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return path
+
+
+def read_creation_advice_markdown(character_id: str) -> Optional[str]:
+    path = os.path.join(get_chara_profile_dir(character_id), CREATION_ADVICE_MD_FILENAME)
+    if not os.path.isfile(path):
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def write_creation_seed_draft_json(character_id: str, data: Dict) -> str:
+    ensure_character_dirs(character_id)
+    d = get_chara_profile_dir(character_id)
+    ensure_dir_exists(d)
+    path = os.path.join(d, CREATION_SEED_DRAFT_JSON_FILENAME)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return path
+
+
+def read_creation_seed_draft_json(character_id: str) -> Optional[Dict]:
+    path = os.path.join(get_chara_profile_dir(character_id), CREATION_SEED_DRAFT_JSON_FILENAME)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        return raw if isinstance(raw, dict) else None
+    except (json.JSONDecodeError, OSError):
+        return None

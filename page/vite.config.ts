@@ -94,10 +94,15 @@ export default defineConfig(({ command }) => {
         '/api': {
           target: 'http://localhost:8000',
           changeOrigin: true,
+          // 后台图片/LLM 任务运行时，事件循环可能被同步 DB/IO 拖慢；避免代理默认超时返回空体导致前端 JSON 解析失败
+          timeout: 0,
+          proxyTimeout: 0,
         },
         '/uploads': {
           target: 'http://localhost:8000',
           changeOrigin: true,
+          timeout: 0,
+          proxyTimeout: 0,
         }
       }
     },
