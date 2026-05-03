@@ -17,6 +17,10 @@ from app.prompts.material.standard_photo import (
     half_side_prompt,
 )
 from app.repositories.material_repository import INDEX_TO_SHOT_TYPE, MaterialCharacterRepository
+from app.utils.image_generation_timeout import (
+    IMAGE_GEN_TIMEOUT_ERROR_MESSAGE,
+    deadline_exceeded,
+)
 from app.services.material_service import chara_profile_generation_service
 from app.services.material_service import creation_advice_generation_service
 from app.services.material_service import material_file_service
@@ -577,6 +581,17 @@ class MaterialService:
         task = self.repo.get_standard_photo_task_by_character_id(character_id)
         if not task:
             return None
+        if task.status in ("pending", "processing"):
+            if deadline_exceeded(task.updated_at, task.output_count):
+                task = self.repo.update_standard_photo_task(
+                    task.id,
+                    {
+                        "status": "failed",
+                        "error_message": IMAGE_GEN_TIMEOUT_ERROR_MESSAGE,
+                    },
+                )
+                if not task:
+                    return None
         try:
             selected_raw_image_ids = json.loads(task.selected_raw_image_ids_json or "[]")
             if not isinstance(selected_raw_image_ids, list):

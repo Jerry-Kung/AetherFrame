@@ -88,6 +88,15 @@ async def lifespan(app: FastAPI):
         logger.error(f"数据库初始化失败: {e}", exc_info=True)
         raise
 
+    try:
+        from app.services.startup_image_tasks import run_fail_inflight_image_generation_tasks
+
+        run_fail_inflight_image_generation_tasks()
+    except Exception as e:
+        logger.exception(
+            "启动时将未完成图片生成任务标记为失败时出错（不阻断服务启动）: %s", e
+        )
+
     logger.info("========== 应用初始化完成 ==========")
     yield
     logger.info("========== 应用关闭 ==========")

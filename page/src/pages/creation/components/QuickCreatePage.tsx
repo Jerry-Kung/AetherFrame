@@ -9,6 +9,10 @@ import {
   quickCreateImageFromApiEntry,
 } from "@/utils/quickCreateReview";
 import {
+  IMAGE_GEN_TIMEOUT_USER_MESSAGE,
+  isPastImageGenDeadline,
+} from "@/utils/imageGenerationTimeout";
+import {
   type QuickCreateRecord,
   type QuickCreateGroup,
   type QuickCreateImage,
@@ -1070,6 +1074,17 @@ export default function QuickCreatePage({
         try {
           const st = await creationApi.getQuickCreateTaskStatus(tid);
           if (cancelledRef.current) return;
+          const stored = readQuickCreateActiveTaskStorage();
+          const nPer = stored ? clampN(stored.n) : 2;
+          const expectedImages =
+            Math.max(1, promptMetas.length) * Math.max(1, nPer);
+          if (
+            (st.status === "pending" || st.status === "running") &&
+            isPastImageGenDeadline(st.created_at, expectedImages)
+          ) {
+            finishError(IMAGE_GEN_TIMEOUT_USER_MESSAGE);
+            return;
+          }
           if (st.status === "failed") {
             try {
               const detail = await creationApi.getQuickCreateHistory(tid);
@@ -1112,7 +1127,13 @@ export default function QuickCreatePage({
       };
       void runPoll();
     },
-    [applyRecordToView, clearQuickCreateActiveTaskStorage, toQuickCreateRecord, upsertRecord]
+    [
+      applyRecordToView,
+      clearQuickCreateActiveTaskStorage,
+      readQuickCreateActiveTaskStorage,
+      toQuickCreateRecord,
+      upsertRecord,
+    ]
   );
 
   useEffect(() => {
