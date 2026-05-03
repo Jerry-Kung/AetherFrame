@@ -36,6 +36,9 @@ class _SuppressPollAccessLog(logging.Filter):
         # 创作 · Prompt 预生成任务状态轮询
         if "/prompt-precreation/tasks/" in msg and "/status HTTP" in msg:
             return False
+        # 创作 · 首页批量自动化 run / 条目列表轮询
+        if "/batch-automation/runs/" in msg or "/batch-automation/items" in msg:
+            return False
         return True
 
 

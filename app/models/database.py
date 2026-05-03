@@ -342,6 +342,7 @@ def init_db():
             MaterialStandardPhotoTask,
         )
         from app.models.creation import CreationPromptPrecreationTask, CreationQuickCreateTask  # noqa: F401
+        from app.models.creation_batch import CreationBatchRun, CreationBatchRunItem  # noqa: F401
 
         Base.metadata.create_all(bind=engine)
         migrate_prompt_templates_add_description()

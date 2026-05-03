@@ -6,6 +6,7 @@ import os
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -13,6 +14,10 @@ from app.models.database import get_db
 from app.routes.material import ensure_valid_character_id
 from app.schemas.creation import (
     ApiResponse,
+    BatchAutomationItemListResponse,
+    BatchAutomationRunDetailResponse,
+    BatchAutomationStartRequest,
+    BatchAutomationStartResponse,
     QuickCreateStartRequest,
     QuickCreateStartResponse,
     QuickCreateStatusResponse,
@@ -28,6 +33,10 @@ from app.schemas.creation import (
     PromptPrecreationHistoryDetailResponse,
     PromptPrecreationHistoryListResponse,
     PromptCardItem,
+)
+from app.services.creation_service.batch_automation_service import (
+    BatchAutomationService,
+    run_batch_automation_job,
 )
 from app.services.creation_service.prompt_precreation_service import PromptPrecreationService
 from app.services.creation_service.quick_create_service import QuickCreateService
@@ -45,6 +54,10 @@ def get_prompt_precreation_service(db: Session = Depends(get_db)) -> PromptPrecr
 
 def get_quick_create_service(db: Session = Depends(get_db)) -> QuickCreateService:
     return QuickCreateService(db)
+
+
+def get_batch_automation_service(db: Session = Depends(get_db)) -> BatchAutomationService:
+    return BatchAutomationService(db)
 
 
 @router.post(
@@ -408,6 +421,100 @@ async def delete_quick_create_history(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     return ApiResponse(success=True, data=data, message="删除历史记录成功")
+
+
+@router.post(
+    "/batch-automation/start",
+    response_model=ApiResponse,
+)
+async def batch_automation_start(
+    body: BatchAutomationStartRequest,
+    background_tasks: BackgroundTasks,
+    service: BatchAutomationService = Depends(get_batch_automation_service),
+):
+    logger.info(
+        "API 请求 - 启动批量自动化创作: iterations=%s prompt_count=%s",
+        body.iterations,
+        body.prompt_count,
+    )
+    try:
+        data = service.start_run(
+            iterations=body.iterations,
+            prompt_count=body.prompt_count,
+            images_per_prompt=body.images_per_prompt,
+            aspect_ratio=body.aspect_ratio,
+            max_prompts=body.max_prompts,
+            character_ids=body.character_ids,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error("API 错误 - 启动批量自动化创作失败: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="启动批量自动化创作失败") from e
+    background_tasks.add_task(run_batch_automation_job, data["run_id"])
+    return ApiResponse(
+        success=True,
+        data=BatchAutomationStartResponse(**data).model_dump(mode="json"),
+        message="批量自动化创作任务已提交",
+    )
+
+
+@router.get(
+    "/batch-automation/runs/{run_id}",
+    response_model=ApiResponse,
+)
+async def batch_automation_get_run(
+    run_id: str,
+    service: BatchAutomationService = Depends(get_batch_automation_service),
+):
+    rid = (run_id or "").strip()
+    if not rid:
+        raise HTTPException(status_code=400, detail="run_id 无效")
+    raw = service.get_run_payload(rid)
+    if not raw:
+        raise HTTPException(status_code=404, detail="批量创作任务不存在")
+    payload = BatchAutomationRunDetailResponse(**jsonable_encoder(raw))
+    return ApiResponse(
+        success=True,
+        data=payload.model_dump(mode="json"),
+        message="获取批量创作任务成功",
+    )
+
+
+@router.get(
+    "/batch-automation/items",
+    response_model=ApiResponse,
+)
+async def batch_automation_list_items(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    service: BatchAutomationService = Depends(get_batch_automation_service),
+):
+    raw = service.list_items_page(limit=limit, offset=offset)
+    payload = BatchAutomationItemListResponse(**jsonable_encoder(raw))
+    return ApiResponse(
+        success=True,
+        data=payload.model_dump(mode="json"),
+        message="获取批量创作条目成功",
+    )
+
+
+@router.delete(
+    "/batch-automation/items/{item_id}",
+    response_model=ApiResponse,
+)
+async def batch_automation_delete_item(
+    item_id: str,
+    service: BatchAutomationService = Depends(get_batch_automation_service),
+):
+    iid = (item_id or "").strip()
+    if not iid:
+        raise HTTPException(status_code=400, detail="item_id 无效")
+    try:
+        data = service.delete_batch_item(iid)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return ApiResponse(success=True, data=data, message="删除批量创作条目成功")
 
 
 @router.get("/quick-create/tasks/{task_id}/images/{image_path:path}")

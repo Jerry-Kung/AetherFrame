@@ -440,6 +440,120 @@ export async function deleteQuickCreateHistory(historyId: string): Promise<{
   }
 }
 
+export interface BatchAutomationStartResponse {
+  run_id: string;
+  status: string;
+}
+
+export interface BatchAutomationRunItemRow {
+  id: string;
+  run_id: string;
+  step_index: number;
+  character_id: string;
+  chara_name: string;
+  chara_avatar: string;
+  seed_prompt_id: string;
+  seed_section: string;
+  seed_prompt_text: string;
+  prompt_precreation_task_id?: string | null;
+  quick_create_task_id?: string | null;
+  status: string;
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BatchAutomationRunDetailResponse {
+  id: string;
+  status: string;
+  iterations_total: number;
+  iterations_done: number;
+  config: Record<string, unknown>;
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+  items: BatchAutomationRunItemRow[];
+}
+
+export interface BatchAutomationListItemRow extends BatchAutomationRunItemRow {
+  run_status: string;
+}
+
+export interface BatchAutomationItemListResponse {
+  items: BatchAutomationListItemRow[];
+  total: number;
+}
+
+export async function startBatchAutomation(body: {
+  iterations: number;
+  prompt_count: 1 | 2 | 3 | 4;
+  images_per_prompt: 1 | 2 | 3 | 4;
+  aspect_ratio: "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
+  max_prompts: 1 | 2 | 3 | 4;
+  character_ids?: string[] | null;
+}): Promise<BatchAutomationStartResponse> {
+  const url = `${API_BASE}/batch-automation/start`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await parseJson<BatchAutomationStartResponse>(response);
+    throwIfError(response, data);
+    return data.data as BatchAutomationStartResponse;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function getBatchAutomationRun(runId: string): Promise<BatchAutomationRunDetailResponse> {
+  const rid = String(runId ?? "").trim();
+  if (!rid) throw new ApiError("run_id 无效", 400);
+  const url = `${API_BASE}/batch-automation/runs/${encodeURIComponent(rid)}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<BatchAutomationRunDetailResponse>(response);
+    throwIfError(response, data);
+    return data.data as BatchAutomationRunDetailResponse;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function listBatchAutomationItems(params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<BatchAutomationItemListResponse> {
+  const query = new URLSearchParams();
+  if (typeof params?.limit === "number") query.set("limit", String(params.limit));
+  if (typeof params?.offset === "number") query.set("offset", String(params.offset));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  const url = `${API_BASE}/batch-automation/items${suffix}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<BatchAutomationItemListResponse>(response);
+    throwIfError(response, data);
+    return data.data as BatchAutomationItemListResponse;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function deleteBatchAutomationItem(itemId: string): Promise<{ deleted_id: string }> {
+  const iid = String(itemId ?? "").trim();
+  if (!iid) throw new ApiError("条目ID无效", 400);
+  const url = `${API_BASE}/batch-automation/items/${encodeURIComponent(iid)}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "DELETE" });
+    const data = await parseJson<{ deleted_id: string }>(response);
+    throwIfError(response, data);
+    return data.data as { deleted_id: string };
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
 export function buildQuickCreateResultImageUrl(taskId: string, imagePath: string): string {
   const tid = encodeURIComponent(String(taskId ?? "").trim());
   const segs = String(imagePath ?? "")

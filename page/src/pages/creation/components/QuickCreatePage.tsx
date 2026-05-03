@@ -20,7 +20,6 @@ import {
 } from "@/types/quickCreate";
 import AiCommentModal from "./AiCommentModal";
 import type { AutoSubmitPayload, ChainedQuickCreateResumePayload } from "../page";
-
 type GenStatus = "idle" | "generating" | "done";
 
 interface ImageLightbox {
@@ -925,25 +924,27 @@ export default function QuickCreatePage({
     };
   }, []);
 
-  useEffect(() => {
-    const loadHistory = async () => {
-      try {
-        const [latest, list] = await Promise.all([
-          creationApi.getLatestQuickCreateHistory(),
-          creationApi.listQuickCreateHistory({ limit: 50, offset: 0 }),
-        ]);
-        setHistoryRecords(list.items.map((x) => toQuickCreateRecord(x)));
-        if (latest) {
-          const rec = toQuickCreateRecord(latest);
-          upsertRecord(rec);
-          applyRecordToView(rec);
-        }
-      } catch {
-        // ignore history preload failure
+  const loadQuickCreateHistory = useCallback(async () => {
+    try {
+      const [latest, list] = await Promise.all([
+        creationApi.getLatestQuickCreateHistory(),
+        creationApi.listQuickCreateHistory({ limit: 50, offset: 0 }),
+      ]);
+      const mapped = list.items.map((x) => toQuickCreateRecord(x));
+      setHistoryRecords(mapped);
+      if (latest) {
+        const rec = toQuickCreateRecord(latest);
+        upsertRecord(rec);
+        applyRecordToView(rec);
       }
-    };
-    void loadHistory();
+    } catch {
+      // ignore history preload failure
+    }
   }, [applyRecordToView, toQuickCreateRecord, upsertRecord]);
+
+  useEffect(() => {
+    void loadQuickCreateHistory();
+  }, [loadQuickCreateHistory]);
 
   const reloadPromptPrecreationPickers = useCallback(async () => {
     setPromptHistoryListLoading(true);
@@ -1372,7 +1373,7 @@ export default function QuickCreatePage({
         if (e instanceof ApiError) setGenError(e.message);
       }
     },
-    [applyRecordToView, toQuickCreateRecord, upsertRecord]
+    [applyRecordToView, toQuickCreateRecord, upsertRecord, viewingRecord]
   );
 
   const openLightbox = useCallback((images: QuickCreateImage[], index: number) => {

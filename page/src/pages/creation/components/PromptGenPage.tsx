@@ -5,7 +5,6 @@ import * as creationApi from "@/services/creationApi";
 import { ApiError } from "@/services/api";
 import { type AutoSubmitConfig } from "./AutoSubmitConfigModal";
 import type { ChainedQuickCreateResumePayload } from "../page";
-
 interface PromptGenPageProps {
   charas: CharaProfile[];
   listLoading?: boolean;
@@ -679,26 +678,27 @@ const PromptGenPage = ({
     [charas, onPromptSessionChange]
   );
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [latest, list] = await Promise.all([
-          creationApi.getLatestPromptPrecreationHistory(),
-          creationApi.listPromptPrecreationHistory({ limit: 50, offset: 0 }),
-        ]);
-        const mapped = list.items.map((item) => toPromptHistoryRecord(item, charas));
-        setHistoryRecords(mapped);
-        if (latest) {
-          const latestRecord = toPromptHistoryRecord(latest, charas);
-          upsertHistoryRecord(latestRecord);
-          applyHistoryRecordToMain(latestRecord);
-        }
-      } catch (e) {
-        void e;
+  const loadPromptHistory = useCallback(async () => {
+    try {
+      const [latest, list] = await Promise.all([
+        creationApi.getLatestPromptPrecreationHistory(),
+        creationApi.listPromptPrecreationHistory({ limit: 50, offset: 0 }),
+      ]);
+      const mapped = list.items.map((item) => toPromptHistoryRecord(item, charas));
+      setHistoryRecords(mapped);
+      if (latest) {
+        const latestRecord = toPromptHistoryRecord(latest, charas);
+        upsertHistoryRecord(latestRecord);
+        applyHistoryRecordToMain(latestRecord);
       }
-    };
-    void load();
+    } catch (e) {
+      void e;
+    }
   }, [charas, applyHistoryRecordToMain, upsertHistoryRecord]);
+
+  useEffect(() => {
+    void loadPromptHistory();
+  }, [loadPromptHistory]);
 
   const startGenerate = async () => {
     const charaForGen = charas.find((c) => c.id === selectedCharaId);

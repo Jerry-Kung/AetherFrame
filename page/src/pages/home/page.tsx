@@ -1,10 +1,15 @@
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import type { ApiCharacterSummary, CharaProfile } from "@/types/material";
+import { summaryToListProfile, toCharaProfile } from "@/types/material";
+import * as materialApi from "@/services/materialApi";
+import { ApiError } from "@/services/api";
+import type { SeedPromptSection } from "@/mocks/materialChara";
+import { persistMarkSeedAsUsed } from "@/mocks/materialChara";
 import Header from "./components/Header";
 import ModeSwitch, { type ModeId } from "./components/ModeSwitch";
-import ContentArea from "./components/ContentArea";
+import BatchCreationPage from "./components/BatchCreationPage";
 
-/* ── Floating decoration bubbles ─────────────────────── */
 const decorations = [
   { size: 320, top: "-8%", left: "-6%", opacity: 0.18, delay: "0s" },
   { size: 200, top: "60%", left: "-4%", opacity: 0.12, delay: "1.2s" },
@@ -14,7 +19,6 @@ const decorations = [
   { size: 80, top: "20%", right: "8%", opacity: 0.1, delay: "2.2s" },
 ];
 
-/* ── Floating star sparkles ───────────────────────────── */
 const sparkles = [
   { top: "10%", left: "12%", size: 14, delay: "0s" },
   { top: "22%", right: "16%", size: 10, delay: "0.8s" },
@@ -22,9 +26,70 @@ const sparkles = [
   { top: "80%", right: "12%", size: 12, delay: "2.1s" },
 ];
 
+const DETAIL_CHUNK = 4;
+
+function profilesFromSummaries(characters: ApiCharacterSummary[]): CharaProfile[] {
+  return characters.map((s) => {
+    const base = summaryToListProfile(s);
+    const preview = (s.setting_preview ?? "").trim();
+    if (preview) {
+      return { ...base, settingText: preview };
+    }
+    return base;
+  });
+}
+
 export default function Home() {
   const navigate = useNavigate();
   const [activeMode, setActiveMode] = useState<ModeId>("material");
+  const [charas, setCharas] = useState<CharaProfile[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+
+  const loadCharacters = useCallback(async () => {
+    setListLoading(true);
+    setListError(null);
+    try {
+      const { characters } = await materialApi.listCharacters(0, 100);
+      const list = profilesFromSummaries(characters);
+      const byId = new Map(list.map((c) => [c.id, c] as const));
+      const doneIds = list.filter((c) => c.status === "done").map((c) => c.id);
+
+      for (let i = 0; i < doneIds.length; i += DETAIL_CHUNK) {
+        const chunk = doneIds.slice(i, i + DETAIL_CHUNK);
+        const results = await Promise.allSettled(chunk.map((id) => materialApi.getCharacter(id)));
+        results.forEach((res, j) => {
+          const id = chunk[j];
+          if (!id) return;
+          if (res.status === "fulfilled") {
+            byId.set(id, toCharaProfile(res.value));
+          }
+        });
+      }
+
+      setCharas(list.map((c) => byId.get(c.id)!));
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "加载角色列表失败";
+      setListError(msg);
+      setCharas([]);
+    } finally {
+      setListLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCharacters();
+  }, [loadCharacters]);
+
+  const handleMarkSeedUsed = useCallback(
+    async (charaId: string, section: SeedPromptSection, seedId: string) => {
+      const profile = charas.find((c) => c.id === charaId);
+      if (!profile) return;
+      const next = await persistMarkSeedAsUsed({ characterId: charaId, profile, section, seedId });
+      setCharas((prev) => prev.map((c) => (c.id === charaId ? next : c)));
+    },
+    [charas]
+  );
 
   const handleModeSwitch = (id: ModeId) => {
     if (id === "material") {
@@ -50,7 +115,6 @@ export default function Home() {
           "linear-gradient(145deg, #fff5f7 0%, #fffaf5 45%, #fef2f8 80%, #fff8f0 100%)",
       }}
     >
-      {/* ── Background image layer ─── */}
       <div
         className="absolute inset-0 z-0 pointer-events-none"
         style={{
@@ -61,7 +125,6 @@ export default function Home() {
         }}
       />
 
-      {/* ── Gradient bubbles ─── */}
       {decorations.map((d, i) => (
         <div
           key={i}
@@ -70,8 +133,8 @@ export default function Home() {
             width: d.size,
             height: d.size,
             top: d.top,
-            left: (d as any).left,
-            right: (d as any).right,
+            left: (d as { left?: string }).left,
+            right: (d as { right?: string }).right,
             opacity: d.opacity,
             background:
               i % 2 === 0
@@ -83,15 +146,14 @@ export default function Home() {
         />
       ))}
 
-      {/* ── Sparkle stars ─── */}
       {sparkles.map((s, i) => (
         <div
           key={i}
           className="absolute pointer-events-none text-rose-300/40 select-none"
           style={{
             top: s.top,
-            left: (s as any).left,
-            right: (s as any).right,
+            left: (s as { left?: string }).left,
+            right: (s as { right?: string }).right,
             fontSize: s.size,
             animation: `twinkle 3s ease-in-out infinite`,
             animationDelay: s.delay,
@@ -101,20 +163,13 @@ export default function Home() {
         </div>
       ))}
 
-      {/* ── Page content ─── */}
       <div className="relative z-10 flex flex-col h-full">
-
-        {/* ── Top navigation bar: left = title, right = mode switch ─── */}
         <div className="flex items-center justify-between px-7 pt-5 pb-4 shrink-0">
           <Header />
-
-          {/* Vertical divider */}
           <div className="hidden md:block w-px h-10 bg-rose-200/40 mx-6" />
-
           <ModeSwitch activeMode={activeMode} onSwitch={handleModeSwitch} />
         </div>
 
-        {/* ── Workspace card — fills remaining height ─── */}
         <div className="flex-1 flex flex-col px-6 pb-6 min-h-0">
           <div
             className="flex-1 relative flex flex-col min-h-0 overflow-hidden rounded-3xl border border-rose-100/80"
@@ -124,18 +179,19 @@ export default function Home() {
               WebkitBackdropFilter: "blur(20px)",
             }}
           >
-            {/* Top accent gradient line */}
             <div className="h-[3px] w-full shrink-0 bg-gradient-to-r from-rose-300 via-pink-400 to-rose-300 opacity-70" />
-
-            {/* Content area — fills rest */}
             <div className="flex-1 min-h-0 overflow-auto relative">
-              <ContentArea activeMode={activeMode} />
+              <BatchCreationPage
+                charas={charas}
+                listLoading={listLoading}
+                listError={listError}
+                onMarkSeedUsed={handleMarkSeedUsed}
+              />
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Keyframe animations ─── */}
       <style>{`
         @keyframes floatUp {
           0%, 100% { transform: translateY(0px) scale(1); }
