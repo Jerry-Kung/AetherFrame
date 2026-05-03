@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 
-from app.models.database import SessionLocal
+from app.models.database import BackgroundSessionLocal, SessionLocal
 from app.prompts.creation.prompt_precreation import (
     prompt_review,
     prompt_review_backup,
@@ -292,10 +292,10 @@ _VALID_CHAIN_ASPECT = frozenset({"16:9", "4:3", "1:1", "3:4", "9:16"})
 
 
 def _try_chain_quick_create(precreation_task_id: str) -> None:
-    """预生成已成功落库后，在同一流程中可选启动一键创作（独立 DB 会话）。"""
+    """预生成已成功落库后，在同一流程中可选启动一键创作（独立 DB 会话，不占主连接池）。"""
     from app.services.creation_service.quick_create_service import QuickCreateService
 
-    db = SessionLocal()
+    db = BackgroundSessionLocal()
     try:
         prepo = CreationPromptPrecreationRepository(db)
         task = prepo.get_by_id(precreation_task_id)
@@ -381,6 +381,7 @@ def _try_chain_quick_create(precreation_task_id: str) -> None:
 
 
 def run_prompt_precreation_task_sync(task_id: str) -> None:
+    precreation_completed = False
     db = SessionLocal()
     try:
         crepo = CreationPromptPrecreationRepository(db)
@@ -462,7 +463,7 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
             },
         )
         _sync_history_files_for_task_id(db, task_id)
-        _try_chain_quick_create(task_id)
+        precreation_completed = True
     except Exception as e:
         logger.error("Prompt 预生成任务失败 task_id=%s: %s", task_id, e, exc_info=True)
         msg = str(e) if str(e) else type(e).__name__
@@ -478,6 +479,9 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
             logger.exception("写入任务失败状态时出错")
     finally:
         db.close()
+
+    if precreation_completed:
+        _try_chain_quick_create(task_id)
 
 
 class PromptPrecreationService:

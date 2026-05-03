@@ -802,11 +802,13 @@ const PromptGenPage = ({
             setGenState("done");
             setStatusStep(null);
 
+            let savedRecord: PromptHistoryRecord | null = null;
             try {
               const detail = await creationApi.getPromptPrecreationHistory(task_id);
               const record = toPromptHistoryRecord(detail, charas);
               upsertHistoryRecord(record);
               setActiveHistoryId(record.id);
+              savedRecord = record;
             } catch {
               // ignore; status card already present
             }
@@ -843,6 +845,24 @@ const PromptGenPage = ({
                   preview: p.preview,
                 })),
               });
+            } else if (
+              !lastStartUsedServerChainRef.current &&
+              autoSubmitEnabled &&
+              onAutoSubmit &&
+              autoSubmitConfig &&
+              savedRecord
+            ) {
+              const key = `${savedRecord.id}|${nextCards.map((c) => c.id).join(",")}`;
+              if (key !== lastAutoSubmitKeyRef.current) {
+                lastAutoSubmitKeyRef.current = key;
+                onAutoSubmit(
+                  { ...savedRecord, cards: nextCards, promptCount: nextCards.length },
+                  autoSubmitConfig
+                );
+                setShowAutoSubmitToast(true);
+                if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+                toastTimerRef.current = window.setTimeout(() => setShowAutoSubmitToast(false), 2800);
+              }
             }
             return;
           }
@@ -967,30 +987,6 @@ const PromptGenPage = ({
       setDetailCard((prev) => (prev ? { ...prev, fullPrompt: newPrompt } : prev));
     }
   };
-
-  useEffect(() => {
-    if (lastStartUsedServerChainRef.current) return;
-    if (!autoSubmitEnabled || !onAutoSubmit || !autoSubmitConfig) return;
-    if (genState !== "done" || cards.length === 0 || !activeHistoryId) return;
-    const baseRecord = historyRecords.find((r) => r.id === activeHistoryId);
-    if (!baseRecord) return;
-    const key = `${baseRecord.id}|${cards.map((c) => c.id).join(",")}`;
-    if (key === lastAutoSubmitKeyRef.current) return;
-    lastAutoSubmitKeyRef.current = key;
-    onAutoSubmit({ ...baseRecord, cards, promptCount: cards.length }, autoSubmitConfig);
-    setShowAutoSubmitToast(true);
-    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setShowAutoSubmitToast(false), 2800);
-  }, [
-    genState,
-    autoSubmitEnabled,
-    autoSubmitConfig,
-    activeHistoryId,
-    cards,
-    historyRecords,
-    onAutoSubmit,
-    onChainedQuickCreateResume,
-  ]);
 
   useEffect(() => {
     return () => {

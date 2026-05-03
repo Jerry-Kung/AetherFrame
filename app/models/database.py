@@ -4,6 +4,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.datetime_display import configure_logging
 
@@ -29,12 +30,24 @@ logger.info(f"数据库连接URL: {SQLALCHEMY_DATABASE_URL}")
 # 创建引擎
 # - timeout：连接级 busy 等待（秒），与 PRAGMA busy_timeout 配合缓解并发锁竞争
 # - WAL：读写并发更友好，避免后台任务写库时 API 长时间阻塞事件循环
+_connect_kw = {"check_same_thread": False, "timeout": 30.0}
+
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False, "timeout": 30.0},
+    connect_args=_connect_kw,
+    pool_pre_ping=True,
     echo=False,  # 设置为 True 可以查看 SQL 日志
 )
 logger.info("数据库引擎创建成功")
+
+# 长时间后台任务（如预生成后链式一键创作）专用：不占用主连接池，避免 QueuePool 耗尽
+background_engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    connect_args=_connect_kw,
+    poolclass=NullPool,
+    echo=False,
+)
+logger.info("数据库后台引擎（NullPool）创建成功")
 
 
 @event.listens_for(engine, "connect")
@@ -47,8 +60,15 @@ def _sqlite_on_connect(dbapi_connection, _connection_record):
     finally:
         cursor.close()
 
+
+@event.listens_for(background_engine, "connect")
+def _sqlite_on_connect_background(dbapi_connection, _connection_record):
+    _sqlite_on_connect(dbapi_connection, _connection_record)
+
+
 # Session 工厂
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+BackgroundSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=background_engine)
 
 # 基类
 Base = declarative_base()
