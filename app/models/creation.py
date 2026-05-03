@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -28,6 +28,12 @@ class CreationPromptPrecreationTask(Base):
     work_dir = Column(Text, nullable=False)
     result_json = Column(Text, nullable=True)
     current_step = Column(String(40), nullable=True)
+    chain_quick_create = Column(Boolean, nullable=False, default=False)
+    chain_qc_n = Column(Integer, nullable=True)
+    chain_qc_aspect_ratio = Column(String(20), nullable=True)
+    chain_qc_max_prompts = Column(Integer, nullable=True)
+    chained_quick_create_task_id = Column(String(64), nullable=True)
+    chain_error = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

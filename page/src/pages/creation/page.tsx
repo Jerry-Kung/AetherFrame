@@ -2,11 +2,36 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ApiCharacterSummary, CharaProfile } from "@/types/material";
 import { summaryToListProfile } from "@/types/material";
-import type { CreationPromptSession } from "@/types/creation";
+import type { CreationPromptSession, PromptHistoryRecord } from "@/types/creation";
 import * as materialApi from "@/services/materialApi";
 import { ApiError } from "@/services/api";
+import AutoSubmitConfigModal, { type AutoSubmitConfig } from "./components/AutoSubmitConfigModal";
 import PromptGenPage from "./components/PromptGenPage";
 import ArtCreationPage from "./components/ArtCreationPage";
+
+export interface AutoSubmitPayload {
+  record: PromptHistoryRecord;
+  config: AutoSubmitConfig;
+}
+
+export type ChainedQuickCreateAspectRatio = "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
+
+/** 服务端链式一键创作已创建：仅用于美图页恢复轮询 */
+export interface ChainedQuickCreateResumePayload {
+  taskId: string;
+  charaId: string;
+  charaName: string;
+  charaAvatar: string;
+  n: 1 | 2 | 3 | 4;
+  aspectRatio: ChainedQuickCreateAspectRatio;
+  prompts: { id: string; title: string; preview: string }[];
+}
+
+const DEFAULT_AUTO_SUBMIT_CONFIG: AutoSubmitConfig = {
+  promptCount: 2,
+  imagesPerPrompt: 2,
+  aspectRatio: "1:1",
+};
 
 type MainTabId = "prompt" | "art";
 
@@ -55,9 +80,44 @@ export default function CreationPage() {
   const [listError, setListError] = useState<string | null>(null);
   const [promptSession, setPromptSession] = useState<CreationPromptSession | null>(null);
 
+  const [autoSubmitEnabled, setAutoSubmitEnabled] = useState(false);
+  const [autoSubmitConfig, setAutoSubmitConfig] = useState<AutoSubmitConfig>(DEFAULT_AUTO_SUBMIT_CONFIG);
+  const [pendingAutoSubmit, setPendingAutoSubmit] = useState<AutoSubmitPayload | null>(null);
+  const [chainedResume, setChainedResume] = useState<ChainedQuickCreateResumePayload | null>(null);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+
   const handlePromptSessionChange = useCallback((session: CreationPromptSession | null) => {
     setPromptSession(session);
   }, []);
+
+  const handleAutoSubmitToggle = useCallback((enabled: boolean) => {
+    setAutoSubmitEnabled(enabled);
+  }, []);
+
+  const handleAutoSubmit = useCallback((record: PromptHistoryRecord, config: AutoSubmitConfig) => {
+    setPendingAutoSubmit({ record, config });
+    setActiveTab("art");
+  }, []);
+
+  const handleChainedQuickCreateResume = useCallback((payload: ChainedQuickCreateResumePayload) => {
+    setChainedResume(payload);
+    setActiveTab("art");
+  }, []);
+
+  const clearChainedResume = useCallback(() => {
+    setChainedResume(null);
+  }, []);
+
+  const handleConfigSave = useCallback((config: AutoSubmitConfig) => {
+    setAutoSubmitConfig(config);
+    setShowConfigModal(false);
+  }, []);
+
+  const consumePendingAutoSubmit = useCallback(() => {
+    const payload = pendingAutoSubmit;
+    setPendingAutoSubmit(null);
+    return payload;
+  }, [pendingAutoSubmit]);
 
   const loadCharacters = useCallback(async () => {
     setListLoading(true);
@@ -256,15 +316,35 @@ export default function CreationPage() {
                   listLoading={listLoading}
                   listError={listError}
                   onPromptSessionChange={handlePromptSessionChange}
+                  autoSubmitEnabled={autoSubmitEnabled}
+                  onAutoSubmitToggle={handleAutoSubmitToggle}
+                  autoSubmitConfig={autoSubmitConfig}
+                  onAutoSubmit={handleAutoSubmit}
+                  onChainedQuickCreateResume={handleChainedQuickCreateResume}
+                  onOpenConfig={() => setShowConfigModal(true)}
                 />
               )}
               {activeTab === "art" && (
-                <ArtCreationPage charas={charas} promptSession={promptSession} />
+                <ArtCreationPage
+                  charas={charas}
+                  promptSession={promptSession}
+                  autoStartPayload={pendingAutoSubmit}
+                  onConsumePayload={consumePendingAutoSubmit}
+                  chainedResume={chainedResume}
+                  onConsumeChainedResume={clearChainedResume}
+                />
               )}
             </div>
           </div>
         </div>
       </div>
+
+      <AutoSubmitConfigModal
+        visible={showConfigModal}
+        initialConfig={autoSubmitConfig}
+        onConfirm={handleConfigSave}
+        onCancel={() => setShowConfigModal(false)}
+      />
 
       <style>{`
         @keyframes creation-floatUp {

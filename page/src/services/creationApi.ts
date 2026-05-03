@@ -89,7 +89,16 @@ export interface PromptPrecreationStatusResponse {
   created_at: string;
   updated_at: string;
   cards?: PromptCard[] | null;
+  chained_quick_create_task_id?: string | null;
+  chain_error?: string | null;
 }
+
+/** 预生成成功后由服务端链式启动一键创作时随 start 请求提交 */
+export type PromptPrecreationChainQuickCreateBody = {
+  n: 1 | 2 | 3 | 4;
+  aspect_ratio: "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
+  max_prompts: 1 | 2 | 3 | 4;
+};
 
 export interface PromptPrecreationHistoryItem {
   id: string;
@@ -189,18 +198,26 @@ export interface QuickCreateHistoryListResponse {
 
 export async function startPromptPrecreation(
   characterId: string,
-  body: { seed_prompt: string; count: 2 | 3 | 4 }
+  body: {
+    seed_prompt: string;
+    count: 1 | 2 | 3 | 4;
+    chain_quick_create?: PromptPrecreationChainQuickCreateBody | null;
+  }
 ): Promise<PromptPrecreationStartResponse> {
   assertValidCharacterId(characterId, "启动 Prompt 预生成");
   const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/prompt-precreation/start`;
   try {
+    const payload: Record<string, unknown> = {
+      seed_prompt: body.seed_prompt,
+      count: body.count,
+    };
+    if (body.chain_quick_create) {
+      payload.chain_quick_create = body.chain_quick_create;
+    }
     const response = await fetchWithTimeout(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        seed_prompt: body.seed_prompt,
-        count: body.count,
-      }),
+      body: JSON.stringify(payload),
     });
     const data = await parseJson<PromptPrecreationStartResponse>(response);
     throwIfError(response, data);

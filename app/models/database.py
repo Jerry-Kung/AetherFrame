@@ -264,6 +264,50 @@ def migrate_creation_quick_create_tasks_add_seed_prompt() -> None:
         raise
 
 
+def migrate_creation_prompt_precreation_tasks_add_chain_fields() -> None:
+    """
+    为 creation_prompt_precreation_tasks 补充链式一键创作相关列。
+    新建库由 create_all 直接带列；老库通过 ALTER TABLE 补齐。
+    """
+    if not os.path.exists(DB_PATH):
+        return
+    table = "creation_prompt_precreation_tasks"
+    alters: list[tuple[str, str]] = [
+        ("chain_quick_create", "INTEGER NOT NULL DEFAULT 0"),
+        ("chain_qc_n", "INTEGER"),
+        ("chain_qc_aspect_ratio", "VARCHAR(20)"),
+        ("chain_qc_max_prompts", "INTEGER"),
+        ("chained_quick_create_task_id", "VARCHAR(64)"),
+        ("chain_error", "TEXT"),
+    ]
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    f"SELECT 1 FROM sqlite_master WHERE type='table' AND name='{table}'"
+                )
+            ).fetchone()
+            if row is None:
+                return
+            cols = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+            names = {c[1] for c in cols}
+            for col_name, col_def in alters:
+                if col_name in names:
+                    continue
+                conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+                )
+                logger.info("已迁移: %s 增加列 %s", table, col_name)
+        logger.info("已迁移: creation_prompt_precreation_tasks 链式一键创作列（如需）")
+    except Exception as e:
+        logger.error(
+            "迁移 creation_prompt_precreation_tasks 链式列失败: %s",
+            e,
+            exc_info=True,
+        )
+        raise
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
@@ -286,6 +330,7 @@ def init_db():
         migrate_material_characters_add_setting_source_filename()
         migrate_repair_tasks_add_aspect_ratio()
         migrate_creation_quick_create_tasks_add_seed_prompt()
+        migrate_creation_prompt_precreation_tasks_add_chain_fields()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:

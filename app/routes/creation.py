@@ -59,16 +59,23 @@ async def start_prompt_precreation(
 ):
     character_id = ensure_valid_character_id(character_id)
     logger.info(
-        "API 请求 - 启动 Prompt 预生成: character_id=%s count=%s",
+        "API 请求 - 启动 Prompt 预生成: character_id=%s count=%s chain=%s",
         character_id,
         body.count,
+        body.chain_quick_create is not None,
     )
     try:
+        chain_payload = (
+            body.chain_quick_create.model_dump(mode="json")
+            if body.chain_quick_create
+            else None
+        )
         data = service.start_prompt_precreation(
             character_id=character_id,
             seed_prompt=body.seed_prompt,
             count=body.count,
             background_tasks=background_tasks,
+            chain_quick_create=chain_payload,
         )
         return ApiResponse(
             success=True,
@@ -112,6 +119,8 @@ async def get_prompt_precreation_status(
         created_at=raw["created_at"],
         updated_at=raw["updated_at"],
         cards=card_models,
+        chained_quick_create_task_id=raw.get("chained_quick_create_task_id"),
+        chain_error=raw.get("chain_error"),
     )
     return ApiResponse(
         success=True,

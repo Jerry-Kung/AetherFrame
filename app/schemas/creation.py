@@ -7,12 +7,35 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class PromptPrecreationChainQuickCreate(BaseModel):
+    """预生成完成后自动启动一键创作（与默认配置一致）"""
+
+    n: Literal[1, 2, 3, 4] = Field(..., description="每个 Prompt 生成张数")
+    aspect_ratio: Literal["16:9", "4:3", "1:1", "3:4", "9:16"] = Field(
+        ..., description="输出图片长宽比"
+    )
+    max_prompts: Literal[1, 2, 3, 4] = Field(
+        ..., description="提交到一键创作的 Prompt 条数上限（不超过本次生成数量）"
+    )
 
 
 class PromptPrecreationStartRequest(BaseModel):
     seed_prompt: str = Field(..., min_length=1, description="种子提示词")
-    count: Literal[2, 3, 4] = Field(..., description="最终 Prompt 数量")
+    count: Literal[1, 2, 3, 4] = Field(..., description="最终 Prompt 数量")
+    chain_quick_create: Optional[PromptPrecreationChainQuickCreate] = Field(
+        default=None,
+        description="若设置，则在预生成成功后自动创建一键创作任务",
+    )
+
+    @model_validator(mode="after")
+    def validate_chain_vs_count(self) -> "PromptPrecreationStartRequest":
+        if self.chain_quick_create is not None:
+            if self.chain_quick_create.max_prompts > self.count:
+                raise ValueError("chain_quick_create.max_prompts 不能大于 count")
+        return self
 
 
 class PromptPrecreationStartResponse(BaseModel):
@@ -40,6 +63,8 @@ class PromptPrecreationStatusResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     cards: Optional[List[PromptCardItem]] = None
+    chained_quick_create_task_id: Optional[str] = None
+    chain_error: Optional[str] = None
 
 
 class PromptPrecreationHistoryItem(BaseModel):

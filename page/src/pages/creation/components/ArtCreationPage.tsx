@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { CharaProfile } from "@/types/material";
 import type { CreationPromptSession } from "@/types/creation";
+import type { AutoSubmitPayload, ChainedQuickCreateResumePayload } from "../page";
 import QuickCreatePage from "./QuickCreatePage";
 
 type ArtSubTab = "quick" | "fine";
@@ -80,9 +81,20 @@ const FinePlaceholder = () => (
 interface ArtCreationPageProps {
   charas: CharaProfile[];
   promptSession: CreationPromptSession | null;
+  autoStartPayload: AutoSubmitPayload | null;
+  onConsumePayload: () => AutoSubmitPayload | null;
+  chainedResume: ChainedQuickCreateResumePayload | null;
+  onConsumeChainedResume: () => void;
 }
 
-const ArtCreationPage = ({ charas, promptSession }: ArtCreationPageProps) => {
+const ArtCreationPage = ({
+  charas,
+  promptSession,
+  autoStartPayload,
+  onConsumePayload,
+  chainedResume,
+  onConsumeChainedResume,
+}: ArtCreationPageProps) => {
   const [activeSubTab, setActiveSubTab] = useState<ArtSubTab>("quick");
   const currentTab = ART_SUB_TABS.find((t) => t.id === activeSubTab)!;
 
@@ -135,7 +147,14 @@ const ArtCreationPage = ({ charas, promptSession }: ArtCreationPageProps) => {
 
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {activeSubTab === "quick" && (
-          <QuickCreatePage charas={charas} promptSession={promptSession} />
+          <QuickCreatePage
+            charas={charas}
+            promptSession={promptSession}
+            autoStartPayload={autoStartPayload}
+            onConsumePayload={onConsumePayload}
+            chainedResume={chainedResume}
+            onConsumeChainedResume={onConsumeChainedResume}
+          />
         )}
         {activeSubTab === "fine" && <FinePlaceholder />}
       </div>

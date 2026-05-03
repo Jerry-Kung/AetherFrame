@@ -288,6 +288,98 @@ def _build_cards(
     return cards
 
 
+_VALID_CHAIN_ASPECT = frozenset({"16:9", "4:3", "1:1", "3:4", "9:16"})
+
+
+def _try_chain_quick_create(precreation_task_id: str) -> None:
+    """预生成已成功落库后，在同一流程中可选启动一键创作（独立 DB 会话）。"""
+    from app.services.creation_service.quick_create_service import QuickCreateService
+
+    db = SessionLocal()
+    try:
+        prepo = CreationPromptPrecreationRepository(db)
+        task = prepo.get_by_id(precreation_task_id)
+        if not task or not getattr(task, "chain_quick_create", False):
+            return
+        n_qc = task.chain_qc_n
+        aspect = (task.chain_qc_aspect_ratio or "").strip()
+        max_prompts = task.chain_qc_max_prompts
+        if (
+            n_qc is None
+            or n_qc < 1
+            or n_qc > 4
+            or aspect not in _VALID_CHAIN_ASPECT
+            or max_prompts is None
+            or max_prompts < 1
+            or max_prompts > 4
+        ):
+            prepo.update(
+                precreation_task_id,
+                {"chain_error": "链式一键创作参数无效，已跳过"},
+            )
+            _sync_history_files_for_task_id(db, precreation_task_id)
+            return
+        try:
+            cards = json.loads(task.result_json or "[]")
+        except json.JSONDecodeError:
+            cards = []
+        if not isinstance(cards, list) or len(cards) == 0:
+            prepo.update(
+                precreation_task_id,
+                {"chain_error": "无可用 Prompt 卡片，已跳过链式一键创作"},
+            )
+            _sync_history_files_for_task_id(db, precreation_task_id)
+            return
+        cap = min(len(cards), int(max_prompts))
+        selected: List[Dict[str, str]] = []
+        for c in cards[:cap]:
+            if not isinstance(c, dict):
+                continue
+            pid = str(c.get("id") or "").strip()
+            fp = str(c.get("fullPrompt") or "").strip()
+            if pid and fp:
+                selected.append({"id": pid, "fullPrompt": fp})
+        if not selected:
+            prepo.update(
+                precreation_task_id,
+                {"chain_error": "切片后无有效 Prompt，已跳过链式一键创作"},
+            )
+            _sync_history_files_for_task_id(db, precreation_task_id)
+            return
+        qc = QuickCreateService(db)
+        try:
+            out = qc.start_quick_create(
+                character_id=task.character_id,
+                selected_prompts=selected,
+                n=n_qc,
+                aspect_ratio=aspect,
+                background_tasks=None,
+            )
+        except Exception as e:
+            logger.error(
+                "链式一键创作启动失败 precreation_task_id=%s: %s",
+                precreation_task_id,
+                e,
+                exc_info=True,
+            )
+            msg = str(e) if str(e) else type(e).__name__
+            prepo.update(
+                precreation_task_id,
+                {"chain_error": msg[:2000]},
+            )
+            _sync_history_files_for_task_id(db, precreation_task_id)
+            return
+        tid = (out or {}).get("task_id")
+        if tid:
+            prepo.update(
+                precreation_task_id,
+                {"chained_quick_create_task_id": str(tid), "chain_error": None},
+            )
+        _sync_history_files_for_task_id(db, precreation_task_id)
+    finally:
+        db.close()
+
+
 def run_prompt_precreation_task_sync(task_id: str) -> None:
     db = SessionLocal()
     try:
@@ -370,6 +462,7 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
             },
         )
         _sync_history_files_for_task_id(db, task_id)
+        _try_chain_quick_create(task_id)
     except Exception as e:
         logger.error("Prompt 预生成任务失败 task_id=%s: %s", task_id, e, exc_info=True)
         msg = str(e) if str(e) else type(e).__name__
@@ -561,9 +654,10 @@ class PromptPrecreationService:
         seed_prompt: str,
         count: int,
         background_tasks: Optional[BackgroundTasks] = None,
+        chain_quick_create: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        if count not in (2, 3, 4):
-            raise ValueError("生成数量必须为 2、3 或 4")
+        if count not in (1, 2, 3, 4):
+            raise ValueError("生成数量必须为 1、2、3 或 4")
         sp = (seed_prompt or "").strip()
         if not sp:
             raise ValueError("种子提示词不能为空")
@@ -576,11 +670,24 @@ class PromptPrecreationService:
         if not chara_profile:
             raise ValueError("请先完成角色小档案生成后再进行 Prompt 预生成")
 
+        cq = bool(chain_quick_create)
+        cn: Optional[int] = None
+        car: Optional[str] = None
+        cm: Optional[int] = None
+        if chain_quick_create:
+            cn = int(chain_quick_create["n"])
+            car = str(chain_quick_create["aspect_ratio"]).strip()
+            cm = int(chain_quick_create["max_prompts"])
+
         task = self.repo.create(
             character_id=character_id,
             seed_prompt=sp,
             n=count,
             status="pending",
+            chain_quick_create=cq,
+            chain_qc_n=cn,
+            chain_qc_aspect_ratio=car,
+            chain_qc_max_prompts=cm,
         )
         directory_service.ensure_dir_exists(task.work_dir)
         self._sync_history_files_for_task(task.id)
@@ -614,4 +721,8 @@ class PromptPrecreationService:
             "created_at": task.created_at,
             "updated_at": task.updated_at,
             "cards": cards,
+            "chained_quick_create_task_id": getattr(
+                task, "chained_quick_create_task_id", None
+            ),
+            "chain_error": getattr(task, "chain_error", None),
         }

@@ -15,6 +15,7 @@ import {
   type AiComment,
 } from "@/types/quickCreate";
 import AiCommentModal from "./AiCommentModal";
+import type { AutoSubmitPayload, ChainedQuickCreateResumePayload } from "../page";
 
 type GenStatus = "idle" | "generating" | "done";
 
@@ -31,6 +32,19 @@ const ASPECT_RATIO_OPTIONS = [
   { label: "3:4", value: "3:4" },
   { label: "9:16", value: "9:16" },
 ] as const;
+
+type AspectRatioValue = (typeof ASPECT_RATIO_OPTIONS)[number]["value"];
+
+function clampN(n: number): (typeof IMAGES_PER_PROMPT_OPTIONS)[number] {
+  const v = Math.round(Number(n));
+  if (v >= 1 && v <= 4) return v as (typeof IMAGES_PER_PROMPT_OPTIONS)[number];
+  return 2;
+}
+
+function clampAspect(ratio: string): AspectRatioValue {
+  const allowed = ASPECT_RATIO_OPTIONS.map((o) => o.value);
+  return (allowed.includes(ratio as AspectRatioValue) ? ratio : "16:9") as AspectRatioValue;
+}
 
 const GEN_HINTS = [
   "正在召唤创作灵感，请稍等一下下～",
@@ -59,6 +73,11 @@ interface StoredQuickCreateTaskPayload {
 interface QuickCreatePageProps {
   charas: CharaProfile[];
   promptSession: CreationPromptSession | null;
+  autoStartPayload?: AutoSubmitPayload | null;
+  onConsumePayload?: () => AutoSubmitPayload | null;
+  /** 服务端已在预生成后创建一键创作任务：写入本地活跃任务并轮询 */
+  chainedResume?: ChainedQuickCreateResumePayload | null;
+  onConsumeChainedResume?: () => void;
 }
 
 function toPromptHistoryRecord(
@@ -701,7 +720,14 @@ function Lightbox({
   );
 }
 
-export default function QuickCreatePage({ charas, promptSession }: QuickCreatePageProps) {
+export default function QuickCreatePage({
+  charas,
+  promptSession,
+  autoStartPayload = null,
+  onConsumePayload,
+  chainedResume = null,
+  onConsumeChainedResume,
+}: QuickCreatePageProps) {
   const [linkedTask, setLinkedTask] = useState<PromptHistoryRecord | null>(null);
   const [serverDefaultTask, setServerDefaultTask] = useState<PromptHistoryRecord | null>(null);
   const [promptHistoryItems, setPromptHistoryItems] = useState<creationApi.PromptPrecreationHistoryItem[]>(
@@ -764,6 +790,9 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
   /** Browser timer id; avoid NodeJS.Timeout vs number mismatch under mixed DOM/Node typings */
   const pollTimerRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
+  const skipNextSelectionResetRef = useRef(false);
+  const lastConsumedPayloadKeyRef = useRef("");
+  const lastChainedResumeKeyRef = useRef("");
 
   const clearQuickCreateActiveTaskStorage = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -981,6 +1010,10 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
   );
 
   useEffect(() => {
+    if (skipNextSelectionResetRef.current) {
+      skipNextSelectionResetRef.current = false;
+      return;
+    }
     if (linkedTask) {
       const cards = linkedTask.cards ?? [];
       setSelectedPromptIds(cards.length ? new Set(cards.map((p) => p.id)) : new Set());
@@ -1107,92 +1140,176 @@ export default function QuickCreatePage({ charas, promptSession }: QuickCreatePa
     }
   }, [selectedPromptIds.size, allPrompts]);
 
+  const startGenerateWith = useCallback(
+    async (params: {
+      charaId: string;
+      prompts: PromptCard[];
+      n: (typeof IMAGES_PER_PROMPT_OPTIONS)[number];
+      aspectRatio: AspectRatioValue;
+      overrideCharaName?: string;
+      overrideCharaAvatar?: string;
+    }) => {
+      const cid = params.charaId.trim();
+      const { prompts, n, aspectRatio: ratio } = params;
+      if (prompts.length === 0 || !cid) return;
+
+      const charaFromList = charas.find((c) => c.id === cid) ?? null;
+      const charaName =
+        params.overrideCharaName ??
+        charaFromList?.name ??
+        linkedTask?.charaName ??
+        serverDefaultTask?.charaName ??
+        "未知角色";
+      const charaAvatar =
+        params.overrideCharaAvatar ??
+        charaFromList?.avatarUrl ??
+        linkedTask?.charaAvatar ??
+        serverDefaultTask?.charaAvatar ??
+        DEFAULT_CHARA_AVATAR_PLACEHOLDER;
+
+      try {
+        const start = await creationApi.startQuickCreate(cid, {
+          selected_prompts: prompts.map((p) => ({ id: p.id, fullPrompt: p.fullPrompt })),
+          n,
+          aspect_ratio: ratio,
+        });
+        writeQuickCreateActiveTaskStorage({
+          taskId: start.task_id,
+          charaId: cid,
+          n,
+          aspectRatio: ratio,
+          prompts: prompts.map((p) => ({
+            id: p.id,
+            title: p.title,
+            preview: p.preview,
+          })),
+        });
+        const pendingRecord: QuickCreateRecord = {
+          id: start.task_id,
+          taskId: start.task_id,
+          charaId: cid,
+          charaName,
+          charaAvatar,
+          promptCount: prompts.length,
+          imageCount: 0,
+          imagesPerPrompt: n,
+          status: "pending",
+          errorMessage: null,
+          createdAt: fmtTime(new Date().toISOString()),
+          updatedAt: new Date().toISOString(),
+          groups: [],
+        };
+        upsertRecord(pendingRecord);
+        applyRecordToView(pendingRecord);
+
+        try {
+          const detail = await creationApi.getQuickCreateHistory(start.task_id);
+          const serverPending = toQuickCreateRecord(detail);
+          upsertRecord(serverPending);
+          applyRecordToView(serverPending);
+        } catch {
+          // keep local pending
+        }
+        void pollQuickCreateTask(
+          start.task_id,
+          prompts.map((p) => ({
+            id: p.id,
+            title: p.title,
+            preview: p.preview,
+          }))
+        );
+      } catch (e) {
+        clearQuickCreateActiveTaskStorage();
+        setGenError(e instanceof ApiError ? e.message : "启动一键创作失败");
+        setGenStatus("idle");
+      }
+    },
+    [
+      charas,
+      linkedTask?.charaAvatar,
+      linkedTask?.charaName,
+      serverDefaultTask?.charaAvatar,
+      serverDefaultTask?.charaName,
+      pollQuickCreateTask,
+      writeQuickCreateActiveTaskStorage,
+      clearQuickCreateActiveTaskStorage,
+      upsertRecord,
+      applyRecordToView,
+      toQuickCreateRecord,
+    ]
+  );
+
   const startGenerate = useCallback(async () => {
     const prompts = allPrompts.filter((p) => selectedPromptIds.has(p.id));
     const charaId = activeCharaId?.trim();
     if (prompts.length === 0 || !charaId) return;
-    try {
-      const start = await creationApi.startQuickCreate(charaId, {
-        selected_prompts: prompts.map((p) => ({ id: p.id, fullPrompt: p.fullPrompt })),
-        n: imagesPerPrompt,
-        aspect_ratio: aspectRatio,
-      });
-      writeQuickCreateActiveTaskStorage({
-        taskId: start.task_id,
-        charaId,
-        n: imagesPerPrompt,
-        aspectRatio,
-        prompts: prompts.map((p) => ({
-          id: p.id,
-          title: p.title,
-          preview: p.preview,
-        })),
-      });
-      const pendingRecord: QuickCreateRecord = {
-        id: start.task_id,
-        taskId: start.task_id,
-        charaId,
-        charaName:
-          sessionChara?.name ??
-          linkedTask?.charaName ??
-          serverDefaultTask?.charaName ??
-          "未知角色",
-        charaAvatar:
-          sessionChara?.avatarUrl ??
-          linkedTask?.charaAvatar ??
-          serverDefaultTask?.charaAvatar ??
-          DEFAULT_CHARA_AVATAR_PLACEHOLDER,
-        promptCount: prompts.length,
-        imageCount: 0,
-        imagesPerPrompt,
-        status: "pending",
-        errorMessage: null,
-        createdAt: fmtTime(new Date().toISOString()),
-        updatedAt: new Date().toISOString(),
-        groups: [],
-      };
-      upsertRecord(pendingRecord);
-      applyRecordToView(pendingRecord);
-
-      try {
-        const detail = await creationApi.getQuickCreateHistory(start.task_id);
-        const serverPending = toQuickCreateRecord(detail);
-        upsertRecord(serverPending);
-        applyRecordToView(serverPending);
-      } catch {
-        // keep local pending
-      }
-      void pollQuickCreateTask(
-        start.task_id,
-        prompts.map((p) => ({
-          id: p.id,
-          title: p.title,
-          preview: p.preview,
-        }))
-      );
-    } catch (e) {
-      clearQuickCreateActiveTaskStorage();
-      setGenError(e instanceof ApiError ? e.message : "启动一键创作失败");
-      setGenStatus("idle");
-    }
+    await startGenerateWith({
+      charaId,
+      prompts,
+      n: imagesPerPrompt,
+      aspectRatio,
+    });
   }, [
     activeCharaId,
     allPrompts,
     selectedPromptIds,
-    linkedTask?.charaAvatar,
-    linkedTask?.charaName,
-    serverDefaultTask?.charaAvatar,
-    serverDefaultTask?.charaName,
     imagesPerPrompt,
     aspectRatio,
-    pollQuickCreateTask,
-    writeQuickCreateActiveTaskStorage,
-    clearQuickCreateActiveTaskStorage,
-    sessionChara,
-    upsertRecord,
-    applyRecordToView,
-    toQuickCreateRecord,
+    startGenerateWith,
   ]);
+
+  useEffect(() => {
+    if (!autoStartPayload) return;
+    const { record, config } = autoStartPayload;
+    if (!record?.cards?.length || !record.charaId?.trim()) return;
+
+    const previewCards = record.cards.slice(0, config.promptCount);
+    const key = `${record.id}|${config.promptCount}|${config.imagesPerPrompt}|${config.aspectRatio}|${previewCards.map((p) => p.id).join(",")}`;
+    if (lastConsumedPayloadKeyRef.current === key) return;
+    lastConsumedPayloadKeyRef.current = key;
+
+    const payload = onConsumePayload?.() ?? autoStartPayload;
+    if (!payload) return;
+
+    const selectedCards = payload.record.cards.slice(0, payload.config.promptCount);
+    if (selectedCards.length === 0) return;
+
+    const n = clampN(payload.config.imagesPerPrompt);
+    const ratio = clampAspect(payload.config.aspectRatio);
+
+    skipNextSelectionResetRef.current = true;
+    setLinkedTask(payload.record);
+    setSelectedPromptIds(new Set(selectedCards.map((p) => p.id)));
+    setImagesPerPrompt(n);
+    setAspectRatio(ratio);
+
+    void startGenerateWith({
+      charaId: payload.record.charaId,
+      prompts: selectedCards,
+      n,
+      aspectRatio: ratio,
+      overrideCharaName: payload.record.charaName,
+      overrideCharaAvatar: payload.record.charaAvatar,
+    });
+  }, [autoStartPayload, onConsumePayload, startGenerateWith]);
+
+  useEffect(() => {
+    const resume = chainedResume;
+    if (!resume?.taskId?.trim()) return;
+    const key = `chain|${resume.taskId.trim()}`;
+    if (lastChainedResumeKeyRef.current === key) return;
+    lastChainedResumeKeyRef.current = key;
+
+    writeQuickCreateActiveTaskStorage({
+      taskId: resume.taskId.trim(),
+      charaId: resume.charaId.trim(),
+      n: resume.n,
+      aspectRatio: resume.aspectRatio,
+      prompts: resume.prompts,
+    });
+    void pollQuickCreateTask(resume.taskId.trim(), resume.prompts);
+    onConsumeChainedResume?.();
+  }, [chainedResume, onConsumeChainedResume, pollQuickCreateTask, writeQuickCreateActiveTaskStorage]);
 
   const handleReset = useCallback(() => {
     setGenStatus("idle");

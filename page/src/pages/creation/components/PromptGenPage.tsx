@@ -3,6 +3,8 @@ import type { CharaProfile } from "@/types/material";
 import type { PromptCard, CreationPromptSession, PromptHistoryRecord } from "@/types/creation";
 import * as creationApi from "@/services/creationApi";
 import { ApiError } from "@/services/api";
+import { type AutoSubmitConfig } from "./AutoSubmitConfigModal";
+import type { ChainedQuickCreateResumePayload } from "../page";
 
 interface PromptGenPageProps {
   charas: CharaProfile[];
@@ -10,6 +12,13 @@ interface PromptGenPageProps {
   listError?: string | null;
   /** 同步到美图创作页：生成完成、卡片编辑后推送；清空预生成时传 null */
   onPromptSessionChange?: (session: CreationPromptSession | null) => void;
+  autoSubmitEnabled?: boolean;
+  onAutoSubmitToggle?: (enabled: boolean) => void;
+  autoSubmitConfig?: AutoSubmitConfig;
+  onAutoSubmit?: (record: PromptHistoryRecord, config: AutoSubmitConfig) => void;
+  /** 服务端链式一键创作已启动时，切换到美图页并轮询该任务 */
+  onChainedQuickCreateResume?: (payload: ChainedQuickCreateResumePayload) => void;
+  onOpenConfig?: () => void;
 }
 
 type GenState = "idle" | "generating" | "done";
@@ -17,6 +26,26 @@ type GenState = "idle" | "generating" | "done";
 const COUNT_OPTIONS = [2, 3, 4] as const;
 
 const POLL_INTERVAL_MS = 10000;
+
+const CHAIN_ASPECT_OPTIONS = ["16:9", "4:3", "1:1", "3:4", "9:16"] as const;
+
+function clampPromptCountFromConfig(n: number): 1 | 2 | 3 | 4 {
+  const v = Math.round(Number(n));
+  if (v >= 1 && v <= 4) return v as 1 | 2 | 3 | 4;
+  return 2;
+}
+
+function clampPromptImagesPer(n: number): 1 | 2 | 3 | 4 {
+  const v = Math.round(Number(n));
+  if (v >= 1 && v <= 4) return v as 1 | 2 | 3 | 4;
+  return 2;
+}
+
+function clampPromptAspect(ratio: string): ChainedQuickCreateResumePayload["aspectRatio"] {
+  return (CHAIN_ASPECT_OPTIONS.includes(ratio as (typeof CHAIN_ASPECT_OPTIONS)[number])
+    ? ratio
+    : "1:1") as ChainedQuickCreateResumePayload["aspectRatio"];
+}
 
 function isPromptCharaSelectable(c: CharaProfile): boolean {
   return c.status === "done";
@@ -541,7 +570,18 @@ const PromptCardItem = ({ card, index, onClick }: PromptCardItemProps) => {
   );
 };
 
-const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }: PromptGenPageProps) => {
+const PromptGenPage = ({
+  charas,
+  listLoading,
+  listError,
+  onPromptSessionChange,
+  autoSubmitEnabled = false,
+  onAutoSubmitToggle,
+  autoSubmitConfig,
+  onAutoSubmit,
+  onChainedQuickCreateResume,
+  onOpenConfig,
+}: PromptGenPageProps) => {
   const [selectedCharaId, setSelectedCharaId] = useState<string>("");
   const [seedPrompt, setSeedPrompt] = useState("");
   const [promptCount, setPromptCount] = useState<2 | 3 | 4>(3);
@@ -554,9 +594,14 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
   const [historyRecords, setHistoryRecords] = useState<PromptHistoryRecord[]>([]);
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showAutoSubmitToast, setShowAutoSubmitToast] = useState(false);
   const tipTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelledRef = useRef(false);
+  const lastAutoSubmitKeyRef = useRef("");
+  /** 本轮 start 是否已请求服务端链式一键创作（用于跳过客户端 onAutoSubmit 重复提交） */
+  const lastStartUsedServerChainRef = useRef(false);
+  const toastTimerRef = useRef<number | null>(null);
   /** 本轮生成结果对应的角色（避免用户在 done 态切换下拉框后错绑角色） */
   const sessionCharaIdRef = useRef<string>("");
 
@@ -667,6 +712,8 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
     setActiveHistoryId(null);
     setTipIndex(0);
     cancelledRef.current = false;
+    lastAutoSubmitKeyRef.current = "";
+    lastStartUsedServerChainRef.current = false;
     clearPollTimer();
     clearTipTimer();
 
@@ -676,7 +723,19 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
 
     const charaId = selectedCharaId;
     const seed = seedPrompt.trim();
-    const count = promptCount;
+    const useAutoDefaults = Boolean(autoSubmitEnabled && autoSubmitConfig);
+    const count = useAutoDefaults
+      ? clampPromptCountFromConfig(autoSubmitConfig!.promptCount)
+      : promptCount;
+
+    const chain_quick_create = useAutoDefaults
+      ? {
+          n: clampPromptImagesPer(autoSubmitConfig!.imagesPerPrompt),
+          aspect_ratio: clampPromptAspect(autoSubmitConfig!.aspectRatio),
+          max_prompts: count,
+        }
+      : undefined;
+    lastStartUsedServerChainRef.current = Boolean(chain_quick_create);
 
     const finishWithError = (message: string) => {
       clearTipTimer();
@@ -690,6 +749,7 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
       const { task_id } = await creationApi.startPromptPrecreation(charaId, {
         seed_prompt: seed,
         count,
+        chain_quick_create: chain_quick_create ?? undefined,
       });
       const pendingRecord: PromptHistoryRecord = {
         id: task_id,
@@ -756,6 +816,34 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
               cards: nextCards,
               updatedAt: Date.now(),
             });
+
+            const chainedId = (st.chained_quick_create_task_id ?? "").trim();
+            if (
+              chainedId &&
+              lastStartUsedServerChainRef.current &&
+              onChainedQuickCreateResume &&
+              autoSubmitConfig
+            ) {
+              const charaForResume = charas.find((c) => c.id === charaId) ?? null;
+              const limit = Math.min(
+                nextCards.length,
+                clampPromptCountFromConfig(autoSubmitConfig.promptCount)
+              );
+              const sliced = nextCards.slice(0, limit);
+              onChainedQuickCreateResume({
+                taskId: chainedId,
+                charaId,
+                charaName: charaForResume?.name ?? selectedChara?.name ?? "未知角色",
+                charaAvatar: charaForResume?.avatarUrl ?? selectedChara?.avatarUrl ?? "",
+                n: clampPromptImagesPer(autoSubmitConfig.imagesPerPrompt),
+                aspectRatio: clampPromptAspect(autoSubmitConfig.aspectRatio),
+                prompts: sliced.map((p) => ({
+                  id: p.id,
+                  title: p.title,
+                  preview: p.preview,
+                })),
+              });
+            }
             return;
           }
 
@@ -787,6 +875,8 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
 
   const handleRegenerate = () => {
     sessionCharaIdRef.current = "";
+    lastAutoSubmitKeyRef.current = "";
+    lastStartUsedServerChainRef.current = false;
     setGenError(null);
     setStatusStep(null);
     setGenState("idle");
@@ -840,6 +930,8 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
     clearPollTimer();
     cancelledRef.current = true;
     sessionCharaIdRef.current = "";
+    lastAutoSubmitKeyRef.current = "";
+    lastStartUsedServerChainRef.current = false;
     setSeedPrompt("");
     setPromptCount(3);
     setCards([]);
@@ -877,6 +969,30 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
   };
 
   useEffect(() => {
+    if (lastStartUsedServerChainRef.current) return;
+    if (!autoSubmitEnabled || !onAutoSubmit || !autoSubmitConfig) return;
+    if (genState !== "done" || cards.length === 0 || !activeHistoryId) return;
+    const baseRecord = historyRecords.find((r) => r.id === activeHistoryId);
+    if (!baseRecord) return;
+    const key = `${baseRecord.id}|${cards.map((c) => c.id).join(",")}`;
+    if (key === lastAutoSubmitKeyRef.current) return;
+    lastAutoSubmitKeyRef.current = key;
+    onAutoSubmit({ ...baseRecord, cards, promptCount: cards.length }, autoSubmitConfig);
+    setShowAutoSubmitToast(true);
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setShowAutoSubmitToast(false), 2800);
+  }, [
+    genState,
+    autoSubmitEnabled,
+    autoSubmitConfig,
+    activeHistoryId,
+    cards,
+    historyRecords,
+    onAutoSubmit,
+    onChainedQuickCreateResume,
+  ]);
+
+  useEffect(() => {
     return () => {
       cancelledRef.current = true;
       if (tipTimerRef.current !== null) {
@@ -886,6 +1002,10 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
       if (pollTimerRef.current !== null) {
         window.clearTimeout(pollTimerRef.current);
         pollTimerRef.current = null;
+      }
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
       }
     };
   }, []);
@@ -903,6 +1023,56 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
   return (
     <div className="flex h-full overflow-hidden">
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div
+          className="shrink-0 px-6 py-2.5 border-b border-rose-100/40 flex items-center justify-between"
+          style={{ background: "rgba(255,255,255,0.2)" }}
+        >
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 flex items-center justify-center">
+              <i className="ri-flashlight-line text-rose-400 text-sm"></i>
+            </div>
+            <span
+              className="text-xs text-rose-400/70"
+              style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+            >
+              生成完成后自动提交到美图创作
+            </span>
+            <button
+              type="button"
+              onClick={() => onAutoSubmitToggle?.(!autoSubmitEnabled)}
+              className="w-8 h-5 flex items-center justify-center cursor-pointer transition-all duration-200"
+              style={{ color: autoSubmitEnabled ? "#f472b6" : "#e5a3b3" }}
+              aria-label={autoSubmitEnabled ? "关闭自动提交" : "开启自动提交"}
+            >
+              <i className={autoSubmitEnabled ? "ri-toggle-fill text-lg" : "ri-toggle-line text-lg"}></i>
+            </button>
+            {autoSubmitEnabled && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full"
+                style={{ background: "rgba(253,164,175,0.15)", color: "#f472b6" }}
+              >
+                已开启
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpenConfig?.()}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs cursor-pointer transition-all duration-200 whitespace-nowrap"
+            style={{
+              background: "rgba(253,164,175,0.1)",
+              border: "1px solid rgba(253,164,175,0.2)",
+              color: "#f472b6",
+              fontFamily: "'ZCOOL KuaiLe', cursive",
+            }}
+          >
+            <span className="w-3 h-3 flex items-center justify-center">
+              <i className="ri-settings-3-line text-xs"></i>
+            </span>
+            默认配置
+          </button>
+        </div>
+
         <div
         className="shrink-0 px-6 py-5 border-b border-rose-100/40"
         style={{ background: "rgba(255,255,255,0.3)" }}
@@ -1270,6 +1440,23 @@ const PromptGenPage = ({ charas, listLoading, listError, onPromptSessionChange }
         onConfirm={confirmClearAll}
         onCancel={() => setShowClearConfirm(false)}
       />
+
+      {showAutoSubmitToast && (
+        <div
+          className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm text-white whitespace-nowrap transition-all duration-300"
+          style={{
+            background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+            boxShadow: "0 4px 16px rgba(244,114,182,0.35)",
+            fontFamily: "'ZCOOL KuaiLe', cursive",
+          }}
+          role="status"
+        >
+          <span className="w-4 h-4 flex items-center justify-center">
+            <i className="ri-check-line text-sm"></i>
+          </span>
+          已自动提交到美图创作，正在切换中～
+        </div>
+      )}
 
       <style>{`
         @keyframes pg-spin {
