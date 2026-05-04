@@ -74,6 +74,7 @@ def run_creation_advice_pipeline(
     character_id: str,
     bio: Dict[str, Any],
     on_step: OnStep = None,
+    fixed_unused_texts: Optional[List[str]] = None,
 ) -> Tuple[str, Dict[str, List[str]]]:
     """
     执行两次推理，写入 creation_advice.md 与 creation_seed_draft.json。
@@ -82,7 +83,7 @@ def run_creation_advice_pipeline(
     text_understanding, visual_official, visual_fanart, chara_profile = (
         load_chara_profile_prerequisite_contents(character_id)
     )
-    history_seed_prompts = build_history_seed_prompts(bio)
+    history_seed_prompts = build_history_seed_prompts(bio, fixed_unused_texts)
 
     if on_step:
         on_step(STEP_CREATION_ADVICE)

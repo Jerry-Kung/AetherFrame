@@ -247,3 +247,30 @@ class BioPatchRequest(BaseModel):
         ):
             raise ValueError("至少提供 chara_profile、creative_advice、official_seed_prompts 之一")
         return self
+
+
+class FixedSeedTemplateOut(BaseModel):
+    """固定模板单条（API 输出）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    text: str
+    used: bool
+    created_at: ApiDateTime
+    updated_at: ApiDateTime
+
+
+class FixedSeedTemplateCreate(BaseModel):
+    text: str = Field(..., min_length=1, max_length=100_000)
+
+
+class FixedSeedTemplatePatch(BaseModel):
+    text: Optional[str] = Field(None, max_length=100_000)
+    used: Optional[bool] = None
+
+    @model_validator(mode="after")
+    def at_least_one_field(self):
+        if self.text is None and self.used is None:
+            raise ValueError("至少提供 text 或 used 之一")
+        return self

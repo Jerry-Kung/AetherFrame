@@ -16,6 +16,7 @@ from app.prompts.material.standard_photo import (
     half_front_prompt,
     half_side_prompt,
 )
+from app.repositories.fixed_seed_template_repository import FixedSeedTemplateRepository
 from app.repositories.material_repository import INDEX_TO_SHOT_TYPE, MaterialCharacterRepository
 from app.utils.image_generation_timeout import (
     IMAGE_GEN_TIMEOUT_ERROR_MESSAGE,
@@ -46,6 +47,7 @@ class MaterialService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = MaterialCharacterRepository(db)
+        self.fixed_seed_repo = FixedSeedTemplateRepository(db)
 
     def raw_image_url(self, character_id: str, stored_filename: str) -> str:
         return f"/api/material/characters/{character_id}/images/raw/{stored_filename}"
@@ -739,10 +741,13 @@ class MaterialService:
                 repo.update_creation_advice_task(task_id, {"current_step": step})
 
             try:
+                ms_inner = MaterialService(db)
+                fixed_unused = ms_inner.list_fixed_unused_seed_texts()
                 advice_md, _seed_draft = creation_advice_generation_service.run_creation_advice_pipeline(
                     character_id=character_id,
                     bio=bio,
                     on_step=on_step,
+                    fixed_unused_texts=fixed_unused,
                 )
             except Exception as e:
                 logger.error(f"生成创作建议任务执行失败: {e}", exc_info=True)
@@ -1022,3 +1027,47 @@ class MaterialService:
         if not updated:
             raise ValueError("角色不存在")
         return updated
+
+    # --- 固定种子模板（全角色共享） ---
+
+    def list_fixed_seed_templates(self) -> List[Dict[str, Any]]:
+        return [self.fixed_seed_repo.row_to_dict(r) for r in self.fixed_seed_repo.list_all()]
+
+    def create_fixed_seed_template(self, text: str) -> Dict[str, Any]:
+        t = (text or "").strip()
+        if not t:
+            raise ValueError("固定模板正文不能为空")
+        row = self.fixed_seed_repo.create(t)
+        return self.fixed_seed_repo.row_to_dict(row)
+
+    def patch_fixed_seed_template(
+        self,
+        template_id: str,
+        *,
+        text: Optional[str] = None,
+        used: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        if text is None and used is None:
+            raise ValueError("至少提供 text 或 used 之一")
+        new_text = (text.strip() if isinstance(text, str) else None)
+        if new_text is not None and not new_text:
+            raise ValueError("固定模板正文不能为空")
+        row = self.fixed_seed_repo.update(template_id, text=new_text, used=used)
+        if not row:
+            raise ValueError("固定模板不存在")
+        return self.fixed_seed_repo.row_to_dict(row)
+
+    def delete_fixed_seed_template(self, template_id: str) -> None:
+        if not self.fixed_seed_repo.delete(template_id):
+            raise ValueError("固定模板不存在")
+
+    def clear_fixed_seed_templates(self) -> int:
+        return self.fixed_seed_repo.delete_all()
+
+    def list_fixed_unused_seed_texts(self) -> List[str]:
+        out: List[str] = []
+        for row in self.fixed_seed_repo.list_unused():
+            s = (row.text or "").strip()
+            if s:
+                out.append(s)
+        return out

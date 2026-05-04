@@ -1,18 +1,21 @@
 import { useCallback, useMemo, useState } from "react";
-import type { CharaBio, OfficialSeedPrompts } from "@/types/material";
-import { cloneOfficialSeedPrompts } from "@/types/material";
-
-type SeedScope = keyof Pick<OfficialSeedPrompts, "characterSpecific" | "general">;
+import type { CharaBio, OfficialSeedPrompts, SeedPrompt } from "@/types/material";
+import { emptyOfficialSeedPrompts } from "@/types/material";
+import type { SeedPromptSection } from "@/mocks/materialChara";
+import SeedPromptSection from "./SeedPromptSection";
 
 interface OfficialContentTabProps {
   officialPhotos: [string | null, string | null, string | null, string | null, string | null];
   bio: CharaBio;
+  fixedTemplates: SeedPrompt[];
   onPhotoClick: (slotIndex: number) => void;
   onOfficialPhotoDelete: (slotIndex: number) => void | Promise<void>;
   onGoProfileTask?: () => void;
-  onToggleUsedSeed: (next: OfficialSeedPrompts) => void | Promise<void>;
-  onDeleteSeed: (scope: SeedScope, id: string) => void | Promise<void>;
-  onClearSeeds: () => void | Promise<void>;
+  onAddSeed: (section: SeedPromptSection, text: string) => void | Promise<void>;
+  onEditSeed: (section: SeedPromptSection, seedId: string, text: string) => void | Promise<void>;
+  onToggleSeedUsed: (section: SeedPromptSection, seedId: string) => void | Promise<void>;
+  onDeleteSeed: (section: SeedPromptSection, id: string) => void | Promise<void>;
+  onClearSeedsAll: () => void | Promise<void>;
 }
 
 const PHOTO_LABELS = [
@@ -30,127 +33,35 @@ type StandardPhotoItem = {
   url: string;
 };
 
-type SeedSubTab = "character" | "general";
-
-function SeedPromptRow({
-  s,
-  scope,
-  togglingId,
-  deletingId,
-  onToggleUsed,
-  onRequestDelete,
-}: {
-  s: { id: string; text: string; used: boolean };
-  scope: SeedScope;
-  togglingId: string | null;
-  deletingId: string | null;
-  onToggleUsed: (scope: SeedScope, id: string) => void;
-  onRequestDelete: (scope: SeedScope, id: string, text: string) => void;
-}) {
-  return (
-    <li
-      className="rounded-2xl border border-rose-100/80 px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"
-      style={{ background: "rgba(255,255,255,0.85)" }}
-    >
-      <p className="text-sm text-rose-800/90 leading-relaxed flex-1 min-w-0">{s.text}</p>
-      <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
-        <button
-          type="button"
-          disabled={togglingId === s.id || deletingId === s.id}
-          onClick={() => onToggleUsed(scope, s.id)}
-          className="text-xs px-3 py-1.5 rounded-xl cursor-pointer transition-all disabled:opacity-50 whitespace-nowrap"
-          style={{
-            fontFamily: "'ZCOOL KuaiLe', cursive",
-            background: s.used ? "rgba(110,231,183,0.2)" : "rgba(253,164,175,0.12)",
-            color: s.used ? "#059669" : "#db2777",
-            border: s.used ? "1px solid rgba(110,231,183,0.35)" : "1px solid rgba(244,114,182,0.25)",
-          }}
-        >
-          {togglingId === s.id ? "…" : s.used ? "已使用" : "标记使用"}
-        </button>
-        <button
-          type="button"
-          disabled={deletingId === s.id || togglingId === s.id}
-          onClick={() => onRequestDelete(scope, s.id, s.text)}
-          className="w-9 h-9 flex items-center justify-center rounded-xl cursor-pointer transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed text-rose-400 hover:text-red-600 hover:bg-red-50 hover:border-red-300/80 hover:shadow-sm hover:shadow-red-100"
-          style={{ border: "1px solid rgba(244,114,182,0.2)" }}
-          title="删除此条种子提示词"
-          aria-label="删除此条种子提示词"
-        >
-          <i className="ri-delete-bin-line text-lg" />
-        </button>
-      </div>
-    </li>
-  );
-}
-
-function SeedSection({
-  items,
-  scope,
-  togglingId,
-  deletingId,
-  onToggleUsed,
-  onRequestDelete,
-}: {
-  items: { id: string; text: string; used: boolean }[];
-  scope: SeedScope;
-  togglingId: string | null;
-  deletingId: string | null;
-  onToggleUsed: (scope: SeedScope, id: string) => void;
-  onRequestDelete: (scope: SeedScope, id: string, text: string) => void;
-}) {
-  if (items.length === 0) {
-    return (
-      <div
-        className="rounded-2xl border border-dashed border-rose-200/70 flex flex-col items-center justify-center py-10 px-4 text-center"
-        style={{ background: "rgba(253,164,175,0.05)" }}
-      >
-        <i className="ri-inbox-2-line text-rose-300 text-xl mb-2" />
-        <p className="text-sm text-rose-400/80" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
-          该分类下暂无提示词
-        </p>
-      </div>
-    );
-  }
-  return (
-    <ul className="flex flex-col gap-2">
-      {items.map((s) => (
-        <SeedPromptRow
-          key={s.id}
-          s={s}
-          scope={scope}
-          togglingId={togglingId}
-          deletingId={deletingId}
-          onToggleUsed={onToggleUsed}
-          onRequestDelete={onRequestDelete}
-        />
-      ))}
-    </ul>
-  );
-}
-
-function countUsedSeeds(p: OfficialSeedPrompts | null | undefined): number {
+function countUsedSeedsBio(p: OfficialSeedPrompts | null | undefined): number {
   if (!p) return 0;
   return (
     p.characterSpecific.filter((s) => s.used).length + p.general.filter((s) => s.used).length
   );
 }
 
+function countUsedFixed(fixed: SeedPrompt[]): number {
+  return fixed.filter((s) => s.used).length;
+}
+
 const OfficialContentTab = ({
   officialPhotos,
   bio,
+  fixedTemplates,
   onPhotoClick,
   onOfficialPhotoDelete,
   onGoProfileTask,
-  onToggleUsedSeed,
+  onAddSeed,
+  onEditSeed,
+  onToggleSeedUsed,
   onDeleteSeed,
-  onClearSeeds,
+  onClearSeedsAll,
 }: OfficialContentTabProps) => {
   const [deletePhotoId, setDeletePhotoId] = useState<string | null>(null);
-  const [seedSubTab, setSeedSubTab] = useState<SeedSubTab>("character");
+  const [seedSubTab, setSeedSubTab] = useState<SeedPromptSection>("characterSpecific");
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [seedDeleteTarget, setSeedDeleteTarget] = useState<{
-    scope: SeedScope;
+    section: SeedPromptSection;
     id: string;
     text: string;
   } | null>(null);
@@ -178,10 +89,11 @@ const OfficialContentTab = ({
 
   const charaProfileText = (bio.charaProfile ?? "").trim();
   const officialSeeds = bio.officialSeedPrompts ?? null;
-  const hasSeedRows =
-    !!officialSeeds &&
-    (officialSeeds.characterSpecific.length > 0 || officialSeeds.general.length > 0);
-  const usedSeedCount = countUsedSeeds(officialSeeds);
+  const effectiveSeeds = officialSeeds ?? emptyOfficialSeedPrompts();
+  const bioSeedRowCount =
+    (officialSeeds?.characterSpecific.length ?? 0) + (officialSeeds?.general.length ?? 0);
+  const hasAnySeedContent = bioSeedRowCount > 0 || fixedTemplates.length > 0;
+  const usedSeedCount = countUsedSeedsBio(officialSeeds) + countUsedFixed(fixedTemplates);
 
   const handleConfirmDelete = () => {
     if (photoPendingDelete === undefined) return;
@@ -194,26 +106,20 @@ const OfficialContentTab = ({
     setDeletePhotoId(null);
   };
 
-  const flipUsed = useCallback(
-    async (scope: keyof Pick<OfficialSeedPrompts, "characterSpecific" | "general">, id: string) => {
-      if (!officialSeeds) return;
-      const next = cloneOfficialSeedPrompts(officialSeeds);
-      const arr = next[scope];
-      const idx = arr.findIndex((s) => s.id === id);
-      if (idx < 0) return;
-      arr[idx] = { ...arr[idx], used: !arr[idx].used };
+  const runToggle = useCallback(
+    async (section: SeedPromptSection, id: string) => {
       setTogglingId(id);
       try {
-        await onToggleUsedSeed(next);
+        await onToggleSeedUsed(section, id);
       } finally {
         setTogglingId(null);
       }
     },
-    [officialSeeds, onToggleUsedSeed]
+    [onToggleSeedUsed]
   );
 
-  const requestSeedDelete = useCallback((scope: SeedScope, id: string, text: string) => {
-    setSeedDeleteTarget({ scope, id, text });
+  const requestSeedDelete = useCallback((section: SeedPromptSection, id: string, text: string) => {
+    setSeedDeleteTarget({ section, id, text });
   }, []);
 
   const cancelSeedDelete = useCallback(() => {
@@ -223,10 +129,10 @@ const OfficialContentTab = ({
 
   const confirmSeedDelete = useCallback(async () => {
     if (!seedDeleteTarget) return;
-    const { scope, id } = seedDeleteTarget;
+    const { section, id } = seedDeleteTarget;
     setDeletingSeedId(id);
     try {
-      await onDeleteSeed(scope, id);
+      await onDeleteSeed(section, id);
       setSeedDeleteTarget(null);
     } finally {
       setDeletingSeedId(null);
@@ -241,12 +147,12 @@ const OfficialContentTab = ({
   const confirmClearSeeds = useCallback(async () => {
     setClearingSeeds(true);
     try {
-      await onClearSeeds();
+      await onClearSeedsAll();
       setClearSeedsOpen(false);
     } finally {
       setClearingSeeds(false);
     }
-  }, [onClearSeeds]);
+  }, [onClearSeedsAll]);
 
   return (
     <div className="flex flex-col gap-6 min-h-0">
@@ -433,7 +339,7 @@ const OfficialContentTab = ({
               已用 {usedSeedCount} 条
             </span>
           </h3>
-          {hasSeedRows && (
+          {hasAnySeedContent && (
             <button
               type="button"
               onClick={() => setClearSeedsOpen(true)}
@@ -450,100 +356,116 @@ const OfficialContentTab = ({
           )}
         </div>
         <p className="text-xs text-rose-400/70 mb-3" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
-          来自加工任务中保存的正式种子；可随时标记是否已在创作中使用。
+          支持手动添加与编辑；也可从加工任务保存为正式种子。固定模板全角色共享，不写入当前角色档案。
         </p>
 
-        {!hasSeedRows ? (
-          <div
-            className="rounded-2xl border border-dashed border-rose-200/80 flex flex-col items-center justify-center py-12 px-6 text-center"
-            style={{ background: "rgba(253,164,175,0.06)" }}
+        <div
+          className="inline-flex flex-wrap items-center gap-1 p-1 rounded-2xl mb-3"
+          style={{
+            background: "rgba(253,164,175,0.1)",
+            border: "1px solid rgba(253,164,175,0.2)",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setSeedSubTab("characterSpecific")}
+            className="px-3 py-1.5 rounded-xl text-xs sm:text-sm transition-all cursor-pointer whitespace-nowrap"
+            style={{
+              fontFamily: "'ZCOOL KuaiLe', cursive",
+              background:
+                seedSubTab === "characterSpecific"
+                  ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
+                  : "transparent",
+              color: seedSubTab === "characterSpecific" ? "white" : "#f472b6",
+              boxShadow: seedSubTab === "characterSpecific" ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
+            }}
           >
-            <i className="ri-inbox-line text-rose-300 text-2xl mb-2" />
-            <p className="text-sm text-rose-400/80 max-w-md leading-relaxed mb-4" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
-              暂无正式种子提示词。请在加工任务中生成创作建议后，在「种子提示词」Tab 勾选并保存为正式内容。
-            </p>
-            {onGoProfileTask && (
-              <button
-                type="button"
-                onClick={onGoProfileTask}
-                className="text-xs px-4 py-2 rounded-xl cursor-pointer transition-all hover:opacity-90"
-                style={{
-                  fontFamily: "'ZCOOL KuaiLe', cursive",
-                  background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
-                  color: "white",
-                  boxShadow: "0 2px 10px rgba(244,114,182,0.25)",
-                }}
-              >
-                去加工任务
-              </button>
-            )}
-          </div>
-        ) : (
-          <>
-            <div
-              className="inline-flex items-center gap-1 p-1 rounded-2xl mb-3"
-              style={{
-                background: "rgba(253,164,175,0.1)",
-                border: "1px solid rgba(253,164,175,0.2)",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setSeedSubTab("character")}
-                className="px-3 py-1.5 rounded-xl text-xs sm:text-sm transition-all cursor-pointer whitespace-nowrap"
-                style={{
-                  fontFamily: "'ZCOOL KuaiLe', cursive",
-                  background:
-                    seedSubTab === "character"
-                      ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
-                      : "transparent",
-                  color: seedSubTab === "character" ? "white" : "#f472b6",
-                  boxShadow: seedSubTab === "character" ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
-                }}
-              >
-                角色专属
-                {officialSeeds && (
-                  <span className="ml-1 opacity-80">({officialSeeds.characterSpecific.length})</span>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setSeedSubTab("general")}
-                className="px-3 py-1.5 rounded-xl text-xs sm:text-sm transition-all cursor-pointer whitespace-nowrap"
-                style={{
-                  fontFamily: "'ZCOOL KuaiLe', cursive",
-                  background:
-                    seedSubTab === "general"
-                      ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
-                      : "transparent",
-                  color: seedSubTab === "general" ? "white" : "#f472b6",
-                  boxShadow: seedSubTab === "general" ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
-                }}
-              >
-                通用种子
-                {officialSeeds && <span className="ml-1 opacity-80">({officialSeeds.general.length})</span>}
-              </button>
-            </div>
-            {seedSubTab === "character" ? (
-              <SeedSection
-                items={officialSeeds!.characterSpecific}
-                scope="characterSpecific"
-                togglingId={togglingId}
-                deletingId={deletingSeedId}
-                onToggleUsed={(scope, id) => void flipUsed(scope, id)}
-                onRequestDelete={requestSeedDelete}
-              />
-            ) : (
-              <SeedSection
-                items={officialSeeds!.general}
-                scope="general"
-                togglingId={togglingId}
-                deletingId={deletingSeedId}
-                onToggleUsed={(scope, id) => void flipUsed(scope, id)}
-                onRequestDelete={requestSeedDelete}
-              />
-            )}
-          </>
+            角色专属
+            <span className="ml-1 opacity-80">({effectiveSeeds.characterSpecific.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSeedSubTab("general")}
+            className="px-3 py-1.5 rounded-xl text-xs sm:text-sm transition-all cursor-pointer whitespace-nowrap"
+            style={{
+              fontFamily: "'ZCOOL KuaiLe', cursive",
+              background:
+                seedSubTab === "general"
+                  ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
+                  : "transparent",
+              color: seedSubTab === "general" ? "white" : "#f472b6",
+              boxShadow: seedSubTab === "general" ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
+            }}
+          >
+            通用种子
+            <span className="ml-1 opacity-80">({effectiveSeeds.general.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSeedSubTab("fixed")}
+            className="px-3 py-1.5 rounded-xl text-xs sm:text-sm transition-all cursor-pointer whitespace-nowrap"
+            style={{
+              fontFamily: "'ZCOOL KuaiLe', cursive",
+              background:
+                seedSubTab === "fixed"
+                  ? "linear-gradient(135deg, #fb7185 0%, #e11d48 100%)"
+                  : "transparent",
+              color: seedSubTab === "fixed" ? "white" : "#e11d48",
+              boxShadow: seedSubTab === "fixed" ? "0 2px 8px rgba(225,29,72,0.25)" : "none",
+            }}
+          >
+            固定模板
+            <span className="ml-1 opacity-80">({fixedTemplates.length})</span>
+          </button>
+        </div>
+
+        {seedSubTab === "characterSpecific" && (
+          <SeedPromptSection
+            title="角色专属"
+            icon="ri-user-star-line"
+            accentColor="#f472b6"
+            prompts={effectiveSeeds.characterSpecific}
+            busyId={togglingId ?? deletingSeedId}
+            onToggle={(id) => void runToggle("characterSpecific", id)}
+            onDelete={(id) => {
+              const s = effectiveSeeds.characterSpecific.find((x) => x.id === id);
+              if (s) requestSeedDelete("characterSpecific", id, s.text);
+            }}
+            onAdd={(text) => void onAddSeed("characterSpecific", text)}
+            onEdit={(id, text) => void onEditSeed("characterSpecific", id, text)}
+          />
+        )}
+        {seedSubTab === "general" && (
+          <SeedPromptSection
+            title="通用种子"
+            icon="ri-global-line"
+            accentColor="#fb923c"
+            prompts={effectiveSeeds.general}
+            busyId={togglingId ?? deletingSeedId}
+            onToggle={(id) => void runToggle("general", id)}
+            onDelete={(id) => {
+              const s = effectiveSeeds.general.find((x) => x.id === id);
+              if (s) requestSeedDelete("general", id, s.text);
+            }}
+            onAdd={(text) => void onAddSeed("general", text)}
+            onEdit={(id, text) => void onEditSeed("general", id, text)}
+          />
+        )}
+        {seedSubTab === "fixed" && (
+          <SeedPromptSection
+            title="固定模板"
+            icon="ri-shield-star-line"
+            accentColor="#e11d48"
+            prompts={fixedTemplates}
+            busyId={togglingId ?? deletingSeedId}
+            onToggle={(id) => void runToggle("fixed", id)}
+            onDelete={(id) => {
+              const s = fixedTemplates.find((x) => x.id === id);
+              if (s) requestSeedDelete("fixed", id, s.text);
+            }}
+            onAdd={(text) => void onAddSeed("fixed", text)}
+            onEdit={(id, text) => void onEditSeed("fixed", id, text)}
+          />
         )}
       </section>
 
@@ -649,6 +571,11 @@ const OfficialContentTab = ({
                 确认删除这条种子提示词？
               </h3>
               <p className="text-xs text-rose-400/75 mb-2 text-center">删除后无法恢复，请核对正文是否为你要删的那一条。</p>
+              {seedDeleteTarget.section === "fixed" && (
+                <p className="text-xs text-rose-500 font-medium mb-2 text-center" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
+                  此为全角色共享的固定模板，删除后所有角色列表中都会消失。
+                </p>
+              )}
               <div
                 className="w-full max-h-40 overflow-y-auto rounded-2xl border border-rose-100/90 px-3 py-2.5 text-left mt-1"
                 style={{ background: "rgba(253,164,175,0.06)" }}
@@ -726,7 +653,7 @@ const OfficialContentTab = ({
                 确认清空全部种子提示词？
               </h3>
               <p className="text-sm text-rose-500/90 text-center leading-relaxed" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
-                「角色专属」与「通用种子」两个分类下的所有条目都会被删除，清空后将回到无数据引导页。
+                将清空当前角色的「角色专属」「通用种子」全部条目，并清空<strong className="text-rose-600">所有角色共享</strong>的「固定模板」列表。此操作无法撤销。
               </p>
             </div>
 

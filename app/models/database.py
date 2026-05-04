@@ -328,6 +328,33 @@ def migrate_creation_prompt_precreation_tasks_add_chain_fields() -> None:
         raise
 
 
+def migrate_fixed_seed_templates_seed_defaults() -> None:
+    """空表时插入与前端历史一致的 3 条固定模板初始数据。"""
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        from app.repositories.fixed_seed_template_repository import FixedSeedTemplateRepository
+
+        db = SessionLocal()
+        try:
+            repo = FixedSeedTemplateRepository(db)
+            if len(repo.list_all()) > 0:
+                return
+            defaults = [
+                "soft pastel watercolor illustration style, dreamy kawaii anime art, high quality digital painting, beautiful lighting and atmosphere",
+                "chibi cute super deformed style, round big head small body, adorable expressive face, clean simple background",
+                "cinematic anime scene composition, dramatic perspective, rich color grading, detailed background environment",
+            ]
+            for t in defaults:
+                repo.create(t)
+            logger.info("已迁移: fixed_seed_templates 写入默认 3 条（空表时）")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error("迁移 fixed_seed_templates 默认数据失败: %s", e, exc_info=True)
+        raise
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
@@ -335,6 +362,7 @@ def init_db():
         # 导入所有模型，确保它们被注册
         from app.models.repair import RepairTask, PromptTemplate
         from app.models.material import (
+            FixedSeedTemplate,
             MaterialCharacter,
             MaterialCharacterRawImage,
             MaterialCharaProfileTask,
@@ -352,6 +380,7 @@ def init_db():
         migrate_repair_tasks_add_aspect_ratio()
         migrate_creation_quick_create_tasks_add_seed_prompt()
         migrate_creation_prompt_precreation_tasks_add_chain_fields()
+        migrate_fixed_seed_templates_seed_defaults()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:

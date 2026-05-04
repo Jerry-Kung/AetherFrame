@@ -83,10 +83,22 @@ export default function Home() {
 
   const handleMarkSeedUsed = useCallback(
     async (charaId: string, section: SeedPromptSection, seedId: string) => {
+      if (section === "fixed") {
+        await persistMarkSeedAsUsed({ section: "fixed", seedId });
+        setCharas((prev) => [...prev]);
+        return;
+      }
       const profile = charas.find((c) => c.id === charaId);
       if (!profile) return;
-      const next = await persistMarkSeedAsUsed({ characterId: charaId, profile, section, seedId });
-      setCharas((prev) => prev.map((c) => (c.id === charaId ? next : c)));
+      const next = await persistMarkSeedAsUsed({
+        characterId: charaId,
+        profile,
+        section,
+        seedId,
+      });
+      if (next) {
+        setCharas((prev) => prev.map((c) => (c.id === charaId ? next : c)));
+      }
     },
     [charas]
   );

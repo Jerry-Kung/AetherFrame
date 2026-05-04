@@ -15,10 +15,12 @@ export const DEFAULT_BATCH_CONFIG: BatchTaskConfig = {
 };
 
 /** 与素材模块 `SeedPromptSection` 一致，用于标记「已使用」 */
-export type BatchSeedSection = "characterSpecific" | "general";
+export type BatchSeedSection = "characterSpecific" | "general" | "fixed";
 
 export function apiSeedSectionToUi(section: string): BatchSeedSection {
-  return section === "general" ? "general" : "characterSpecific";
+  if (section === "general") return "general";
+  if (section === "fixed") return "fixed";
+  return "characterSpecific";
 }
 
 /** 首页单条批量创作展示（含拉取后的 Prompt / 图片） */

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.models.material import MaterialCharacter
 from app.repositories.creation_batch_repository import CreationBatchRepository
 from app.repositories.creation_repository import CreationQuickCreateRepository
+from app.repositories.fixed_seed_template_repository import FixedSeedTemplateRepository
 from app.repositories.material_repository import MaterialCharacterRepository
 from app.services.creation_service.prompt_precreation_service import (
     PromptPrecreationService,
@@ -70,10 +71,12 @@ def _collect_unused_seed_pairs(character_id: str, bio_json: Optional[str]) -> Li
 
 
 def _normalize_section(section: str) -> str:
-    s = (section or "").strip()
+    s = (section or "").strip().lower()
+    if s == "fixed":
+        return "fixed"
     if s in ("character_specific", "general"):
         return s
-    if s == "characterSpecific":
+    if s == "characterspecific":
         return "character_specific"
     return s
 
@@ -83,6 +86,7 @@ class BatchAutomationService:
         self.db = db
         self.batch_repo = CreationBatchRepository(db)
         self.material_repo = MaterialCharacterRepository(db)
+        self.fixed_seed_repo = FixedSeedTemplateRepository(db)
 
     def _eligible_done_characters(
         self, filter_ids: Optional[List[str]]
@@ -107,6 +111,19 @@ class BatchAutomationService:
         pool: List[Dict[str, Any]] = []
         for c in characters:
             pool.extend(_collect_unused_seed_pairs(c.id, c.bio_json))
+        for tmpl in self.fixed_seed_repo.list_unused():
+            txt = (tmpl.text or "").strip()
+            if not txt:
+                continue
+            for c in characters:
+                pool.append(
+                    {
+                        "character_id": c.id,
+                        "seed_prompt_id": tmpl.id,
+                        "seed_section": "fixed",
+                        "seed_prompt_text": txt,
+                    }
+                )
         return pool
 
     @staticmethod

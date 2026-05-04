@@ -102,12 +102,27 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
             <img src={task.charaAvatar} alt="" className="w-full h-full object-cover object-top" />
           </div>
           <div className="min-w-0">
-            <p
-              className="text-sm font-bold text-rose-700/80 truncate"
-              style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
-            >
-              {task.charaName}
-            </p>
+            <div className="flex items-center gap-2 min-w-0">
+              <p
+                className="text-sm font-bold text-rose-700/80 truncate"
+                style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+              >
+                {task.charaName}
+              </p>
+              {task.seedPromptSection === "fixed" && (
+                <span
+                  className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                  style={{
+                    fontFamily: "'ZCOOL KuaiLe', cursive",
+                    background: "rgba(225,29,72,0.14)",
+                    color: "#be123c",
+                    border: "1px solid rgba(225,29,72,0.35)",
+                  }}
+                >
+                  固定模板
+                </span>
+              )}
+            </div>
             <p className="text-xs text-rose-400/50 truncate">{seedPreview(task.seedPromptText)}</p>
           </div>
         </div>

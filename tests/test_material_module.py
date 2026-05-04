@@ -698,3 +698,32 @@ class TestMaterialCharacterService:
         }
         assert "- 甲" in build_history_seed_prompts(bio)
         assert "- 乙" in build_history_seed_prompts(bio)
+
+        merged = build_history_seed_prompts(bio, fixed_unused_texts=["  固  "])
+        assert "- 甲" in merged
+        assert "- [固定模板] 固" in merged
+
+        fixed_only = build_history_seed_prompts({}, fixed_unused_texts=["仅固定"])
+        assert fixed_only == "- [固定模板] 仅固定"
+
+
+class TestFixedSeedTemplates:
+    def test_crud_and_clear(self, material_svc):
+        material_svc.clear_fixed_seed_templates()
+        row = material_svc.create_fixed_seed_template("  首条  ")
+        assert row["text"] == "首条"
+        assert row["used"] is False
+        tid = row["id"]
+        patched = material_svc.patch_fixed_seed_template(tid, text="已改", used=True)
+        assert patched["text"] == "已改"
+        assert patched["used"] is True
+        listed = material_svc.list_fixed_seed_templates()
+        assert any(r["id"] == tid for r in listed)
+        material_svc.delete_fixed_seed_template(tid)
+        with pytest.raises(ValueError, match="不存在"):
+            material_svc.delete_fixed_seed_template(tid)
+        material_svc.create_fixed_seed_template("a")
+        material_svc.create_fixed_seed_template("b")
+        n = material_svc.clear_fixed_seed_templates()
+        assert n >= 2
+        assert material_svc.list_fixed_seed_templates() == []

@@ -1,6 +1,7 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import type { CharaProfile } from "@/types/material";
 import * as creationApi from "@/services/creationApi";
+import { listFixedSeedTemplates } from "@/services/materialApi";
 import { ApiError } from "@/services/api";
 import type { BatchTask, BatchTaskConfig } from "@/types/batchAutomation";
 import { DEFAULT_BATCH_CONFIG } from "@/types/batchAutomation";
@@ -22,6 +23,7 @@ interface BatchCreationPageProps {
 
 type GenState = "idle" | "generating";
 
+/** 当前角色 bio 内未用种子条数（不含全局固定模板）。 */
 function getAvailableSeedsCount(chara: CharaProfile): number {
   const p = chara.bio.officialSeedPrompts;
   if (!p) return 0;
@@ -33,6 +35,11 @@ function getAvailableSeedsCount(chara: CharaProfile): number {
     n += 1;
   });
   return n;
+}
+
+function hasAnyAvailableSeed(charas: CharaProfile[], fixedUnusedCount: number): boolean {
+  if (fixedUnusedCount > 0) return true;
+  return charas.some((c) => getAvailableSeedsCount(c) > 0);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -125,6 +132,25 @@ export default function BatchCreationPage({
   const [genProgress, setGenProgress] = useState(0);
   const [genHint, setGenHint] = useState("准备开始批量创作任务…");
   const pollCancelRef = useRef(false);
+  const [fixedSeedUsedFlags, setFixedSeedUsedFlags] = useState<boolean[]>([]);
+
+  const loadFixedSeedMeta = useCallback(async () => {
+    try {
+      const rows = await listFixedSeedTemplates();
+      setFixedSeedUsedFlags(rows.map((r) => r.used));
+    } catch {
+      setFixedSeedUsedFlags([]);
+    }
+  }, []);
+
+  const fixedUnusedCount = useMemo(
+    () => fixedSeedUsedFlags.filter((used) => !used).length,
+    [fixedSeedUsedFlags]
+  );
+
+  useEffect(() => {
+    void loadFixedSeedMeta();
+  }, [loadFixedSeedMeta]);
 
   const loadTasksFromApi = useCallback(async () => {
     setTasksLoading(true);
@@ -187,9 +213,10 @@ export default function BatchCreationPage({
       const task = tasks.find((t) => t.id === taskId);
       if (!task) return;
       await onMarkSeedUsed(task.charaId, task.seedPromptSection, task.seedPromptId);
+      await loadFixedSeedMeta();
       await loadTasksFromApi();
     },
-    [tasks, onMarkSeedUsed, loadTasksFromApi]
+    [tasks, onMarkSeedUsed, loadTasksFromApi, loadFixedSeedMeta]
   );
 
   const startBatch = useCallback(async () => {
@@ -198,7 +225,7 @@ export default function BatchCreationPage({
 
     if (pickCharas.length === 0) return;
 
-    const anySeed = pickCharas.some((c) => getAvailableSeedsCount(c) > 0);
+    const anySeed = hasAnyAvailableSeed(pickCharas, fixedUnusedCount);
     if (!anySeed) {
       setGenHint("没有可用的未使用种子提示词，请先在素材加工中配置正式种子～");
       return;
@@ -271,7 +298,7 @@ export default function BatchCreationPage({
       setGenState("idle");
       await loadTasksFromApi();
     }
-  }, [batchCount, config, eligibleCharas, loadTasksFromApi, selectedCharaIds]);
+  }, [batchCount, config, eligibleCharas, fixedUnusedCount, loadTasksFromApi, selectedCharaIds]);
 
   useEffect(() => {
     return () => {

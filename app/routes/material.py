@@ -24,6 +24,9 @@ from app.models.database import get_db
 from app.schemas.material import (
     ApiResponse,
     BioPatchRequest,
+    FixedSeedTemplateCreate,
+    FixedSeedTemplateOut,
+    FixedSeedTemplatePatch,
     CharacterCreate,
     CharacterDetail,
     CharacterListData,
@@ -215,6 +218,94 @@ async def patch_character_bio(
     except Exception as e:
         logger.error(f"API 错误 - 更新 bio 失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="更新角色档案失败")
+
+
+@router.get("/fixed-seed-templates", response_model=ApiResponse)
+async def list_fixed_seed_templates(
+    service: MaterialService = Depends(get_material_service),
+):
+    rows = service.list_fixed_seed_templates()
+    data = [FixedSeedTemplateOut(**r).model_dump(mode="json") for r in rows]
+    return ApiResponse(success=True, data=data, message="获取固定模板列表成功")
+
+
+@router.post("/fixed-seed-templates", response_model=ApiResponse)
+async def create_fixed_seed_template(
+    body: FixedSeedTemplateCreate,
+    service: MaterialService = Depends(get_material_service),
+):
+    try:
+        row = service.create_fixed_seed_template(body.text)
+        return ApiResponse(
+            success=True,
+            data=FixedSeedTemplateOut(**row).model_dump(mode="json"),
+            message="已添加固定模板",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"API 错误 - 添加固定模板失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="添加固定模板失败") from e
+
+
+@router.patch("/fixed-seed-templates/{template_id}", response_model=ApiResponse)
+async def patch_fixed_seed_template(
+    template_id: str,
+    body: FixedSeedTemplatePatch,
+    service: MaterialService = Depends(get_material_service),
+):
+    tid = (template_id or "").strip()
+    if not tid:
+        raise HTTPException(status_code=400, detail="template_id 无效")
+    try:
+        row = service.patch_fixed_seed_template(
+            tid,
+            text=body.text,
+            used=body.used,
+        )
+        return ApiResponse(
+            success=True,
+            data=FixedSeedTemplateOut(**row).model_dump(mode="json"),
+            message="已更新固定模板",
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "不存在" in msg:
+            raise HTTPException(status_code=404, detail=msg) from e
+        raise HTTPException(status_code=400, detail=msg) from e
+    except Exception as e:
+        logger.error(f"API 错误 - 更新固定模板失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="更新固定模板失败") from e
+
+
+@router.delete("/fixed-seed-templates/{template_id}", response_model=ApiResponse)
+async def delete_fixed_seed_template(
+    template_id: str,
+    service: MaterialService = Depends(get_material_service),
+):
+    tid = (template_id or "").strip()
+    if not tid:
+        raise HTTPException(status_code=400, detail="template_id 无效")
+    try:
+        service.delete_fixed_seed_template(tid)
+        return ApiResponse(success=True, data=None, message="已删除固定模板")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"API 错误 - 删除固定模板失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="删除固定模板失败") from e
+
+
+@router.delete("/fixed-seed-templates", response_model=ApiResponse)
+async def clear_fixed_seed_templates(
+    service: MaterialService = Depends(get_material_service),
+):
+    try:
+        n = service.clear_fixed_seed_templates()
+        return ApiResponse(success=True, data={"deleted": n}, message="已清空全部固定模板")
+    except Exception as e:
+        logger.error(f"API 错误 - 清空固定模板失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="清空固定模板失败") from e
 
 
 @router.delete("/characters/{character_id}", response_model=ApiResponse)
