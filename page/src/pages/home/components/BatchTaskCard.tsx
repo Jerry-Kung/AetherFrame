@@ -1,7 +1,8 @@
 import { useState, useCallback } from "react";
 import CreationResultLightbox from "@/components/CreationResultLightbox";
+import AiCommentModal from "@/pages/creation/components/AiCommentModal";
 import type { BatchTask } from "@/types/batchAutomation";
-import type { QuickCreateImage } from "@/types/quickCreate";
+import type { AiComment, QuickCreateImage } from "@/types/quickCreate";
 
 interface ImageLightboxState {
   images: QuickCreateImage[];
@@ -20,11 +21,25 @@ function seedPreview(text: string): string {
   return `${text.slice(0, 36)}…`;
 }
 
+function promptTitleForBatchImage(task: BatchTask, img: QuickCreateImage): string {
+  const card = task.promptCards.find((c) => c.id === img.promptId);
+  if (card?.title?.trim()) return card.title.trim();
+  const g = task.groups.find((gr) => gr.promptId === img.promptId);
+  if (g?.promptTitle?.trim()) return g.promptTitle.trim();
+  if (g?.promptPreview?.trim()) return g.promptPreview.trim();
+  return "Prompt";
+}
+
 export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: BatchTaskCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [lightbox, setLightbox] = useState<ImageLightboxState | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUsedConfirm, setShowUsedConfirm] = useState(false);
+  const [viewingComment, setViewingComment] = useState<{
+    comment: AiComment;
+    imageUrl: string;
+    promptTitle: string;
+  } | null>(null);
 
   const totalImages = task.images.length;
 
@@ -48,6 +63,20 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
       prev ? { ...prev, index: (prev.index + 1) % prev.images.length } : null
     );
   }, []);
+
+  const handleViewComment = useCallback(
+    (img: QuickCreateImage) => {
+      if (!img.aiComment) return;
+      setViewingComment({
+        comment: img.aiComment,
+        imageUrl: img.url,
+        promptTitle: promptTitleForBatchImage(task, img),
+      });
+    },
+    [task]
+  );
+
+  const closeComment = useCallback(() => setViewingComment(null), []);
 
   return (
     <div
@@ -252,6 +281,28 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
                       </div>
                     </div>
                   </button>
+
+                  {img.aiComment && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleViewComment(img);
+                      }}
+                      className="absolute bottom-2 right-2 z-10 flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs cursor-pointer transition-all duration-200 whitespace-nowrap hover:opacity-90 pointer-events-auto"
+                      style={{
+                        fontFamily: "'ZCOOL KuaiLe', cursive",
+                        background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+                        color: "white",
+                        boxShadow: "0 2px 10px rgba(244,114,182,0.4)",
+                      }}
+                    >
+                      <span className="w-3 h-3 flex items-center justify-center" aria-hidden>
+                        <i className="ri-robot-2-line text-xs"></i>
+                      </span>
+                      AI 评论
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -297,6 +348,15 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
           onClose={closeLightbox}
           onPrev={prevImage}
           onNext={nextImage}
+        />
+      )}
+
+      {viewingComment && (
+        <AiCommentModal
+          comment={viewingComment.comment}
+          imageUrl={viewingComment.imageUrl}
+          promptTitle={viewingComment.promptTitle}
+          onClose={closeComment}
         />
       )}
 

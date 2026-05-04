@@ -36,7 +36,8 @@ function mapPromptCards(cards: creationApi.PromptPrecreationHistoryDetailRespons
 }
 
 function buildGroupsFromQuickCreateDetail(
-  detail: creationApi.QuickCreateHistoryDetailResponse
+  detail: creationApi.QuickCreateHistoryDetailResponse,
+  promptTitleById?: Map<string, string>
 ): { groups: QuickCreateGroup[]; flat: QuickCreateImage[] } {
   const promptMetaMap = new Map((detail.selected_prompts ?? []).map((p) => [p.id, p.fullPrompt] as const));
   const groups: QuickCreateGroup[] = [];
@@ -46,9 +47,10 @@ function buildGroupsFromQuickCreateDetail(
       quickCreateImageFromApiEntry(detail.task_id, r.prompt_id, i, img)
     );
     for (const im of imgs) flat.push(im);
+    const titleFromCards = promptTitleById?.get(r.prompt_id)?.trim();
     groups.push({
       promptId: r.prompt_id,
-      promptTitle: r.prompt_id,
+      promptTitle: titleFromCards || r.prompt_id,
       promptPreview: promptMetaMap.get(r.prompt_id)?.slice(0, 80) || r.full_prompt.slice(0, 80),
       images: imgs,
     });
@@ -115,7 +117,8 @@ export async function hydrateBatchTask(task: BatchTask): Promise<BatchTask> {
       creationApi.getQuickCreateHistory(qc),
     ]);
     const promptCards = mapPromptCards(pDetail.cards);
-    const { groups, flat } = buildGroupsFromQuickCreateDetail(qDetail);
+    const promptTitleById = new Map(promptCards.map((c) => [c.id, c.title] as const));
+    const { groups, flat } = buildGroupsFromQuickCreateDetail(qDetail, promptTitleById);
     return {
       ...task,
       promptCards,
