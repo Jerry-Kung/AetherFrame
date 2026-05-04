@@ -259,7 +259,7 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
             <div className="flex items-center gap-1.5 mb-2">
               <i className="ri-gallery-line text-rose-400 text-xs"></i>
               <span className="text-xs font-medium text-rose-500" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
-                创作结果
+                产线产出
               </span>
               <span className="text-xs text-rose-300/60">{totalImages} 张</span>
             </div>
@@ -350,7 +350,7 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
               }}
             >
               <i className="ri-delete-bin-line text-xs"></i>
-              删除任务
+              删除产线记录
             </button>
           </div>
         </div>
@@ -398,7 +398,7 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
                 <i className="ri-delete-bin-2-line text-rose-400 text-2xl"></i>
               </div>
               <h3 className="text-base font-bold text-rose-600 mb-1.5" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
-                删除这条创作任务？
+                删除这条产线记录？
               </h3>
               <p className="text-sm text-rose-400/70 text-center leading-relaxed">
                 这会同步删除对应的 Prompt 预生成记录和美图创作记录，不可恢复哦～
@@ -465,7 +465,7 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
               </h3>
               <p className="text-xs text-rose-400/70 text-center leading-relaxed break-all mb-1">「{task.seedPromptText}」</p>
               <p className="text-sm text-rose-400/70 text-center leading-relaxed">
-                该种子提示词在素材加工模块中会被标记为「已使用」状态，后续批量创作时不再自动选中～
+                该种子提示词在素材加工模块中会被标记为「已使用」状态，后续灵感产线中不再自动选中～
               </p>
             </div>
             <div className="h-px mx-5" style={{ background: "rgba(253,164,175,0.2)" }} />

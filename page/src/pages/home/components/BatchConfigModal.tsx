@@ -11,6 +11,7 @@ const ASPECT_RATIO_OPTIONS = [
 
 const PROMPT_COUNT_OPTIONS = [1, 2, 3, 4] as const;
 const IMAGES_PER_PROMPT_OPTIONS = [1, 2, 3, 4] as const;
+const BATCH_COUNT_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
 interface BatchConfigModalProps {
   visible: boolean;
@@ -62,13 +63,50 @@ export default function BatchConfigModal({
               className="text-base font-bold text-rose-700"
               style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
             >
-              任务配置
+              产线参数
             </h3>
-            <p className="text-xs text-rose-400/60 mt-0.5">设置每条批量任务的 Prompt 与出图参数</p>
+            <p className="text-xs text-rose-400/60 mt-0.5">设定产出批次、Prompt 数量与出图规格</p>
           </div>
         </div>
 
         <div className="flex flex-col gap-4">
+          <div>
+            <label
+              className="block text-xs font-medium text-rose-500 mb-2"
+              style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+            >
+              <i className="ri-repeat-line mr-1"></i>产出批次数量
+            </label>
+            <div
+              className="flex flex-wrap items-center gap-1 p-1 rounded-2xl"
+              style={{
+                background: "rgba(253,164,175,0.1)",
+                border: "1px solid rgba(253,164,175,0.18)",
+              }}
+            >
+              {BATCH_COUNT_OPTIONS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setConfig((c) => ({ ...c, batchCount: n }))}
+                  className="w-9 h-8 flex items-center justify-center rounded-xl text-sm cursor-pointer transition-all duration-200 whitespace-nowrap"
+                  style={{
+                    fontFamily: "'ZCOOL KuaiLe', cursive",
+                    background:
+                      config.batchCount === n
+                        ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
+                        : "transparent",
+                    color: config.batchCount === n ? "white" : "#f472b6",
+                    boxShadow:
+                      config.batchCount === n ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
+                  }}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div>
             <label
               className="block text-xs font-medium text-rose-500 mb-2"

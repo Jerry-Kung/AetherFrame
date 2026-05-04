@@ -3,12 +3,15 @@ import type { QuickCreateGroup, QuickCreateImage } from "@/types/quickCreate";
 
 /** 任务配置弹窗与提交 API 共用 */
 export interface BatchTaskConfig {
+  /** 产出批次数量（每批对应一条产线记录） */
+  batchCount: number;
   promptCount: number;
   imagesPerPrompt: number;
   aspectRatio: string;
 }
 
 export const DEFAULT_BATCH_CONFIG: BatchTaskConfig = {
+  batchCount: 5,
   promptCount: 2,
   imagesPerPrompt: 2,
   aspectRatio: "1:1",

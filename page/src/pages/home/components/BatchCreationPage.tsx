@@ -108,10 +108,10 @@ function CharaSelectChip({
 }
 
 const GEN_HINTS = [
-  "正在分析可选角色和种子提示词…",
-  "已提交服务端批量任务，正在顺序执行每一轮创作…",
-  "Prompt 预生成与美图创作在云端接力进行中…",
-  "每一轮完成后会自动刷新本条结果，请稍候～",
+  "正在清点角色与种子提示词，为产线备料…",
+  "灵感产线已启动，云端正顺序跑完每一批产出…",
+  "Prompt 预生成与美图创作正在接力进行…",
+  "每一批完成后会自动刷新产线记录，请稍候～",
 ];
 
 export default function BatchCreationPage({
@@ -122,7 +122,6 @@ export default function BatchCreationPage({
 }: BatchCreationPageProps) {
   const eligibleCharas = charas.filter((c) => c.status === "done");
   const [selectedCharaIds, setSelectedCharaIds] = useState<Set<string>>(new Set());
-  const [batchCount, setBatchCount] = useState(5);
   const [genState, setGenState] = useState<GenState>("idle");
   const [config, setConfig] = useState<BatchTaskConfig>(DEFAULT_BATCH_CONFIG);
   const [showConfigModal, setShowConfigModal] = useState(false);
@@ -130,7 +129,7 @@ export default function BatchCreationPage({
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState<string | null>(null);
   const [genProgress, setGenProgress] = useState(0);
-  const [genHint, setGenHint] = useState("准备开始批量创作任务…");
+  const [genHint, setGenHint] = useState("准备启动灵感产线…");
   const pollCancelRef = useRef(false);
   const [fixedSeedUsedFlags, setFixedSeedUsedFlags] = useState<boolean[]>([]);
 
@@ -167,7 +166,7 @@ export default function BatchCreationPage({
       );
       setTasks(hydrated);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "加载创作记录失败";
+      const msg = e instanceof ApiError ? e.message : "加载产线记录失败";
       setTasksError(msg);
     } finally {
       setTasksLoading(false);
@@ -227,7 +226,7 @@ export default function BatchCreationPage({
 
     const anySeed = hasAnyAvailableSeed(pickCharas, fixedUnusedCount);
     if (!anySeed) {
-      setGenHint("没有可用的未使用种子提示词，请先在素材加工中配置正式种子～");
+      setGenHint("没有可用的未使用种子提示词，请先在素材加工里备好正式种子，产线才能开工～");
       return;
     }
 
@@ -241,6 +240,7 @@ export default function BatchCreationPage({
       | "3:4"
       | "9:16";
     const maxPrompts = pc;
+    const iterations = Math.min(10, Math.max(2, Math.round(config.batchCount)));
 
     pollCancelRef.current = false;
     setGenState("generating");
@@ -249,7 +249,7 @@ export default function BatchCreationPage({
 
     try {
       const res = await creationApi.startBatchAutomation({
-        iterations: batchCount,
+        iterations,
         prompt_count: pc,
         images_per_prompt: ip,
         aspect_ratio: ar,
@@ -280,8 +280,8 @@ export default function BatchCreationPage({
             setGenProgress(100);
             setGenHint(
               run.status === "failed"
-                ? run.error_message || "批量任务已结束（存在失败）"
-                : "本轮批量创作已完成～"
+                ? run.error_message || "灵感产线已结束（存在失败）"
+                : "本轮灵感产线已跑完～"
             );
             break;
           }
@@ -291,14 +291,14 @@ export default function BatchCreationPage({
         if (hintTimer !== null) window.clearInterval(hintTimer);
       }
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "提交批量创作失败";
+      const msg = e instanceof ApiError ? e.message : "提交灵感产线失败";
       setGenHint(msg);
       setTasksError(msg);
     } finally {
       setGenState("idle");
       await loadTasksFromApi();
     }
-  }, [batchCount, config, eligibleCharas, fixedUnusedCount, loadTasksFromApi, selectedCharaIds]);
+  }, [config, eligibleCharas, fixedUnusedCount, loadTasksFromApi, selectedCharaIds]);
 
   useEffect(() => {
     return () => {
@@ -308,7 +308,8 @@ export default function BatchCreationPage({
 
   const canStart = eligibleCharas.length > 0;
   const allSelected = selectedCharaIds.size === eligibleCharas.length && eligibleCharas.length > 0;
-  const expectedImages = batchCount * config.promptCount * config.imagesPerPrompt;
+  const bc = Math.min(10, Math.max(2, Math.round(config.batchCount)));
+  const expectedImages = bc * config.promptCount * config.imagesPerPrompt;
 
   if (listLoading) {
     return (
@@ -346,7 +347,7 @@ export default function BatchCreationPage({
               className="text-base font-bold text-rose-700 truncate"
               style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
             >
-              批量自动化美图创作
+              灵感工坊
             </h2>
             <span className="text-xs text-rose-300/60 shrink-0 hidden sm:inline">
               {canStart ? `${eligibleCharas.length} 位角色可参与` : "暂无可参与角色"}
@@ -366,7 +367,7 @@ export default function BatchCreationPage({
             }}
           >
             <i className="ri-settings-3-line text-xs"></i>
-            任务配置
+            产线参数
           </button>
         </div>
 
@@ -404,7 +405,7 @@ export default function BatchCreationPage({
                 还没有「资料已完善」的角色呢
               </p>
               <p className="text-xs text-rose-400/60 max-w-sm leading-relaxed">
-                请先到素材加工模块完善角色资料，完成后就能在这里批量创作美图啦～
+                请先到素材加工模块完善角色资料，完成后就能在灵感工坊里启动产线啦～
               </p>
             </div>
           ) : (
@@ -424,44 +425,10 @@ export default function BatchCreationPage({
           )}
         </div>
 
-        <div className="mb-3">
-          <span className="block text-xs font-medium text-rose-500 mb-2" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
-            <i className="ri-stack-line mr-1"></i>创作条数
-          </span>
-          <div className="flex flex-wrap items-center gap-3">
-            <div
-              className="flex flex-wrap items-center gap-1 p-1 rounded-2xl"
-              style={{ background: "rgba(253,164,175,0.1)", border: "1px solid rgba(253,164,175,0.18)" }}
-            >
-              {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setBatchCount(n)}
-                  disabled={genState === "generating"}
-                  className="w-9 h-8 flex items-center justify-center rounded-xl text-sm transition-all duration-200 whitespace-nowrap"
-                  style={{
-                    fontFamily: "'ZCOOL KuaiLe', cursive",
-                    background:
-                      batchCount === n ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)" : "transparent",
-                    color: batchCount === n ? "white" : "#f472b6",
-                    boxShadow: batchCount === n ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
-                    cursor: genState === "generating" ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-            <span className="text-xs text-rose-300/60">
-              共 {batchCount} 条 · 预计约 {expectedImages} 张图
-            </span>
-          </div>
-        </div>
-
         <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <span className="text-xs text-rose-300/50">
-            当前配置：Prompt {config.promptCount} 个 / 每 Prompt {config.imagesPerPrompt} 张 / {config.aspectRatio}
+          <span className="text-xs text-rose-300/50 leading-relaxed">
+            当前产线参数：产出 {bc} 批 / Prompt {config.promptCount} 个 / 每 Prompt {config.imagesPerPrompt} 张 /{" "}
+            {config.aspectRatio} · 预计共 {expectedImages} 张图
           </span>
         </div>
 
@@ -482,7 +449,7 @@ export default function BatchCreationPage({
           }}
         >
           <i className="ri-magic-line text-sm"></i>
-          {genState === "generating" ? "创作进行中…" : "开始批量创作"}
+          {genState === "generating" ? "灵感产线运行中…" : "启动灵感产线"}
         </button>
       </div>
 
@@ -493,7 +460,7 @@ export default function BatchCreationPage({
           </p>
         )}
         {tasksLoading && tasks.length === 0 && (
-          <p className="text-xs text-rose-300/60 text-center shrink-0">正在加载创作记录…</p>
+          <p className="text-xs text-rose-300/60 text-center shrink-0">正在加载产线记录…</p>
         )}
 
         {genState === "generating" && (
@@ -533,13 +500,13 @@ export default function BatchCreationPage({
               <div className="flex items-center gap-2">
                 <i className="ri-gallery-line text-rose-400 text-sm"></i>
                 <span className="text-sm font-bold text-rose-700/80" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
-                  创作结果
+                  产线产出
                 </span>
                 <span
                   className="text-xs px-2 py-0.5 rounded-full"
                   style={{ background: "rgba(253,164,175,0.15)", color: "#f472b6" }}
                 >
-                  {tasks.length} 条
+                  {tasks.length} 条产线记录
                 </span>
               </div>
             </div>
@@ -567,10 +534,10 @@ export default function BatchCreationPage({
               ✨
             </div>
             <h3 className="text-base font-bold text-rose-400/70 mb-2" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
-              还没有批量创作记录哦
+              灵感工坊正在待机中
             </h3>
             <p className="text-sm text-rose-300/55 max-w-xs leading-relaxed">
-              选择角色与条数，点击「开始批量创作」，系统会为每一轮随机匹配角色与未使用的种子提示词，并自动完成 Prompt 预生成与美图创作～
+              选好参与角色，在「产线参数」里设定批次与出图规格，点击「启动灵感产线」，系统会按批随机匹配角色与未用种子，并自动完成 Prompt 预生成与美图创作～
             </p>
           </div>
         )}
