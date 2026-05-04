@@ -1,5 +1,12 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import CreationResultLightbox from "@/components/CreationResultLightbox";
 import type { BatchTask } from "@/types/batchAutomation";
+import type { QuickCreateImage } from "@/types/quickCreate";
+
+interface ImageLightboxState {
+  images: QuickCreateImage[];
+  index: number;
+}
 
 interface BatchTaskCardProps {
   task: BatchTask;
@@ -15,11 +22,32 @@ function seedPreview(text: string): string {
 
 export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: BatchTaskCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const [hoveredImg, setHoveredImg] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<ImageLightboxState | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUsedConfirm, setShowUsedConfirm] = useState(false);
 
   const totalImages = task.images.length;
+
+  const openLightbox = useCallback((images: QuickCreateImage[], imageIndex: number) => {
+    if (images.length === 0) return;
+    setLightbox({ images, index: imageIndex });
+  }, []);
+
+  const closeLightbox = useCallback(() => setLightbox(null), []);
+
+  const prevImage = useCallback(() => {
+    setLightbox((prev) =>
+      prev
+        ? { ...prev, index: (prev.index - 1 + prev.images.length) % prev.images.length }
+        : null
+    );
+  }, []);
+
+  const nextImage = useCallback(() => {
+    setLightbox((prev) =>
+      prev ? { ...prev, index: (prev.index + 1) % prev.images.length } : null
+    );
+  }, []);
 
   return (
     <div
@@ -89,14 +117,20 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
       {!expanded && (
         <div className="px-4 pb-3 pt-1">
           <div className="flex items-center gap-2">
-            {task.images.slice(0, 3).map((img) => (
-              <div
+            {task.images.slice(0, 3).map((img, thumbIdx) => (
+              <button
                 key={img.id}
-                className="w-16 h-16 rounded-xl overflow-hidden shrink-0"
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openLightbox(task.images, thumbIdx);
+                }}
+                className="w-16 h-16 rounded-xl overflow-hidden shrink-0 cursor-pointer p-0"
                 style={{ border: "1px solid rgba(253,164,175,0.2)" }}
+                aria-label="查看大图"
               >
-                <img src={img.url} alt="" className="w-full h-full object-cover object-top" />
-              </div>
+                <img src={img.url} alt="" className="w-full h-full object-cover object-top" draggable={false} />
+              </button>
             ))}
             {totalImages > 3 && (
               <div
@@ -186,22 +220,38 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
               <span className="text-xs text-rose-300/60">{totalImages} 张</span>
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-              {task.images.map((img) => (
+              {task.images.map((img, imgIdx) => (
                 <div
                   key={img.id}
-                  className="relative rounded-xl overflow-hidden cursor-pointer"
-                  style={{ border: "1px solid rgba(253,164,175,0.2)", aspectRatio: "1" }}
-                  onMouseEnter={() => setHoveredImg(img.id)}
-                  onMouseLeave={() => setHoveredImg(null)}
+                  className="relative group rounded-xl overflow-hidden w-full"
+                  style={{ border: "1px solid rgba(253,164,175,0.2)" }}
                 >
-                  <img src={img.url} alt="" className="w-full h-full object-cover object-top" />
-                  {hoveredImg === img.id && (
-                    <div className="absolute inset-0 bg-rose-900/20 flex items-center justify-center">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openLightbox(task.images, imgIdx);
+                    }}
+                    className="relative w-full cursor-pointer transition-all duration-200 text-left block p-0"
+                    aria-label="查看大图"
+                  >
+                    <div className="w-full aspect-square">
+                      <img
+                        src={img.url}
+                        alt=""
+                        className="w-full h-full object-cover object-top"
+                        draggable={false}
+                      />
+                    </div>
+                    <div
+                      className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
+                      style={{ background: "rgba(244,114,182,0.25)" }}
+                    >
                       <div className="w-7 h-7 flex items-center justify-center rounded-full bg-white/80">
                         <i className="ri-zoom-in-line text-rose-500 text-xs"></i>
                       </div>
                     </div>
-                  )}
+                  </button>
                 </div>
               ))}
             </div>
@@ -238,6 +288,16 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
             </button>
           </div>
         </div>
+      )}
+
+      {lightbox && (
+        <CreationResultLightbox
+          images={lightbox.images}
+          index={lightbox.index}
+          onClose={closeLightbox}
+          onPrev={prevImage}
+          onNext={nextImage}
+        />
       )}
 
       {showDeleteConfirm && (

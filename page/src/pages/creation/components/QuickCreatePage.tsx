@@ -19,6 +19,7 @@ import {
   type AiComment,
 } from "@/types/quickCreate";
 import AiCommentModal from "./AiCommentModal";
+import CreationResultLightbox from "@/components/CreationResultLightbox";
 import type { AutoSubmitPayload, ChainedQuickCreateResumePayload } from "../page";
 type GenStatus = "idle" | "generating" | "done";
 
@@ -625,99 +626,6 @@ function HistoryItem({
         >
           <i className="ri-delete-bin-line text-xs"></i>
         </button>
-      </div>
-    </div>
-  );
-}
-
-function Lightbox({
-  lightbox,
-  onClose,
-  onPrev,
-  onNext,
-}: {
-  lightbox: ImageLightbox;
-  onClose: () => void;
-  onPrev: () => void;
-  onNext: () => void;
-}) {
-  const img = lightbox.images[lightbox.index];
-  const total = lightbox.images.length;
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      if (e.key === "ArrowLeft") onPrev();
-      if (e.key === "ArrowRight") onNext();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, onPrev, onNext]);
-
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex flex-col items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)" }}
-      onClick={onClose}
-      role="presentation"
-    >
-      <div
-        className="relative max-w-4xl w-full flex flex-col items-center gap-3"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="relative rounded-2xl overflow-hidden bg-black/20 max-h-[85vh] flex items-center justify-center">
-          <img
-            src={img.url}
-            alt=""
-            className="max-h-[85vh] w-auto max-w-full object-contain"
-            draggable={false}
-          />
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="absolute top-3 right-3 w-9 h-9 flex items-center justify-center rounded-full cursor-pointer"
-            style={{ background: "rgba(0,0,0,0.45)", color: "white" }}
-            aria-label="关闭"
-          >
-            <i className="ri-close-line text-lg"></i>
-          </button>
-
-          {total > 1 && (
-            <>
-              <button
-                type="button"
-                onClick={onPrev}
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full cursor-pointer"
-                style={{ background: "rgba(0,0,0,0.45)", color: "white" }}
-                aria-label="上一张"
-              >
-                <i className="ri-arrow-left-s-line text-lg"></i>
-              </button>
-              <button
-                type="button"
-                onClick={onNext}
-                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full cursor-pointer"
-                style={{ background: "rgba(0,0,0,0.45)", color: "white" }}
-                aria-label="下一张"
-              >
-                <i className="ri-arrow-right-s-line text-lg"></i>
-              </button>
-              <div
-                className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full text-xs text-white"
-                style={{ background: "rgba(0,0,0,0.45)" }}
-              >
-                {lightbox.index + 1} / {total}
-              </div>
-            </>
-          )}
-        </div>
-
-        <p className="text-xs text-white/70 text-center">
-          键盘 <kbd className="px-1 py-0.5 rounded bg-white/10">←</kbd>{" "}
-          <kbd className="px-1 py-0.5 rounded bg-white/10">→</kbd> 切换 ·{" "}
-          <kbd className="px-1 py-0.5 rounded bg-white/10">Esc</kbd> 关闭
-        </p>
       </div>
     </div>
   );
@@ -1900,8 +1808,9 @@ export default function QuickCreatePage({
       </div>
 
       {lightbox && (
-        <Lightbox
-          lightbox={lightbox}
+        <CreationResultLightbox
+          images={lightbox.images}
+          index={lightbox.index}
           onClose={closeLightbox}
           onPrev={prevImage}
           onNext={nextImage}

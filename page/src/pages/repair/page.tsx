@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useRepairTasks } from "@/hooks/useRepairTasks";
 import { useRepairTask } from "@/hooks/useRepairTask";
 import type { RepairTask, EditorState } from "@/types/repair";
@@ -7,6 +7,7 @@ import TaskList from "./components/TaskList";
 import TaskEditor from "./components/TaskEditor";
 import ResultDisplay from "./components/ResultDisplay";
 import CuteConfirmModal from "./components/CuteConfirmModal";
+import { OPEN_REPAIR_TASK_SESSION_KEY } from "@/utils/repairDraftFromImageUrl";
 
 /* ── Background decoration data ───────────────────────── */
 const decorations = [
@@ -35,6 +36,8 @@ const PROMPT_SYNC_DEBOUNCE_MS = 350;
 
 export default function RepairPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const pendingOpenRepairIdRef = useRef<string | null>(null);
   const {
     tasks,
     loading: tasksLoading,
@@ -84,12 +87,24 @@ export default function RepairPage() {
     }
   }, [currentTask?.id]);
 
-  // 当任务列表加载完成后，自动选择第一个任务
-  useEffect(() => {
-    if (tasks.length > 0 && !selectedId) {
-      setSelectedId(tasks[0].id);
+  // 从美图创作等入口携带 openRepairTaskId：写入 ref 并清除 history state，避免刷新后仍选中错误任务
+  useLayoutEffect(() => {
+    const fromState = (location.state as { openRepairTaskId?: string } | null)?.openRepairTaskId;
+    let fromSession = "";
+    try {
+      fromSession = sessionStorage.getItem(OPEN_REPAIR_TASK_SESSION_KEY)?.trim() ?? "";
+    } catch {
+      // ignore
     }
-  }, [tasks, selectedId]);
+    const raw = typeof fromState === "string" ? fromState.trim() : "";
+    const id = raw || fromSession;
+    if (!id) return;
+    pendingOpenRepairIdRef.current = id;
+    navigate(
+      { pathname: location.pathname, search: location.search, hash: location.hash },
+      { replace: true, state: {} }
+    );
+  }, [location.state, location.pathname, location.search, location.hash, navigate]);
 
   // 详情 / 轮询更新 currentTask 时同步左侧列表中的状态与结果，避免侧栏一直显示「未开始」
   useEffect(() => {
@@ -117,6 +132,38 @@ export default function RepairPage() {
     setLocalError(message);
     setTimeout(() => setLocalError(null), 5000);
   }, []);
+
+  // 列表中出现待选任务 ID 时选中；若已加载仍找不到则放弃并提示
+  useEffect(() => {
+    const pending = pendingOpenRepairIdRef.current;
+    if (!pending) return;
+    if (tasks.some((t) => t.id === pending)) {
+      setSelectedId(pending);
+      pendingOpenRepairIdRef.current = null;
+      try {
+        sessionStorage.removeItem(OPEN_REPAIR_TASK_SESSION_KEY);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    if (!tasksLoading && tasks.length > 0) {
+      pendingOpenRepairIdRef.current = null;
+      try {
+        sessionStorage.removeItem(OPEN_REPAIR_TASK_SESSION_KEY);
+      } catch {
+        // ignore
+      }
+      showError("未找到刚创建的修补任务，请从左侧列表手动选择");
+    }
+  }, [tasks, tasksLoading, showError]);
+
+  // 当任务列表加载完成后，自动选择第一个任务（无「待打开修补任务」时）
+  useEffect(() => {
+    if (tasks.length > 0 && !selectedId && !pendingOpenRepairIdRef.current) {
+      setSelectedId(tasks[0].id);
+    }
+  }, [tasks, selectedId]);
 
   /* ── Task actions ─── */
   const handleSelect = useCallback((id: string) => setSelectedId(id), []);
