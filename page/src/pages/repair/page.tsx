@@ -226,7 +226,10 @@ export default function RepairPage() {
         if (promptSyncTimerRef.current) clearTimeout(promptSyncTimerRef.current);
         promptSyncTimerRef.current = setTimeout(() => {
           promptSyncTimerRef.current = null;
-          void updateTask({ prompt: pendingPromptRef.current }).catch((err) => {
+          const trimmedPrompt = pendingPromptRef.current.trim();
+          // 后端 TaskUpdate.prompt 要求 min_length=1；编辑中清空时仅本地保留，不发送空字符串。
+          if (!trimmedPrompt) return;
+          void updateTask({ prompt: trimmedPrompt }).catch((err) => {
             console.error("更新任务失败:", err);
           });
         }, PROMPT_SYNC_DEBOUNCE_MS);
@@ -340,8 +343,9 @@ export default function RepairPage() {
     }
 
     try {
+      const trimmedPrompt = editorState.prompt.trim();
       await updateTask({
-        prompt: editorState.prompt,
+        prompt: trimmedPrompt,
         outputCount: editorState.outputCount,
         aspectRatio: editorState.aspectRatio,
       });
