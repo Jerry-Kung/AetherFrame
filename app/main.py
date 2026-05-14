@@ -36,6 +36,9 @@ class _SuppressPollAccessLog(logging.Filter):
         # 创作 · Prompt 预生成任务状态轮询
         if "/prompt-precreation/tasks/" in msg and "/status HTTP" in msg:
             return False
+        # 创作 · 首页批量自动化 run / 条目列表轮询
+        if "/batch-automation/runs/" in msg or "/batch-automation/items" in msg:
+            return False
         return True
 
 
@@ -87,6 +90,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"数据库初始化失败: {e}", exc_info=True)
         raise
+
+    try:
+        from app.services.startup_image_tasks import run_fail_inflight_image_generation_tasks
+
+        run_fail_inflight_image_generation_tasks()
+    except Exception as e:
+        logger.exception(
+            "启动时将未完成图片生成任务标记为失败时出错（不阻断服务启动）: %s", e
+        )
 
     logger.info("========== 应用初始化完成 ==========")
     yield

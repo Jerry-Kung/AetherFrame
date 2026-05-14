@@ -576,3 +576,86 @@ export async function saveCreativeAdvice(
 ): Promise<ApiCharacterDetail> {
   return patchCharacterBio(characterId, { creative_advice: creativeAdvice });
 }
+
+/** GET /api/material/fixed-seed-templates — 全角色共享固定模板 */
+export interface FixedSeedTemplateApiRow {
+  id: string;
+  text: string;
+  used: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listFixedSeedTemplates(): Promise<FixedSeedTemplateApiRow[]> {
+  const url = `${API_BASE}/fixed-seed-templates`;
+  try {
+    const response = await fetchWithTimeout(url);
+    const data = await parseJson<FixedSeedTemplateApiRow[]>(response);
+    throwIfError(response, data);
+    return (data.data ?? []) as FixedSeedTemplateApiRow[];
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function createFixedSeedTemplate(text: string): Promise<FixedSeedTemplateApiRow> {
+  const url = `${API_BASE}/fixed-seed-templates`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const data = await parseJson<FixedSeedTemplateApiRow>(response);
+    throwIfError(response, data);
+    return data.data as FixedSeedTemplateApiRow;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function patchFixedSeedTemplate(
+  templateId: string,
+  body: { text?: string; used?: boolean }
+): Promise<FixedSeedTemplateApiRow> {
+  const id = String(templateId ?? "").trim();
+  if (!id) throw new ApiError("固定模板 ID 无效", 400);
+  const url = `${API_BASE}/fixed-seed-templates/${encodeURIComponent(id)}`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await parseJson<FixedSeedTemplateApiRow>(response);
+    throwIfError(response, data);
+    return data.data as FixedSeedTemplateApiRow;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function deleteFixedSeedTemplate(templateId: string): Promise<void> {
+  const id = String(templateId ?? "").trim();
+  if (!id) throw new ApiError("固定模板 ID 无效", 400);
+  const url = `${API_BASE}/fixed-seed-templates/${encodeURIComponent(id)}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "DELETE" });
+    const data = await parseJson<unknown>(response);
+    throwIfError(response, data);
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function clearFixedSeedTemplatesApi(): Promise<number> {
+  const url = `${API_BASE}/fixed-seed-templates`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "DELETE" });
+    const data = await parseJson<{ deleted?: number }>(response);
+    throwIfError(response, data);
+    return Number((data.data as { deleted?: number })?.deleted ?? 0);
+  } catch (e) {
+    rethrow(e);
+  }
+}

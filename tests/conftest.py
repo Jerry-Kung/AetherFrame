@@ -55,10 +55,13 @@ def db_session(temp_data_dir):
     from app.models import database
     from app.models.repair import RepairTask, PromptTemplate
     from app.models.material import (
+        FixedSeedTemplate,
         MaterialCharacterRawImage,
         MaterialCharacter,
         MaterialStandardPhotoTask,
     )
+    from app.models.creation import CreationPromptPrecreationTask, CreationQuickCreateTask
+    from app.models.creation_batch import CreationBatchRunItem, CreationBatchRun
 
     database.init_db()
     db = database.SessionLocal()
@@ -66,9 +69,14 @@ def db_session(temp_data_dir):
     yield db
 
     try:
+        db.query(CreationBatchRunItem).delete()
+        db.query(CreationBatchRun).delete()
+        db.query(CreationQuickCreateTask).delete()
+        db.query(CreationPromptPrecreationTask).delete()
         db.query(MaterialCharacterRawImage).delete()
         db.query(MaterialStandardPhotoTask).delete()
         db.query(MaterialCharacter).delete()
+        db.query(FixedSeedTemplate).delete()
         db.query(RepairTask).delete()
         db.query(PromptTemplate).delete()
         db.commit()

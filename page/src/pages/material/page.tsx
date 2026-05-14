@@ -5,6 +5,7 @@ import type {
   CharaProfile,
   OfficialSeedPrompts,
   RawImageType,
+  SeedPrompt,
 } from "@/types/material";
 import {
   DEFAULT_CHARA_AVATAR_PLACEHOLDER,
@@ -16,6 +17,7 @@ import {
 } from "@/types/material";
 import * as materialApi from "@/services/materialApi";
 import { ApiError } from "@/services/api";
+import type { SeedPromptSection } from "@/mocks/materialChara";
 import CuteConfirmModal from "@/pages/repair/components/CuteConfirmModal";
 import ImagePreviewModal from "@/pages/repair/components/ImagePreviewModal";
 import CreateCharaModal from "./components/CreateCharaModal";
@@ -75,11 +77,29 @@ export default function MaterialPage() {
     null
   );
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
+  const [fixedTemplatesRows, setFixedTemplatesRows] = useState<SeedPrompt[]>([]);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(null), 3200);
   }, []);
+
+  const refreshFixedTemplates = useCallback(async () => {
+    try {
+      const rows = await materialApi.listFixedSeedTemplates();
+      setFixedTemplatesRows(
+        rows.map((r) => ({
+          id: r.id,
+          text: r.text,
+          used: r.used,
+          selected: true,
+        }))
+      );
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "加载固定模板失败");
+      setFixedTemplatesRows([]);
+    }
+  }, [showToast]);
 
   const mergeChara = useCallback((profile: CharaProfile) => {
     setCharas((prev) => {
@@ -130,6 +150,10 @@ export default function MaterialPage() {
   useEffect(() => {
     void loadCharacterList();
   }, [loadCharacterList]);
+
+  useEffect(() => {
+    void refreshFixedTemplates();
+  }, [refreshFixedTemplates]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -431,9 +455,96 @@ export default function MaterialPage() {
     [selected, mergeChara, showToast]
   );
 
-  const handleToggleUsedSeed = useCallback(
-    async (next: OfficialSeedPrompts) => {
+  const handleAddSeed = useCallback(
+    async (section: SeedPromptSection, text: string) => {
+      const t = text.trim();
+      if (!t) return;
+      if (section === "fixed") {
+        try {
+          await materialApi.createFixedSeedTemplate(t);
+          await refreshFixedTemplates();
+          showToast("已添加固定模板");
+        } catch (e) {
+          showToast(e instanceof ApiError ? e.message : "添加固定模板失败");
+        }
+        return;
+      }
       if (!selected) return;
+      const seeds = selected.bio.officialSeedPrompts ?? emptyOfficialSeedPrompts();
+      const next = cloneOfficialSeedPrompts(seeds);
+      next[section].push({
+        id: crypto.randomUUID(),
+        text: t,
+        used: false,
+        selected: true,
+      });
+      try {
+        const d = await materialApi.patchCharacterBio(selected.id, {
+          official_seed_prompts: officialSeedPromptsToApiPayload(next),
+        });
+        mergeChara(toCharaProfile(d));
+        showToast("已添加种子提示词");
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "添加失败");
+      }
+    },
+    [selected, mergeChara, showToast, refreshFixedTemplates]
+  );
+
+  const handleEditSeed = useCallback(
+    async (section: SeedPromptSection, seedId: string, newText: string) => {
+      const t = newText.trim();
+      if (!t) return;
+      if (section === "fixed") {
+        try {
+          await materialApi.patchFixedSeedTemplate(seedId, { text: t });
+          await refreshFixedTemplates();
+          showToast("已更新固定模板");
+        } catch (e) {
+          showToast(e instanceof ApiError ? e.message : "更新固定模板失败");
+        }
+        return;
+      }
+      if (!selected) return;
+      const seeds = selected.bio.officialSeedPrompts;
+      if (!seeds) return;
+      const next = cloneOfficialSeedPrompts(seeds);
+      const arr = next[section];
+      const idx = arr.findIndex((s) => s.id === seedId);
+      if (idx < 0) return;
+      arr[idx] = { ...arr[idx], text: t };
+      try {
+        const d = await materialApi.patchCharacterBio(selected.id, {
+          official_seed_prompts: officialSeedPromptsToApiPayload(next),
+        });
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "更新失败");
+      }
+    },
+    [selected, mergeChara, showToast, refreshFixedTemplates]
+  );
+
+  const handleToggleSeedUsed = useCallback(
+    async (section: SeedPromptSection, seedId: string) => {
+      if (section === "fixed") {
+        const row = fixedTemplatesRows.find((s) => s.id === seedId);
+        if (!row) return;
+        try {
+          await materialApi.patchFixedSeedTemplate(seedId, { used: !row.used });
+          await refreshFixedTemplates();
+        } catch (e) {
+          showToast(e instanceof ApiError ? e.message : "更新固定模板状态失败");
+        }
+        return;
+      }
+      if (!selected) return;
+      const seeds = selected.bio.officialSeedPrompts ?? emptyOfficialSeedPrompts();
+      const next = cloneOfficialSeedPrompts(seeds);
+      const arr = next[section];
+      const idx = arr.findIndex((s) => s.id === seedId);
+      if (idx < 0) return;
+      arr[idx] = { ...arr[idx], used: !arr[idx].used };
       try {
         const d = await materialApi.patchCharacterBio(selected.id, {
           official_seed_prompts: officialSeedPromptsToApiPayload(next),
@@ -443,16 +554,25 @@ export default function MaterialPage() {
         showToast(e instanceof ApiError ? e.message : "更新使用状态失败");
       }
     },
-    [selected, mergeChara, showToast]
+    [selected, mergeChara, showToast, refreshFixedTemplates, fixedTemplatesRows]
   );
 
   const handleDeleteSeed = useCallback(
-    async (scope: keyof Pick<OfficialSeedPrompts, "characterSpecific" | "general">, id: string) => {
+    async (section: SeedPromptSection, id: string) => {
+      if (section === "fixed") {
+        try {
+          await materialApi.deleteFixedSeedTemplate(id);
+          await refreshFixedTemplates();
+        } catch (e) {
+          showToast(e instanceof ApiError ? e.message : "删除固定模板失败");
+        }
+        return;
+      }
       if (!selected) return;
       const seeds = selected.bio.officialSeedPrompts;
       if (!seeds) return;
       const next = cloneOfficialSeedPrompts(seeds);
-      next[scope] = next[scope].filter((s) => s.id !== id);
+      next[section] = next[section].filter((s) => s.id !== id);
       try {
         const d = await materialApi.patchCharacterBio(selected.id, {
           official_seed_prompts: officialSeedPromptsToApiPayload(next),
@@ -462,23 +582,24 @@ export default function MaterialPage() {
         showToast(e instanceof ApiError ? e.message : "删除种子提示词失败");
       }
     },
-    [selected, mergeChara, showToast]
+    [selected, mergeChara, showToast, refreshFixedTemplates]
   );
 
-  const handleClearSeeds = useCallback(async () => {
+  const handleClearSeedsAll = useCallback(async () => {
     if (!selected) return;
-    /** 后端需写入空结构；toCharaProfile 解析时空数组会归一为 officialSeedPrompts === null */
     const empty = emptyOfficialSeedPrompts();
     try {
       const d = await materialApi.patchCharacterBio(selected.id, {
         official_seed_prompts: officialSeedPromptsToApiPayload(empty),
       });
       mergeChara(toCharaProfile(d));
-      showToast("已清空全部正式种子提示词");
+      await materialApi.clearFixedSeedTemplatesApi();
+      await refreshFixedTemplates();
+      showToast("已清空种子提示词与固定模板");
     } catch (e) {
-      showToast(e instanceof ApiError ? e.message : "清空种子提示词失败");
+      showToast(e instanceof ApiError ? e.message : "清空失败");
     }
-  }, [selected, mergeChara, showToast]);
+  }, [selected, mergeChara, showToast, refreshFixedTemplates]);
 
   const handleGoProfileTask = useCallback(() => {
     setMainTab("process");
@@ -693,12 +814,15 @@ export default function MaterialPage() {
                   <OfficialContentTab
                     officialPhotos={selected.officialPhotos}
                     bio={selected.bio}
+                    fixedTemplates={fixedTemplatesRows}
                     onPhotoClick={handleOfficialPhotoClick}
                     onOfficialPhotoDelete={handleOfficialPhotoDelete}
                     onGoProfileTask={handleGoProfileTask}
-                    onToggleUsedSeed={handleToggleUsedSeed}
+                    onAddSeed={handleAddSeed}
+                    onEditSeed={handleEditSeed}
+                    onToggleSeedUsed={handleToggleSeedUsed}
                     onDeleteSeed={handleDeleteSeed}
-                    onClearSeeds={handleClearSeeds}
+                    onClearSeedsAll={handleClearSeedsAll}
                   />
                 )}
                 </div>

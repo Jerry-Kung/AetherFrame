@@ -1,5 +1,5 @@
 import logging
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Integer
+from sqlalchemy import Boolean, Column, String, Text, DateTime, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -145,3 +145,18 @@ class MaterialCreationAdviceTask(Base):
             f"<MaterialCreationAdviceTask(id={self.id!r}, character_id={self.character_id!r}, "
             f"status={self.status!r})>"
         )
+
+
+class FixedSeedTemplate(Base):
+    """全角色共享的固定种子模板（不写入 bio_json）。"""
+
+    __tablename__ = "fixed_seed_templates"
+
+    id = Column(String, primary_key=True, index=True)
+    text = Column(Text, nullable=False)
+    used = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<FixedSeedTemplate(id={self.id!r}, used={self.used!r})>"

@@ -4,6 +4,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.datetime_display import configure_logging
 
@@ -29,12 +30,24 @@ logger.info(f"数据库连接URL: {SQLALCHEMY_DATABASE_URL}")
 # 创建引擎
 # - timeout：连接级 busy 等待（秒），与 PRAGMA busy_timeout 配合缓解并发锁竞争
 # - WAL：读写并发更友好，避免后台任务写库时 API 长时间阻塞事件循环
+_connect_kw = {"check_same_thread": False, "timeout": 30.0}
+
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False, "timeout": 30.0},
+    connect_args=_connect_kw,
+    pool_pre_ping=True,
     echo=False,  # 设置为 True 可以查看 SQL 日志
 )
 logger.info("数据库引擎创建成功")
+
+# 长时间后台任务（如预生成后链式一键创作）专用：不占用主连接池，避免 QueuePool 耗尽
+background_engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    connect_args=_connect_kw,
+    poolclass=NullPool,
+    echo=False,
+)
+logger.info("数据库后台引擎（NullPool）创建成功")
 
 
 @event.listens_for(engine, "connect")
@@ -47,8 +60,15 @@ def _sqlite_on_connect(dbapi_connection, _connection_record):
     finally:
         cursor.close()
 
+
+@event.listens_for(background_engine, "connect")
+def _sqlite_on_connect_background(dbapi_connection, _connection_record):
+    _sqlite_on_connect(dbapi_connection, _connection_record)
+
+
 # Session 工厂
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+BackgroundSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=background_engine)
 
 # 基类
 Base = declarative_base()
@@ -264,6 +284,77 @@ def migrate_creation_quick_create_tasks_add_seed_prompt() -> None:
         raise
 
 
+def migrate_creation_prompt_precreation_tasks_add_chain_fields() -> None:
+    """
+    为 creation_prompt_precreation_tasks 补充链式一键创作相关列。
+    新建库由 create_all 直接带列；老库通过 ALTER TABLE 补齐。
+    """
+    if not os.path.exists(DB_PATH):
+        return
+    table = "creation_prompt_precreation_tasks"
+    alters: list[tuple[str, str]] = [
+        ("chain_quick_create", "INTEGER NOT NULL DEFAULT 0"),
+        ("chain_qc_n", "INTEGER"),
+        ("chain_qc_aspect_ratio", "VARCHAR(20)"),
+        ("chain_qc_max_prompts", "INTEGER"),
+        ("chained_quick_create_task_id", "VARCHAR(64)"),
+        ("chain_error", "TEXT"),
+    ]
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    f"SELECT 1 FROM sqlite_master WHERE type='table' AND name='{table}'"
+                )
+            ).fetchone()
+            if row is None:
+                return
+            cols = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+            names = {c[1] for c in cols}
+            for col_name, col_def in alters:
+                if col_name in names:
+                    continue
+                conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+                )
+                logger.info("已迁移: %s 增加列 %s", table, col_name)
+        logger.info("已迁移: creation_prompt_precreation_tasks 链式一键创作列（如需）")
+    except Exception as e:
+        logger.error(
+            "迁移 creation_prompt_precreation_tasks 链式列失败: %s",
+            e,
+            exc_info=True,
+        )
+        raise
+
+
+def migrate_fixed_seed_templates_seed_defaults() -> None:
+    """空表时插入与前端历史一致的 3 条固定模板初始数据。"""
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        from app.repositories.fixed_seed_template_repository import FixedSeedTemplateRepository
+
+        db = SessionLocal()
+        try:
+            repo = FixedSeedTemplateRepository(db)
+            if len(repo.list_all()) > 0:
+                return
+            defaults = [
+                "soft pastel watercolor illustration style, dreamy kawaii anime art, high quality digital painting, beautiful lighting and atmosphere",
+                "chibi cute super deformed style, round big head small body, adorable expressive face, clean simple background",
+                "cinematic anime scene composition, dramatic perspective, rich color grading, detailed background environment",
+            ]
+            for t in defaults:
+                repo.create(t)
+            logger.info("已迁移: fixed_seed_templates 写入默认 3 条（空表时）")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error("迁移 fixed_seed_templates 默认数据失败: %s", e, exc_info=True)
+        raise
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
@@ -271,6 +362,7 @@ def init_db():
         # 导入所有模型，确保它们被注册
         from app.models.repair import RepairTask, PromptTemplate
         from app.models.material import (
+            FixedSeedTemplate,
             MaterialCharacter,
             MaterialCharacterRawImage,
             MaterialCharaProfileTask,
@@ -278,6 +370,7 @@ def init_db():
             MaterialStandardPhotoTask,
         )
         from app.models.creation import CreationPromptPrecreationTask, CreationQuickCreateTask  # noqa: F401
+        from app.models.creation_batch import CreationBatchRun, CreationBatchRunItem  # noqa: F401
 
         Base.metadata.create_all(bind=engine)
         migrate_prompt_templates_add_description()
@@ -286,6 +379,8 @@ def init_db():
         migrate_material_characters_add_setting_source_filename()
         migrate_repair_tasks_add_aspect_ratio()
         migrate_creation_quick_create_tasks_add_seed_prompt()
+        migrate_creation_prompt_precreation_tasks_add_chain_fields()
+        migrate_fixed_seed_templates_seed_defaults()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:

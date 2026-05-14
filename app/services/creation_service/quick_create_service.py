@@ -22,6 +22,10 @@ from app.services.material_service.material_file_service import (
 from app.tools.llm.nano_banana_pro import generate_image_with_nano_banana_pro
 from app.tools.llm.yibu_llm_infer import yibu_gemini_infer
 from app.prompts.creation.prompt_review import prompt_review
+from app.utils.image_generation_timeout import (
+    IMAGE_GEN_TIMEOUT_ERROR_MESSAGE,
+    deadline_exceeded,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -754,6 +758,23 @@ class QuickCreateService:
         task = self.quick_repo.get_by_id(task_id)
         if not task:
             return None
+        if task.status in ("pending", "running"):
+            selected = _parse_json_list(task.selected_prompts_json)
+            prompt_count = len([x for x in selected if isinstance(x, dict)])
+            expected_images = max(1, prompt_count) * max(1, int(task.n or 1))
+            if deadline_exceeded(task.created_at, expected_images):
+                self.quick_repo.update(
+                    task_id,
+                    {
+                        "status": "failed",
+                        "error_message": IMAGE_GEN_TIMEOUT_ERROR_MESSAGE,
+                        "current_step": None,
+                    },
+                )
+                _sync_quick_create_history_files_for_task_id(self.db, task_id)
+                task = self.quick_repo.get_by_id(task_id)
+                if not task:
+                    return None
         results = None
         if task.result_json:
             try:

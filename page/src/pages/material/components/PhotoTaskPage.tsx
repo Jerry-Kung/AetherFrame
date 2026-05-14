@@ -3,6 +3,10 @@ import type { CharaRawImage, RawImageType } from "@/types/material";
 import type { ApiCharacterDetail } from "@/types/material";
 import { ApiError } from "@/services/api";
 import * as materialApi from "@/services/materialApi";
+import {
+  IMAGE_GEN_TIMEOUT_USER_MESSAGE,
+  isPastImageGenDeadline,
+} from "@/utils/imageGenerationTimeout";
 
 interface PhotoTaskPageProps {
   characterId: string;
@@ -441,6 +445,15 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
         }
         if (status.status === "failed") {
           setPollError(status.error_message || "标准照生成失败，请重试");
+          setPageState("config");
+          return;
+        }
+        if (
+          (status.status === "pending" || status.status === "processing") &&
+          isPastImageGenDeadline(status.updated_at, status.output_count)
+        ) {
+          setPollError(IMAGE_GEN_TIMEOUT_USER_MESSAGE);
+          setPageState("config");
           return;
         }
       } catch (e) {

@@ -22,6 +22,11 @@ class CreationPromptPrecreationRepository:
         seed_prompt: str,
         n: int,
         status: str = "pending",
+        *,
+        chain_quick_create: bool = False,
+        chain_qc_n: Optional[int] = None,
+        chain_qc_aspect_ratio: Optional[str] = None,
+        chain_qc_max_prompts: Optional[int] = None,
     ) -> CreationPromptPrecreationTask:
         task_id = f"ppcpre_{uuid.uuid4().hex[:12]}"
         work_dir = directory_service.get_prompt_precreation_task_dir(character_id, task_id)
@@ -35,6 +40,12 @@ class CreationPromptPrecreationRepository:
             error_message=None,
             result_json=None,
             current_step=None,
+            chain_quick_create=bool(chain_quick_create),
+            chain_qc_n=chain_qc_n,
+            chain_qc_aspect_ratio=chain_qc_aspect_ratio,
+            chain_qc_max_prompts=chain_qc_max_prompts,
+            chained_quick_create_task_id=None,
+            chain_error=None,
         )
         self.db.add(task)
         self.db.commit()

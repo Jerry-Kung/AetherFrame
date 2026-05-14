@@ -6,6 +6,10 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import repairApi from "@/services/repairApi";
 import type { AspectRatio, RepairTask, TaskStatus } from "@/types/repair";
 import { backendToFrontendTask, frontendToBackendUpdate } from "@/types/repair";
+import {
+  IMAGE_GEN_TIMEOUT_USER_MESSAGE,
+  isPastImageGenDeadline,
+} from "@/utils/imageGenerationTimeout";
 
 const POLLING_INTERVAL = 15_000; // 15 秒轮询一次（LLM 耗时长，无需高频请求）
 
@@ -35,6 +39,25 @@ export function useRepairTask(taskId: string | null) {
     try {
       const backendTask = await repairApi.getTaskStatus(id);
       const frontendTask = backendToFrontendTask(backendTask);
+      if (
+        frontendTask.status === "processing" &&
+        isPastImageGenDeadline(frontendTask.updatedAt, frontendTask.outputCount)
+      ) {
+        clearPolling();
+        try {
+          const full = await repairApi.getTask(id);
+          setTask(backendToFrontendTask(full));
+        } catch (err) {
+          console.error("修补任务超时后同步详情失败:", err);
+          setError(IMAGE_GEN_TIMEOUT_USER_MESSAGE);
+          setTask({
+            ...frontendTask,
+            status: "failed",
+            errorMessage: IMAGE_GEN_TIMEOUT_USER_MESSAGE,
+          });
+        }
+        return;
+      }
       setTask(frontendTask);
 
       if (frontendTask.status !== "processing") {

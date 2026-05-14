@@ -28,6 +28,10 @@ from app.schemas.repair import (
 )
 from . import repair_file_service
 from app.services.file_service import FileValidationError, FileSaveError, FileDeleteError
+from app.utils.image_generation_timeout import (
+    IMAGE_GEN_TIMEOUT_ERROR_MESSAGE,
+    deadline_exceeded,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +107,17 @@ class RepairService:
             RepairTask 对象，不存在则返回 None
         """
         logger.debug(f"获取任务: task_id={task_id}")
-        return self.task_repo.get_by_id(task_id)
+        task = self.task_repo.get_by_id(task_id)
+        if not task:
+            return None
+        if task.status == "processing" and deadline_exceeded(
+            task.updated_at, task.output_count
+        ):
+            self.task_repo.update_status(
+                task_id, "failed", IMAGE_GEN_TIMEOUT_ERROR_MESSAGE
+            )
+            task = self.task_repo.get_by_id(task_id)
+        return task
 
     def list_tasks(
         self,
