@@ -90,6 +90,26 @@ async def list_characters(
         raise HTTPException(status_code=500, detail="获取角色列表失败")
 
 
+@router.get("/characters/batch", response_model=ApiResponse)
+async def get_characters_batch(
+    ids: str = Query(..., description="逗号分隔的角色ID列表"),
+    service: MaterialService = Depends(get_material_service),
+):
+    """批量获取角色详情，最多 20 个。"""
+    id_list = [i.strip() for i in ids.split(",") if i.strip()]
+    if not id_list:
+        return ApiResponse(success=True, data=[], message="无有效ID")
+    if len(id_list) > 20:
+        raise HTTPException(status_code=400, detail="单次最多查询 20 个角色")
+    try:
+        details = service.get_characters_batch_details(id_list)
+        data = [CharacterDetail(**d).model_dump(mode="json") for d in details]
+        return ApiResponse(success=True, data=data, message="批量获取角色详情成功")
+    except Exception as e:
+        logger.error(f"API 错误 - 批量获取角色详情失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="批量获取角色详情失败")
+
+
 @router.post("/characters", response_model=ApiResponse)
 @router.post("/characters/", response_model=ApiResponse)
 async def create_character(

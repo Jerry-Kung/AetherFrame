@@ -659,3 +659,20 @@ export async function clearFixedSeedTemplatesApi(): Promise<number> {
     rethrow(e);
   }
 }
+
+/**
+ * 批量获取角色详情（最多 20 个）。
+ * 用于首页一次性加载所有已完成角色的完整数据。
+ */
+export async function getCharactersBatch(ids: string[]): Promise<ApiCharacterDetail[]> {
+  if (ids.length === 0) return [];
+  const url = `${API_BASE}/characters/batch?ids=${ids.map(encodeURIComponent).join(",")}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<ApiCharacterDetail[]>(response);
+    throwIfError(response, data);
+    return (data.data ?? []) as ApiCharacterDetail[];
+  } catch (e) {
+    rethrow(e);
+  }
+}

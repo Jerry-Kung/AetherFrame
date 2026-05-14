@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(python -c \"from app.main import app; print\\('OK'\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(grep -v \"^$\")"
+    ]
+  }
+}

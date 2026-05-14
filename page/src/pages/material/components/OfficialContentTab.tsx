@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { CharaBio, OfficialSeedPrompts, SeedPrompt } from "@/types/material";
 import { emptyOfficialSeedPrompts } from "@/types/material";
 import type { SeedPromptSection } from "@/mocks/materialChara";
-import SeedPromptSection from "./SeedPromptSection";
+import SeedPromptSectionPanel from "./SeedPromptSection";
 
 interface OfficialContentTabProps {
   officialPhotos: [string | null, string | null, string | null, string | null, string | null];
@@ -205,7 +205,7 @@ const OfficialContentTab = ({
                       className="absolute inset-0 z-0 cursor-zoom-in text-left"
                       aria-label={`${PHOTO_LABELS[i]}，点击预览`}
                     >
-                      <img src={url} alt="" className="w-full h-full object-cover pointer-events-none" draggable={false} />
+                      <img loading="lazy" src={url} alt="" className="w-full h-full object-cover pointer-events-none" draggable={false} />
                       <div className="absolute inset-x-0 bottom-0 py-1.5 px-2 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                         <span className="text-[10px] text-white/90">{PHOTO_LABELS[i]} · 点击预览</span>
                       </div>
@@ -420,7 +420,7 @@ const OfficialContentTab = ({
         </div>
 
         {seedSubTab === "characterSpecific" && (
-          <SeedPromptSection
+          <SeedPromptSectionPanel
             title="角色专属"
             icon="ri-user-star-line"
             accentColor="#f472b6"
@@ -436,7 +436,7 @@ const OfficialContentTab = ({
           />
         )}
         {seedSubTab === "general" && (
-          <SeedPromptSection
+          <SeedPromptSectionPanel
             title="通用种子"
             icon="ri-global-line"
             accentColor="#fb923c"
@@ -452,7 +452,7 @@ const OfficialContentTab = ({
           />
         )}
         {seedSubTab === "fixed" && (
-          <SeedPromptSection
+          <SeedPromptSectionPanel
             title="固定模板"
             icon="ri-shield-star-line"
             accentColor="#e11d48"

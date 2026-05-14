@@ -425,6 +425,13 @@ class MaterialService:
             "bio": bio,
         }
 
+    def get_characters_batch_details(self, character_ids: List[str]) -> List[Dict[str, Any]]:
+        """批量获取多个角色的完整详情，用于前端一次性加载。"""
+        if not character_ids:
+            return []
+        chars = self.repo.get_by_ids(character_ids)
+        return [self.character_to_detail_dict(c) for c in chars]
+
     def start_standard_photo_task(
         self,
         character_id: str,

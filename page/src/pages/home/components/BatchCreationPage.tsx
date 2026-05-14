@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef, memo } from "react";
 import type { CharaProfile } from "@/types/material";
 import * as creationApi from "@/services/creationApi";
 import { listFixedSeedTemplates } from "@/services/materialApi";
@@ -6,11 +6,7 @@ import { ApiError } from "@/services/api";
 import type { BatchTask, BatchTaskConfig } from "@/types/batchAutomation";
 import { DEFAULT_BATCH_CONFIG } from "@/types/batchAutomation";
 import type { SeedPromptSection } from "@/mocks/materialChara";
-import {
-  buildSkeletonBatchTask,
-  hydrateBatchTask,
-  type BatchAutomationListItemApi,
-} from "@/utils/batchAutomationDisplay";
+import { buildBatchTaskFromHydrated } from "@/utils/batchAutomationDisplay";
 import BatchConfigModal from "./BatchConfigModal";
 import BatchTaskCard from "./BatchTaskCard";
 
@@ -46,40 +42,20 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function listRowToApiRow(row: creationApi.BatchAutomationListItemRow): BatchAutomationListItemApi {
-  return {
-    id: row.id,
-    run_id: row.run_id,
-    run_status: row.run_status,
-    step_index: row.step_index,
-    character_id: row.character_id,
-    chara_name: row.chara_name,
-    chara_avatar: row.chara_avatar,
-    seed_prompt_id: row.seed_prompt_id,
-    seed_section: row.seed_section,
-    seed_prompt_text: row.seed_prompt_text,
-    prompt_precreation_task_id: row.prompt_precreation_task_id,
-    quick_create_task_id: row.quick_create_task_id,
-    status: row.status,
-    error_message: row.error_message,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  };
-}
-
-function CharaSelectChip({
+const CharaSelectChip = memo(function CharaSelectChip({
   chara,
   selected,
   onToggle,
 }: {
   chara: CharaProfile;
   selected: boolean;
-  onToggle: () => void;
+  onToggle: (id: string) => void;
 }) {
+  const handleClick = useCallback(() => onToggle(chara.id), [onToggle, chara.id]);
   return (
     <button
       type="button"
-      onClick={onToggle}
+      onClick={handleClick}
       className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all duration-200 whitespace-nowrap"
       style={{
         background: selected
@@ -105,7 +81,7 @@ function CharaSelectChip({
       )}
     </button>
   );
-}
+});
 
 const GEN_HINTS = [
   "正在清点角色与种子提示词，为产线备料…",
@@ -155,16 +131,9 @@ export default function BatchCreationPage({
     setTasksLoading(true);
     setTasksError(null);
     try {
-      const { items } = await creationApi.listBatchAutomationItems({ limit: 80, offset: 0 });
-      const skeletons = items.map((row) =>
-        buildSkeletonBatchTask(listRowToApiRow(row), charas, config)
-      );
-      const hydrated = await Promise.all(
-        skeletons.map(async (t) =>
-          t.itemStatus === "completed" && t.promptRecordId && t.quickCreateRecordId ? hydrateBatchTask(t) : t
-        )
-      );
-      setTasks(hydrated);
+      const { items } = await creationApi.listBatchAutomationItemsHydrated({ limit: 80, offset: 0 });
+      const tasks = items.map((row) => buildBatchTaskFromHydrated(row, charas, config));
+      setTasks(tasks);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : "加载产线记录失败";
       setTasksError(msg);
@@ -415,7 +384,7 @@ export default function BatchCreationPage({
                   key={chara.id}
                   chara={chara}
                   selected={selectedCharaIds.size === 0 ? true : selectedCharaIds.has(chara.id)}
-                  onToggle={() => toggleChara(chara.id)}
+                  onToggle={toggleChara}
                 />
               ))}
               {selectedCharaIds.size === 0 && eligibleCharas.length > 0 && (
@@ -552,12 +521,6 @@ export default function BatchCreationPage({
         }}
         onCancel={() => setShowConfigModal(false)}
       />
-
-      <style>{`
-        @keyframes batchSpin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }

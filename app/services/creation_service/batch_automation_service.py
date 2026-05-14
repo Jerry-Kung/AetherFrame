@@ -394,6 +394,74 @@ class BatchAutomationService:
             )
         return {"items": items_payload, "total": total}
 
+    def list_items_hydrated(self, *, limit: int, offset: int) -> Dict[str, Any]:
+        """返回 batch items 列表，已完成的条目内联 prompt cards 和 quick create results。"""
+        rows = self.batch_repo.list_all_items(limit=limit, offset=offset)
+        total = self.batch_repo.count_all_items()
+        items_payload: List[Dict[str, Any]] = []
+
+        for it in rows:
+            run = self.batch_repo.get_run(it.run_id)
+            if not run:
+                continue
+            ch = self.material_repo.get_by_id(it.character_id)
+
+            item_data: Dict[str, Any] = {
+                "id": it.id,
+                "run_id": it.run_id,
+                "run_status": run.status,
+                "step_index": it.step_index,
+                "character_id": it.character_id,
+                "chara_name": ch.name if ch else "未知角色",
+                "chara_avatar": self._get_chara_avatar_url(ch) if ch else "",
+                "seed_prompt_id": it.seed_prompt_id,
+                "seed_section": it.seed_section,
+                "seed_prompt_text": it.seed_prompt_text,
+                "prompt_precreation_task_id": it.prompt_precreation_task_id,
+                "quick_create_task_id": it.quick_create_task_id,
+                "status": it.status,
+                "error_message": it.error_message,
+                "created_at": it.created_at,
+                "updated_at": it.updated_at,
+                "prompt_cards": None,
+                "quick_create_results": None,
+            }
+
+            # 仅对已完成的条目内联详情
+            if it.status == "completed":
+                ppc_id = (it.prompt_precreation_task_id or "").strip()
+                qc_id = (it.quick_create_task_id or "").strip()
+
+                if ppc_id:
+                    try:
+                        ppc_service = PromptPrecreationService(self.db)
+                        ppc_detail = ppc_service.get_history_detail(ppc_id)
+                        if ppc_detail:
+                            item_data["prompt_cards"] = ppc_detail.get("cards", [])
+                    except Exception:
+                        pass
+
+                if qc_id:
+                    try:
+                        qc_service = QuickCreateService(self.db)
+                        qc_detail = qc_service.get_history_detail(qc_id)
+                        if qc_detail:
+                            item_data["quick_create_results"] = qc_detail.get("results", [])
+                            item_data["quick_create_selected_prompts"] = qc_detail.get("selected_prompts", [])
+                    except Exception:
+                        pass
+
+            items_payload.append(item_data)
+
+        return {"items": items_payload, "total": total}
+
+    def _get_chara_avatar_url(self, ch: MaterialCharacter) -> str:
+        """获取角色头像 URL。"""
+        from app.services.material_service.material_service import MaterialService
+
+        ms = MaterialService(self.db)
+        return ms.avatar_url_for_character(ch.id, ch.avatar_filename)
+
     def delete_batch_item(self, item_id: str) -> Dict[str, Any]:
         item = self.batch_repo.get_item(item_id)
         if not item:

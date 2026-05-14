@@ -1,5 +1,6 @@
 import type { CharaProfile } from "@/types/material";
 import { STATUS_LABEL, STATUS_STYLE } from "@/types/material";
+import { memo } from "react";
 
 function formatUpdatedAt(iso: string): string {
   const d = new Date(iso);
@@ -20,7 +21,7 @@ interface CharaListProps {
   onNew: () => void;
 }
 
-const CharaList = ({ charas, selectedId, onSelect, onDeleteRequest, onNew }: CharaListProps) => {
+const CharaList = memo(function CharaList({ charas, selectedId, onSelect, onDeleteRequest, onNew }: CharaListProps) {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 pt-4 pb-3 shrink-0 gap-2">
@@ -135,6 +136,6 @@ const CharaList = ({ charas, selectedId, onSelect, onDeleteRequest, onNew }: Cha
       </div>
     </div>
   );
-};
+});
 
 export default CharaList;

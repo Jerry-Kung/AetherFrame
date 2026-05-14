@@ -499,6 +499,24 @@ async def batch_automation_list_items(
     )
 
 
+@router.get(
+    "/batch-automation/items-hydrated",
+    response_model=ApiResponse,
+)
+async def batch_automation_list_items_hydrated(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    service: BatchAutomationService = Depends(get_batch_automation_service),
+):
+    """返回已内联 prompt cards 和 quick create results 的 batch items。"""
+    raw = service.list_items_hydrated(limit=limit, offset=offset)
+    return ApiResponse(
+        success=True,
+        data=jsonable_encoder(raw),
+        message="获取批量创作条目（含详情）成功",
+    )
+
+
 @router.delete(
     "/batch-automation/items/{item_id}",
     response_model=ApiResponse,

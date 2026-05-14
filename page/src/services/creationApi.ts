@@ -540,6 +540,47 @@ export async function listBatchAutomationItems(params?: {
   }
 }
 
+export interface HydratedBatchItem extends BatchAutomationListItemRow {
+  prompt_cards: PromptCard[] | null;
+  quick_create_results: Array<{
+    prompt_id: string;
+    full_prompt: string;
+    generated_images: Array<{
+      filename: string;
+      path: string;
+      ai_comment?: { score: number; comment: string; tags: string[] } | null;
+    }>;
+  }> | null;
+  quick_create_selected_prompts?: Array<{
+    id: string;
+    fullPrompt: string;
+  }> | null;
+}
+
+export interface HydratedBatchItemListResponse {
+  items: HydratedBatchItem[];
+  total: number;
+}
+
+export async function listBatchAutomationItemsHydrated(params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<HydratedBatchItemListResponse> {
+  const query = new URLSearchParams();
+  if (typeof params?.limit === "number") query.set("limit", String(params.limit));
+  if (typeof params?.offset === "number") query.set("offset", String(params.offset));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  const url = `${API_BASE}/batch-automation/items-hydrated${suffix}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<HydratedBatchItemListResponse>(response);
+    throwIfError(response, data);
+    return data.data as HydratedBatchItemListResponse;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
 export async function deleteBatchAutomationItem(itemId: string): Promise<{ deleted_id: string }> {
   const iid = String(itemId ?? "").trim();
   if (!iid) throw new ApiError("条目ID无效", 400);

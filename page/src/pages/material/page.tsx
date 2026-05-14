@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type {
   ApiCharacterDetail,
@@ -78,6 +78,7 @@ export default function MaterialPage() {
   );
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
   const [fixedTemplatesRows, setFixedTemplatesRows] = useState<SeedPrompt[]>([]);
+  const lastFetchedRef = useRef<{ id: string; ts: number } | null>(null);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -157,11 +158,20 @@ export default function MaterialPage() {
 
   useEffect(() => {
     if (!selectedId) return;
+
+    // 30 秒内对同一角色不重复请求
+    const now = Date.now();
+    const last = lastFetchedRef.current;
+    if (last && last.id === selectedId && now - last.ts < 30_000) {
+      return;
+    }
+
     let cancelled = false;
     (async () => {
       try {
         const d = await materialApi.getCharacter(selectedId);
         if (cancelled) return;
+        lastFetchedRef.current = { id: selectedId, ts: Date.now() };
         mergeChara(toCharaProfile(d));
       } catch (e) {
         if (!cancelled) {
@@ -173,26 +183,6 @@ export default function MaterialPage() {
       cancelled = true;
     };
   }, [selectedId, mergeChara, showToast]);
-
-  /** 进入「正式内容」时拉取最新详情，确保角色小档案等与加工任务保存的 bio_json 一致 */
-  useEffect(() => {
-    if (!selectedId || mainTab !== "official") return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const d = await materialApi.getCharacter(selectedId);
-        if (cancelled) return;
-        mergeChara(toCharaProfile(d));
-      } catch (e) {
-        if (!cancelled) {
-          showToast(e instanceof ApiError ? e.message : "刷新正式内容失败");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedId, mainTab, mergeChara, showToast]);
 
   const selected = useMemo(
     () => charas.find((c) => c.id === selectedId) ?? null,
@@ -626,11 +616,8 @@ export default function MaterialPage() {
       <div
         className="absolute inset-0 z-0 pointer-events-none"
         style={{
-          backgroundImage:
-            'url("https://readdy.ai/api/search-image?query=soft%20dreamy%20anime%20aesthetic%20background%20art%20with%20delicate%20cherry%20blossom%20sakura%20petals%20floating%20in%20gentle%20breeze%2C%20warm%20pastel%20pink%20and%20creamy%20white%20watercolor%20illustration%20style%2C%20kawaii%20japanese%20aesthetic%2C%20soft%20bokeh%20circular%20lights%2C%20no%20people%20no%20characters%2C%20light%20and%20airy%20misty%20atmosphere%2C%20subtle%20floral%20pattern%20elements%2C%20beautiful%20pastel%20digital%20painting%20art%20with%20pink%20rose%20tones&width=1920&height=1080&seq=2001&orientation=landscape")',
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          opacity: 0.1,
+          background:
+            "radial-gradient(ellipse at 30% 20%, rgba(253,164,175,0.08) 0%, transparent 50%), radial-gradient(ellipse at 70% 80%, rgba(251,207,232,0.06) 0%, transparent 50%)",
         }}
       />
 
@@ -933,16 +920,6 @@ export default function MaterialPage() {
         />
       )}
 
-      <style>{`
-        @keyframes floatUp {
-          0%, 100% { transform: translateY(0px) scale(1); }
-          50% { transform: translateY(-16px) scale(1.03); }
-        }
-        @keyframes twinkle {
-          0%, 100% { opacity: 0.25; transform: scale(1) rotate(0deg); }
-          50% { opacity: 0.6; transform: scale(1.3) rotate(20deg); }
-        }
-      `}</style>
     </div>
   );
 }

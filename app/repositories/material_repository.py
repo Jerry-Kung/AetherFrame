@@ -76,6 +76,14 @@ class MaterialCharacterRepository(BaseRepository[MaterialCharacter]):
     def count_all(self) -> int:
         return self.db.query(MaterialCharacter).count()
 
+    def get_by_ids(self, ids: List[str]) -> List[MaterialCharacter]:
+        """批量按 ID 获取角色，保持输入顺序。"""
+        if not ids:
+            return []
+        rows = self.db.query(MaterialCharacter).filter(MaterialCharacter.id.in_(ids)).all()
+        id_to_row = {r.id: r for r in rows}
+        return [id_to_row[i] for i in ids if i in id_to_row]
+
     def add_raw_image(
         self,
         character_id: str,

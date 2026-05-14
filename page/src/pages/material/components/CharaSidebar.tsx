@@ -1,5 +1,6 @@
 import type { CharaProfile } from "@/types/material";
 import { STATUS_LABEL, STATUS_STYLE } from "@/types/material";
+import { memo } from "react";
 
 interface CharaSidebarProps {
   chara: CharaProfile | null;
@@ -16,7 +17,13 @@ function briefSummary(c: CharaProfile): string {
   return one.length < t.length ? `${one}…` : one;
 }
 
-const CharaSidebar = ({ chara, onEdit, onStartProcess, onExport, onChangeAvatar }: CharaSidebarProps) => {
+const CharaSidebar = memo(function CharaSidebar({
+  chara,
+  onEdit,
+  onStartProcess,
+  onExport,
+  onChangeAvatar,
+}: CharaSidebarProps) {
   if (!chara) {
     return (
       <div className="flex flex-col h-full items-center justify-center px-4 text-center">
@@ -143,6 +150,6 @@ const CharaSidebar = ({ chara, onEdit, onStartProcess, onExport, onChangeAvatar 
       </div>
     </div>
   );
-};
+});
 
 export default CharaSidebar;

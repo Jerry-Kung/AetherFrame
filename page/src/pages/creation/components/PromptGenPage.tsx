@@ -271,6 +271,7 @@ const HistorySidebar = ({ records, activeId, onSelect, onDelete }: HistorySideba
                   <div className="w-7 h-7 rounded-xl overflow-hidden shrink-0 border border-rose-100">
                     {record.charaAvatar ? (
                       <img
+                        loading="lazy"
                         src={record.charaAvatar}
                         alt={record.charaName}
                         className="w-full h-full object-cover object-top"
@@ -1150,6 +1151,7 @@ const PromptGenPage = ({
                   <div className="w-7 h-7 rounded-lg overflow-hidden shrink-0 border border-rose-100">
                     {selectedChara.avatarUrl ? (
                       <img
+                        loading="lazy"
                         src={selectedChara.avatarUrl}
                         alt={selectedChara.name}
                         className="w-full h-full object-cover object-top"

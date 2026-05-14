@@ -1,6 +1,7 @@
 refs/
 page.backup/
 data/
+claude_docs/
 test_data/
 .cursor/
 app/tools/llm/config.py

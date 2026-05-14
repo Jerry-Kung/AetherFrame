@@ -244,7 +244,7 @@ const ResultView = ({
                 }}
                 onClick={() => setSelected(isSelected ? null : url)}
               >
-                <img src={url} alt={`候选图 ${i + 1}`} className="w-full h-full object-cover object-top" />
+                <img loading="lazy" src={url} alt={`候选图 ${i + 1}`} className="w-full h-full object-cover object-top" />
                 {isSelected && (
                   <div className="absolute inset-0 bg-rose-500/10 flex items-start justify-end p-2">
                     <div
@@ -340,7 +340,7 @@ const ResultView = ({
               </button>
             </div>
             <div className="p-4">
-              <img src={previewUrl} alt="预览" className="w-full max-h-[70vh] object-contain rounded-xl" />
+              <img loading="lazy" src={previewUrl} alt="预览" className="w-full max-h-[70vh] object-contain rounded-xl" />
             </div>
           </div>
         </div>
@@ -657,7 +657,7 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
                               }}
                               onClick={() => toggleRef(img.id)}
                             >
-                              <img src={img.url} alt="参考图" className="w-full h-full object-cover object-top" />
+                              <img loading="lazy" src={img.url} alt="参考图" className="w-full h-full object-cover object-top" />
                               {isSelected && (
                                 <div
                                   className="absolute inset-0 flex items-start justify-end p-1"

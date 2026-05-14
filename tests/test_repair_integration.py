@@ -33,6 +33,8 @@ MAIN_IMAGE_PATH = os.path.join(TEST_DATA_DIR, "pictures_to_be_revised.jpg")
 PROMPT_PATH = os.path.join(TEST_DATA_DIR, "revise_prompt.txt")
 REFS_DIR = os.path.join(TEST_DATA_DIR, "refs_3d")
 
+_REPAIR_FIXTURES_OK = os.path.isfile(MAIN_IMAGE_PATH) and os.path.isfile(PROMPT_PATH)
+
 
 # ==========================================
 # Fixtures
@@ -79,6 +81,10 @@ def reference_image_files():
 # ==========================================
 
 
+@pytest.mark.skipif(
+    not _REPAIR_FIXTURES_OK,
+    reason="缺少 test_data：需要 revise_prompt.txt 与 pictures_to_be_revised.jpg（见文件头注释）",
+)
 class TestRepairIntegration:
     """图片修补模块完整集成测试"""
 
