@@ -12,7 +12,7 @@
 
 ## 项目结构
 
-```
+
 AetherFrame/
 ├── app/                  # FastAPI 后端应用
 │   ├── main.py          # 应用入口
@@ -31,7 +31,7 @@ AetherFrame/
 ├── docker/              # Docker 配置
 ├── compose.yaml         # Docker Compose 配置
 └── requirements.txt     # Python 依赖
-```
+
 
 ## 快速开始
 
