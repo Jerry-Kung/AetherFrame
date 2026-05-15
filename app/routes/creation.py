@@ -7,10 +7,10 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.models.database import get_db
+from app.utils.cache_response import build_immutable_file_response
 from app.routes.material import ensure_valid_character_id
 from app.schemas.creation import (
     ApiResponse,
@@ -547,12 +547,5 @@ async def get_quick_create_image(
     path = service.get_task_image_path(tid, image_path)
     if not path:
         raise HTTPException(status_code=404, detail="文件不存在")
-    ext = os.path.splitext(path)[1].lower()
-    media_type = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".webp": "image/webp",
-        ".gif": "image/gif",
-    }.get(ext, "application/octet-stream")
-    return FileResponse(path=path, media_type=media_type, filename=os.path.basename(path))
+    # 文件名带微秒级时间戳，URL 即内容寻址，安全使用 immutable 强缓存。
+    return build_immutable_file_response(path=path, filename=os.path.basename(path))

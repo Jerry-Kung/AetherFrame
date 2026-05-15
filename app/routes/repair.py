@@ -4,11 +4,11 @@
 import logging
 import os
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.models.database import get_db
+from app.utils.cache_response import build_revalidate_file_response
 from app.schemas.repair import (
     TaskCreate,
     TaskUpdate,
@@ -371,6 +371,7 @@ async def get_image(
     task_id: str,
     image_type: str,
     filename: str,
+    request: Request,
     repair_service: RepairService = Depends(get_repair_service)
 ):
     """
@@ -395,22 +396,15 @@ async def get_image(
             logger.warning(f"API 响应 - 文件不存在: task_id={task_id}, image_type={image_type}, filename={filename}")
             raise HTTPException(status_code=404, detail="文件不存在")
 
-        # 根据文件扩展名设置 Content-Type
-        ext = os.path.splitext(filename)[1].lower()
-        media_type_map = {
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".webp": "image/webp"
-        }
-        media_type = media_type_map.get(ext, "application/octet-stream")
-
         logger.debug(f"API 响应 - 返回图片: {file_path}")
 
-        return FileResponse(
+        # 修补任务内主图/参考图/结果图均可能复用文件名
+        # （main_image.{ext}、ref_{i}.{ext}、result_{i}.png），URL 不变内容会变
+        # （重新上传/任务重跑），必须走协商缓存。
+        return build_revalidate_file_response(
+            request=request,
             path=file_path,
-            media_type=media_type,
-            filename=filename
+            filename=filename,
         )
 
     except HTTPException:

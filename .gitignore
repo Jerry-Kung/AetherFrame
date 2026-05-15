@@ -5,6 +5,7 @@ claude_docs/
 test_data/
 .cursor/
 app/tools/llm/config.py
+*.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

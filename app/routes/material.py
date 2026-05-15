@@ -17,10 +17,15 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.models.database import get_db
+from app.utils.cache_response import (
+    build_immutable_file_response,
+    build_revalidate_file_response,
+    guess_media_type,
+)
+from fastapi.responses import FileResponse
 from app.schemas.material import (
     ApiResponse,
     BioPatchRequest,
@@ -525,36 +530,21 @@ async def get_raw_image(
     path = service.get_raw_image_path(character_id, filename)
     if not path:
         raise HTTPException(status_code=404, detail="文件不存在")
-    ext = os.path.splitext(filename)[1].lower()
-    media_type_map = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".webp": "image/webp",
-    }
-    media_type = media_type_map.get(ext, "application/octet-stream")
-    return FileResponse(path=path, media_type=media_type, filename=filename)
+    return build_immutable_file_response(path=path, filename=filename)
 
 
 @router.get("/characters/{character_id}/images/avatar/{filename}")
 async def get_avatar_image(
     character_id: str,
     filename: str,
+    request: Request,
     service: MaterialService = Depends(get_material_service),
 ):
     logger.debug(f"API 请求 - 读取角色头像: {character_id}/{filename}")
     path = service.get_avatar_image_path(character_id, filename)
     if not path:
         raise HTTPException(status_code=404, detail="文件不存在")
-    ext = os.path.splitext(filename)[1].lower()
-    media_type_map = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".webp": "image/webp",
-    }
-    media_type = media_type_map.get(ext, "application/octet-stream")
-    return FileResponse(path=path, media_type=media_type, filename=filename)
+    return build_revalidate_file_response(request=request, path=path, filename=filename)
 
 
 @router.post("/characters/{character_id}/standard-photo/start", response_model=ApiResponse)
@@ -744,17 +734,9 @@ async def get_standard_photo_result_image(
     path = service.get_standard_photo_result_image_path(character_id, filename)
     if not path:
         raise HTTPException(status_code=404, detail="文件不存在")
-    ext = os.path.splitext(filename)[1].lower()
-    media_type_map = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".webp": "image/webp",
-    }
-    media_type = media_type_map.get(ext, "application/octet-stream")
     return FileResponse(
         path=path,
-        media_type=media_type,
+        media_type=guess_media_type(filename),
         filename=filename,
         headers={"Cache-Control": "no-store, max-age=0"},
     )
@@ -764,6 +746,7 @@ async def get_standard_photo_result_image(
 async def get_standard_slot_image(
     character_id: str,
     shot_type: str,
+    request: Request,
     service: MaterialService = Depends(get_material_service),
 ):
     """已保存的正式标准参考图（按类型槽位存储，与当前生成任务目录无关）。"""
@@ -772,7 +755,12 @@ async def get_standard_slot_image(
     path = service.get_standard_slot_image_path(character_id, shot_type)
     if not path:
         raise HTTPException(status_code=404, detail="文件不存在")
-    return FileResponse(path=path, media_type="image/png", filename=f"{shot_type}.png")
+    return build_revalidate_file_response(
+        request=request,
+        path=path,
+        filename=f"{shot_type}.png",
+        media_type="image/png",
+    )
 
 
 @router.post("/characters/{character_id}/standard-photo/select", response_model=ApiResponse)
