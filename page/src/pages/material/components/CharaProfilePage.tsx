@@ -10,6 +10,7 @@ import {
   emptyOfficialSeedPrompts,
   cloneOfficialSeedPrompts,
   pickOfficialSeedsForSave,
+  appendOfficialSeedPrompts,
 } from "@/types/material";
 import { toCharaProfile } from "@/types/material";
 import * as materialApi from "@/services/materialApi";
@@ -1322,18 +1323,19 @@ const AdviceStage = ({
   }, [characterId, chara.bio.creativeAdvice, chara.bio.officialSeedPrompts, showToast]);
 
   const handleSaveSeedsOfficial = useCallback(async () => {
-    const payload = pickOfficialSeedsForSave(seedDraft);
-    if (payload.characterSpecific.length === 0 && payload.general.length === 0) {
+    const additions = pickOfficialSeedsForSave(seedDraft);
+    if (additions.characterSpecific.length === 0 && additions.general.length === 0) {
       showToast("请至少勾选一条种子提示词再保存为正式内容");
       return;
     }
+    const merged = appendOfficialSeedPrompts(chara.bio.officialSeedPrompts ?? null, additions);
     setSavingSeeds(true);
     try {
-      await onSaveSeedPrompts(payload);
+      await onSaveSeedPrompts(merged);
     } finally {
       setSavingSeeds(false);
     }
-  }, [onSaveSeedPrompts, seedDraft, showToast]);
+  }, [onSaveSeedPrompts, seedDraft, showToast, chara.bio.officialSeedPrompts]);
 
   if (!profileUnlocked) {
     return (

@@ -220,6 +220,39 @@ export function cloneOfficialSeedPrompts(p: OfficialSeedPrompts): OfficialSeedPr
   };
 }
 
+function newSeedPromptId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `seed-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/**
+ * 将新勾选的种子条目追加到现有正式列表末尾；按 text.trim() 与现有条目去重；
+ * 新条目重新生成 id，used 置 false，selected 置 true。
+ */
+export function appendOfficialSeedPrompts(
+  existing: OfficialSeedPrompts | null | undefined,
+  additions: OfficialSeedPrompts
+): OfficialSeedPrompts {
+  const base = existing ? cloneOfficialSeedPrompts(existing) : emptyOfficialSeedPrompts();
+  const appendSection = (baseList: SeedPrompt[], addList: SeedPrompt[]): SeedPrompt[] => {
+    const seen = new Set(baseList.map((s) => s.text.trim()));
+    const out = baseList.slice();
+    for (const s of addList) {
+      const t = s.text.trim();
+      if (!t || seen.has(t)) continue;
+      seen.add(t);
+      out.push({ id: newSeedPromptId(), text: s.text, used: false, selected: true });
+    }
+    return out;
+  };
+  return {
+    characterSpecific: appendSection(base.characterSpecific, additions.characterSpecific),
+    general: appendSection(base.general, additions.general),
+  };
+}
+
 /**
  * 角色小档案正文：仅取自 bio_json 中加工任务写入的 `chara_profile`（及兼容 camelCase）。
  * 不使用年龄/性格等占位字段冒充小档案正文。
