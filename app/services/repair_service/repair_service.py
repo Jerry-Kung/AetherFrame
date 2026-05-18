@@ -340,13 +340,19 @@ class RepairService:
             ))
 
         # 构建结果图信息
-        result_images = []
+        from app.services.beautify_service.decorate import decorate_repair_result_images
+
+        result_payloads = []
         res_filenames = repair_file_service.list_result_images(task.id)
         for filename in res_filenames:
-            result_images.append(ImageInfo(
-                filename=filename,
-                url=f"/api/repair/tasks/{task.id}/images/result/{filename}"
-            ))
+            result_payloads.append(
+                {
+                    "filename": filename,
+                    "url": f"/api/repair/tasks/{task.id}/images/result/{filename}",
+                }
+            )
+        decorate_repair_result_images(self.db, task.id, result_payloads)
+        result_images = [ImageInfo(**item) for item in result_payloads]
 
         return TaskDetail(
             **simple.model_dump(),

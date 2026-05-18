@@ -559,6 +559,9 @@ class QuickCreateService:
         chara_name = character.name if character else "未知角色"
         selected_prompts = _parse_json_list(task.selected_prompts_json)
         results = _parse_json_list(task.result_json)
+        from app.services.beautify_service.decorate import decorate_quick_create_results
+
+        results = decorate_quick_create_results(self.db, task.id, results)
         image_count = sum(
             len((r.get("generated_images") or []))
             for r in results
@@ -783,6 +786,9 @@ class QuickCreateService:
                     results = parsed
             except json.JSONDecodeError:
                 results = None
+        from app.services.beautify_service.decorate import decorate_quick_create_results
+
+        results = decorate_quick_create_results(self.db, task.id, results)
         return {
             "task_id": task.id,
             "character_id": task.character_id,

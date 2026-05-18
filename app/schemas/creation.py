@@ -123,6 +123,9 @@ class QuickCreateGeneratedImage(BaseModel):
 
     path: str
     review: Optional[QuickCreateImageReview] = None
+    beautified_path: Optional[str] = None
+    beautify_task_id: Optional[str] = None
+    beautify_status: Optional[str] = None
 
 
 class QuickCreatePromptResultItem(BaseModel):
