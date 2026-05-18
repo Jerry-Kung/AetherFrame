@@ -145,6 +145,9 @@ export interface QuickCreateImageReview {
 export interface QuickCreateGeneratedImage {
   path: string;
   review?: QuickCreateImageReview | null;
+  beautified_path?: string | null;
+  beautify_task_id?: string | null;
+  beautify_status?: string | null;
 }
 
 export interface QuickCreatePromptResultItem {
@@ -602,4 +605,33 @@ export function buildQuickCreateResultImageUrl(taskId: string, imagePath: string
     .filter(Boolean)
     .map((x) => encodeURIComponent(x));
   return `${API_BASE}/quick-create/tasks/${tid}/images/${segs.join("/")}`;
+}
+
+/** 从结果图 URL 反推 API 相对路径（用于美化 source_image_path） */
+export function parseQuickCreateResultImagePath(imageUrl: string, taskId: string): string | null {
+  const tid = String(taskId ?? "").trim();
+  if (!tid) return null;
+  const raw = String(imageUrl ?? "").split("?")[0];
+  const encodedMarker = `/quick-create/tasks/${encodeURIComponent(tid)}/images/`;
+  let idx = raw.indexOf(encodedMarker);
+  let markerLen = encodedMarker.length;
+  if (idx < 0) {
+    const plainMarker = `/quick-create/tasks/${tid}/images/`;
+    idx = raw.indexOf(plainMarker);
+    markerLen = plainMarker.length;
+  }
+  if (idx < 0) return null;
+  const tail = raw.slice(idx + markerLen);
+  if (!tail) return null;
+  return tail
+    .split("/")
+    .filter(Boolean)
+    .map((seg) => {
+      try {
+        return decodeURIComponent(seg);
+      } catch {
+        return seg;
+      }
+    })
+    .join("/");
 }

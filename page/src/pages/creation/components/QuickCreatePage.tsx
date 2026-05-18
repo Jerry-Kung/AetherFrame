@@ -1319,6 +1319,26 @@ export default function QuickCreatePage({
     );
   }, []);
 
+  const patchQuickCreateImage = useCallback((imageId: string, patch: Partial<QuickCreateImage>) => {
+    const applyGroups = (groups: QuickCreateGroup[]) =>
+      groups.map((g) => ({
+        ...g,
+        images: g.images.map((im) => (im.id === imageId ? { ...im, ...patch } : im)),
+      }));
+    setResultGroups((prev) => applyGroups(prev));
+    setViewingRecord((prev) => (prev ? { ...prev, groups: applyGroups(prev.groups) } : prev));
+    setLightbox((prev) =>
+      prev
+        ? {
+            ...prev,
+            images: prev.images.map((im) => (im.id === imageId ? { ...im, ...patch } : im)),
+          }
+        : null
+    );
+  }, []);
+
+  const lightboxTaskId = viewingRecord?.taskId ?? "";
+
   const displayGroups = viewingRecord ? viewingRecord.groups : resultGroups;
   const gridColsForGroup = (n: number) => Math.min(Math.max(n, 1), 4);
 
@@ -1812,15 +1832,17 @@ export default function QuickCreatePage({
         </div>
       </div>
 
-      {lightbox && (
+      {lightbox && lightboxTaskId ? (
         <CreationResultLightbox
           images={lightbox.images}
           index={lightbox.index}
           onClose={closeLightbox}
           onPrev={prevImage}
           onNext={nextImage}
+          source={{ kind: "quick_create", taskId: lightboxTaskId }}
+          onBeautifyChanged={patchQuickCreateImage}
         />
-      )}
+      ) : null}
 
       {viewingComment && (
         <AiCommentModal

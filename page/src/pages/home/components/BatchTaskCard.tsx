@@ -78,6 +78,17 @@ export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed }
 
   const closeComment = useCallback(() => setViewingComment(null), []);
 
+  const patchImage = useCallback((imageId: string, patch: Partial<QuickCreateImage>) => {
+    setLightbox((prev) =>
+      prev
+        ? {
+            ...prev,
+            images: prev.images.map((im) => (im.id === imageId ? { ...im, ...patch } : im)),
+          }
+        : null
+    );
+  }, []);
+
   return (
     <div
       className="rounded-2xl overflow-hidden transition-all duration-300"
@@ -357,15 +368,17 @@ export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed }
         </div>
       )}
 
-      {lightbox && (
+      {lightbox && task.quickCreateRecordId ? (
         <CreationResultLightbox
           images={lightbox.images}
           index={lightbox.index}
           onClose={closeLightbox}
           onPrev={prevImage}
           onNext={nextImage}
+          source={{ kind: "quick_create", taskId: task.quickCreateRecordId }}
+          onBeautifyChanged={patchImage}
         />
-      )}
+      ) : null}
 
       {viewingComment && (
         <AiCommentModal

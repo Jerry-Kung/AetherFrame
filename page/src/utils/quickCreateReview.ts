@@ -42,6 +42,18 @@ export function quickCreateImageFromApiEntry(
     promptId,
     url: creationApi.buildQuickCreateResultImageUrl(taskId, path),
   };
+  if (typeof entry !== "string") {
+    if (entry.beautified_path) {
+      base.beautifiedUrl = creationApi.buildQuickCreateResultImageUrl(taskId, entry.beautified_path);
+    }
+    base.beautifyTaskId = entry.beautify_task_id ?? null;
+    const st = entry.beautify_status;
+    if (st === "pending" || st === "processing" || st === "completed" || st === "failed") {
+      base.beautifyStatus = st;
+    } else {
+      base.beautifyStatus = null;
+    }
+  }
   if (review) {
     return { ...base, aiComment: mapReviewToAiComment(review, id) };
   }
