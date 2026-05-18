@@ -640,6 +640,14 @@ class QuickCreateService:
         if not task:
             raise ValueError("历史记录不存在")
         work_dir = task.work_dir
+
+        try:
+            from app.services.beautify_service import BeautifyService
+
+            BeautifyService(self.db).cleanup_for_quick_create_task(hid)
+        except Exception:
+            logger.warning("清理美化任务失败: %s", hid, exc_info=True)
+
         deleted = self.quick_repo.delete(hid)
         if not deleted:
             raise ValueError("历史记录不存在")

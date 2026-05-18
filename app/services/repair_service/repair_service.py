@@ -241,6 +241,13 @@ class RepairService:
             logger.warning(f"删除失败，任务处理中: {task_id}")
             raise ValueError("任务处理中，无法删除。请等待完成或失败后再试。")
 
+        try:
+            from app.services.beautify_service import BeautifyService
+
+            BeautifyService(self.db).cleanup_for_repair_task(task_id)
+        except Exception:
+            logger.warning("清理美化任务失败: %s", task_id, exc_info=True)
+
         # 先删本地 data 目录，失败则不删数据库，避免「库无记录但磁盘仍有文件」
         try:
             repair_file_service.delete_task_files(task_id)
