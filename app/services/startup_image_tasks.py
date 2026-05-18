@@ -8,16 +8,19 @@ import logging
 import os
 from typing import Dict
 
+from app.models.beautify import ImageBeautifyTask
 from app.models.creation import CreationQuickCreateTask
 from app.models.material import MaterialStandardPhotoTask
 from app.models.repair import RepairTask
 from app.models.database import SessionLocal
+from app.repositories.beautify_repository import BeautifyRepository
 from app.repositories.creation_repository import CreationQuickCreateRepository
 from app.repositories.material_repository import MaterialCharacterRepository
 from app.repositories.repair_repository import RepairTaskRepository
 from app.services.creation_service.quick_create_service import (
     _sync_quick_create_history_files_for_task_id,
 )
+from app.utils.beautify_timeout import BEAUTIFY_RESTART_ERROR_MESSAGE
 from app.utils.image_generation_timeout import IMAGE_GEN_RESTART_ERROR_MESSAGE
 
 logger = logging.getLogger(__name__)
@@ -31,9 +34,9 @@ def run_fail_inflight_image_generation_tasks() -> Dict[str, int]:
     raw = (os.getenv("SKIP_STARTUP_IMAGE_TASK_RESET") or "").strip().lower()
     if raw in ("1", "true", "yes", "on"):
         logger.info("跳过启动时图片任务失败化: SKIP_STARTUP_IMAGE_TASK_RESET 已设置")
-        return {"standard_photo": 0, "quick_create": 0, "repair": 0}
+        return {"standard_photo": 0, "quick_create": 0, "repair": 0, "beautify": 0}
 
-    counts = {"standard_photo": 0, "quick_create": 0, "repair": 0}
+    counts = {"standard_photo": 0, "quick_create": 0, "repair": 0, "beautify": 0}
     db = SessionLocal()
     try:
         std_tasks = (
@@ -83,11 +86,30 @@ def run_fail_inflight_image_generation_tasks() -> Dict[str, int]:
             if updated:
                 counts["repair"] += 1
 
+        brepo = BeautifyRepository(db)
+        beautify_tasks = (
+            db.query(ImageBeautifyTask)
+            .filter(ImageBeautifyTask.status.in_(("pending", "processing")))
+            .all()
+        )
+        for t in beautify_tasks:
+            updated = brepo.update(
+                t.id,
+                {
+                    "status": "failed",
+                    "error_message": BEAUTIFY_RESTART_ERROR_MESSAGE,
+                    "current_step": None,
+                },
+            )
+            if updated:
+                counts["beautify"] += 1
+
         logger.info(
-            "启动时已将未完成图片生成任务标记为失败: standard_photo=%s quick_create=%s repair=%s",
+            "启动时已将未完成图片生成任务标记为失败: standard_photo=%s quick_create=%s repair=%s beautify=%s",
             counts["standard_photo"],
             counts["quick_create"],
             counts["repair"],
+            counts["beautify"],
         )
         return counts
     finally:
