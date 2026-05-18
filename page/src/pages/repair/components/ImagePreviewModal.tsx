@@ -1,4 +1,7 @@
 import { useEffect, useCallback, useRef, useState } from "react";
+import BeautifyActions from "@/components/BeautifyActions";
+import { useBeautify } from "@/hooks/useBeautify";
+import type { RepairResultImage } from "@/types/repair";
 
 const MIN_SCALE = 1;
 const MAX_SCALE = 4;
@@ -8,13 +11,15 @@ const WHEEL_FACTOR_UP = 1.08;
 const DBL_CLICK_ZOOM = 1.5;
 
 interface ImagePreviewModalProps {
-  images: string[];
+  images: RepairResultImage[] | string[];
   currentIndex: number;
+  taskId?: string;
   onClose: () => void;
   onIndexChange: (idx: number) => void;
   onDownload: (url: string, idx: number) => void;
   showContinueRepair?: boolean;
   onContinueRepair?: (url: string) => void;
+  onBeautifyChanged?: (filename: string, patch: Partial<RepairResultImage>) => void;
   imageAltPrefix?: string;
 }
 
@@ -43,15 +48,42 @@ function zoomToPoint(
 const ImagePreviewModal = ({
   images,
   currentIndex,
+  taskId,
   onClose,
   onIndexChange,
   onDownload,
   showContinueRepair = true,
   onContinueRepair,
+  onBeautifyChanged,
   imageAltPrefix = "修补结果",
 }: ImagePreviewModalProps) => {
-  const total = images.length;
-  const url = images[currentIndex];
+  const entries: RepairResultImage[] = images.map((item, i) =>
+    typeof item === "string" ? { url: item, filename: "" } : item
+  );
+  const total = entries.length;
+  const img = entries[currentIndex];
+  const [viewing, setViewing] = useState<"original" | "beautified">("original");
+  const [actionError, setActionError] = useState<string | null>(null);
+  const repairTaskId = String(taskId ?? "").trim();
+  const showBeautify = Boolean(repairTaskId && onBeautifyChanged && img?.filename);
+
+  const beautify = useBeautify({
+    image: {
+      beautifyTaskId: img?.beautifyTaskId ?? null,
+      beautifyStatus: img?.beautifyStatus ?? null,
+      beautifiedUrl: img?.beautifiedUrl ?? null,
+    },
+    source: { kind: "repair", taskId: repairTaskId },
+    sourceImagePath: img?.filename ?? "",
+    onChanged: (patch) => {
+      if (img?.filename) onBeautifyChanged?.(img.filename, patch);
+    },
+  });
+
+  const url =
+    viewing === "beautified" && img?.beautifiedUrl ? img.beautifiedUrl : img?.url ?? "";
+  const beautifyError = beautify.state === "failed" ? beautify.errorMessage : null;
+  const footerError = actionError || beautifyError;
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const [transform, setTransform] = useState<ViewTransform>({ scale: 1, tx: 0, ty: 0 });
@@ -62,6 +94,8 @@ const ImagePreviewModal = ({
 
   useEffect(() => {
     setTransform({ scale: 1, tx: 0, ty: 0 });
+    setViewing("original");
+    setActionError(null);
   }, [currentIndex]);
 
   const applyZoomAt = useCallback((cx: number, cy: number, nextScale: number) => {
@@ -353,6 +387,17 @@ const ImagePreviewModal = ({
             下载图片
           </button>
 
+          {showBeautify ? (
+            <BeautifyActions
+              beautify={beautify}
+              viewing={viewing}
+              onViewingChange={setViewing}
+              beautifiedUrl={img?.beautifiedUrl}
+              disabled={beautify.busy}
+              onActionError={setActionError}
+            />
+          ) : null}
+
           {showContinueRepair && onContinueRepair ? (
             <button
               type="button"
@@ -383,6 +428,10 @@ const ImagePreviewModal = ({
             </button>
           ) : null}
         </div>
+
+        {footerError && beautify.state !== "failed" ? (
+          <p className="mt-2 text-xs text-rose-300 text-center max-w-md px-2">{footerError}</p>
+        ) : null}
 
         {/* Hint */}
         <p className="mt-3 text-xs text-white/30 select-none text-center px-2">

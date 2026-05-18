@@ -58,7 +58,8 @@ export default function RepairPage() {
     deleteReferenceImage,
     startRepair,
     isUploading,
-    fetchTask
+    fetchTask,
+    patchResultImage,
   } = useRepairTask(selectedId);
   
   const [editorState, setEditorState] = useState<EditorState>(defaultEditorState());
@@ -607,9 +608,11 @@ export default function RepairPage() {
               <div className="flex-1 min-h-0 overflow-hidden">
                 <ResultDisplay
                   results={currentResults}
+                  taskId={selectedId ?? ""}
                   outputCount={editorState.outputCount}
                   isProcessing={isProcessing}
                   onContinueRepair={handleContinueRepair}
+                  onBeautifyChanged={patchResultImage}
                 />
               </div>
             </div>

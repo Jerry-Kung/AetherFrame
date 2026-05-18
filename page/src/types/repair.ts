@@ -15,10 +15,24 @@ export function normalizeAspectRatio(raw: unknown): AspectRatio {
   return (ASPECT_RATIO_VALUES as readonly string[]).includes(s) ? (s as AspectRatio) : "16:9";
 }
 
+export type BeautifyStatus = "pending" | "processing" | "completed" | "failed";
+
 /** 后端图片字段（任务详情 GET /tasks/:id） */
 export interface BackendImageInfo {
   filename: string;
   url: string;
+  beautified_filename?: string | null;
+  beautify_task_id?: string | null;
+  beautify_status?: string | null;
+}
+
+/** 修补结果图（含美化元数据） */
+export interface RepairResultImage {
+  url: string;
+  filename: string;
+  beautifiedUrl?: string | null;
+  beautifyTaskId?: string | null;
+  beautifyStatus?: BeautifyStatus | null;
 }
 
 /**
@@ -56,7 +70,7 @@ export interface RepairTask {
   referenceImages: string[];
   outputCount: 1 | 2 | 4;
   aspectRatio: AspectRatio;
-  results: string[];
+  results: RepairResultImage[];
   errorMessage: string | null;
 }
 
@@ -188,6 +202,31 @@ function normalizeStatus(s: unknown): TaskStatus {
   return (TASK_STATUSES.includes(x as TaskStatus) ? x : "pending") as TaskStatus;
 }
 
+function normalizeBeautifyStatus(raw: unknown): BeautifyStatus | null {
+  const s = String(raw ?? "").trim();
+  if (s === "pending" || s === "processing" || s === "completed" || s === "failed") {
+    return s;
+  }
+  return null;
+}
+
+function mapBackendResultImage(taskId: string, r: BackendImageInfo): RepairResultImage {
+  const filename = String(r.filename ?? "").trim();
+  const url = r.url || (filename ? getImageUrl(taskId, "result", filename) : "");
+  let beautifiedUrl: string | null = null;
+  const bf = r.beautified_filename?.trim();
+  if (bf) {
+    beautifiedUrl = getImageUrl(taskId, "result", bf);
+  }
+  return {
+    filename,
+    url,
+    beautifiedUrl,
+    beautifyTaskId: r.beautify_task_id ?? null,
+    beautifyStatus: normalizeBeautifyStatus(r.beautify_status),
+  };
+}
+
 /**
  * 将后端 TaskSimple / TaskDetail（及历史仅含 *_filenames 的 payload）转为前端 RepairTask
  */
@@ -216,15 +255,19 @@ export function backendToFrontendTask(raw: unknown): RepairTask {
     );
   }
 
-  let results: string[] = [];
+  let results: RepairResultImage[] = [];
   if (Array.isArray(t.result_images)) {
     results = (t.result_images as BackendImageInfo[])
-      .map((r) => r.url || (r.filename ? getImageUrl(id, "result", r.filename) : ""))
-      .filter(Boolean);
+      .map((r) => mapBackendResultImage(id, r))
+      .filter((r) => Boolean(r.url && r.filename));
   } else if (Array.isArray(t.result_image_filenames)) {
-    results = (t.result_image_filenames as string[]).map((filename) =>
-      getImageUrl(id, "result", filename)
-    );
+    results = (t.result_image_filenames as string[]).map((filename) => ({
+      filename,
+      url: getImageUrl(id, "result", filename),
+      beautifiedUrl: null,
+      beautifyTaskId: null,
+      beautifyStatus: null,
+    }));
   }
 
   return {
