@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AetherFrame is a lightweight personal image processing tool for anime-style content. It provides three main modules: Material Processing (素材加工), Art Creation (美图创作), and Image Repair (图片修补). The app calls external AI APIs (Gemini via yibuapi.com) for LLM inference and image generation.
+AetherFrame is a lightweight personal image processing tool for anime-style content. It provides three main modules: Material Processing (素材加工), Art Creation (美图创作), and Image Repair (图片修补). The app calls external AI APIs (Gemini via yibuapi.com) for LLM inference and image generation. Image beautify (图片美化) is documented in `claude_docs/feature_beautify/`.
 
 ## Development Commands
 
