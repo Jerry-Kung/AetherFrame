@@ -110,6 +110,33 @@ class TestBigjpgEnhancerPoll:
         assert result.error is not None
 
     @patch("app.tools.beautify.enhancer.requests.get")
+    def test_poll_new_status_maps_to_running(self, mock_get, enhancer):
+        # 回归用例：bigjpg 在 submit 之后短时间内返回 "new"（排队中），
+        # 必须当作 running 继续轮询，不能误判 failed。
+        tid = "tid-new"
+        mock_resp = MagicMock()
+        mock_resp.ok = True
+        mock_resp.json.return_value = {tid: {"status": "new", "url": "", "size": ""}}
+        mock_get.return_value = mock_resp
+
+        result = enhancer.poll(tid)
+        assert result.status == "running"
+        assert result.error is None
+
+    @patch("app.tools.beautify.enhancer.requests.get")
+    def test_poll_unknown_status_treated_as_running(self, mock_get, enhancer):
+        # 未知 status（既不在 success 也不在 failed 集合）保守地继续轮询，
+        # 由上层 5 分钟总超时兜底，避免误杀正在排队的任务。
+        tid = "tid-foo"
+        mock_resp = MagicMock()
+        mock_resp.ok = True
+        mock_resp.json.return_value = {tid: {"status": "weird-future-state", "url": ""}}
+        mock_get.return_value = mock_resp
+
+        result = enhancer.poll(tid)
+        assert result.status == "running"
+
+    @patch("app.tools.beautify.enhancer.requests.get")
     def test_poll_http_error_raises(self, mock_get, enhancer):
         mock_resp = MagicMock()
         mock_resp.ok = False
