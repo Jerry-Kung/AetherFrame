@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Divergence } from "@/types/material";
+import type { CharaBio, CharaProfile, Divergence } from "@/types/material";
 import {
   type CreativeDirectionApi,
   type CreativeDirectionTaskStatus,
@@ -52,12 +52,20 @@ function clearInflight(characterId: string) {
 
 type DirectionStagePhase = "hydrating" | "idle" | "generating";
 
+function countSeedsBoundToDirection(bio: CharaBio, dirId?: string | null): number {
+  if (!dirId) return 0;
+  const cs = bio.officialSeedPrompts?.characterSpecific ?? [];
+  return cs.filter((s) => s.creativeDirectionId === dirId).length;
+}
+
 export default function DirectionStage({
   characterId,
+  chara,
   showToast,
   onCountChange,
 }: {
   characterId: string;
+  chara: CharaProfile;
   showToast: (msg: string) => void;
   onCountChange?: (count: number) => void;
 }) {
@@ -307,7 +315,7 @@ export default function DirectionStage({
       <DirectionDeleteConfirmModal
         open={!!deletingDirection}
         direction={deletingDirection}
-        boundSeedCount={0}
+        boundSeedCount={countSeedsBoundToDirection(chara.bio, deletingDirection?.id)}
         onCancel={() => setDeletingDirection(null)}
         onConfirm={() =>
           deletingDirection

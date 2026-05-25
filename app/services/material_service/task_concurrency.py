@@ -12,7 +12,7 @@ from app.config import (
     MATERIAL_TASK_PER_CHARACTER_LIMIT,
     MATERIAL_LLM_GLOBAL_CONCURRENCY,
 )
-from app.models.material import MaterialCreativeDirectionTask
+from app.models.material import MaterialCreativeDirectionTask, MaterialSeedPromptTask
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +27,17 @@ class CreativeDirectionLimitExceededError(Exception):
     """方向总数达到 MATERIAL_CREATIVE_DIRECTION_PER_CHARACTER_LIMIT。"""
 
 
+class SeedPromptPerDirectionLimitExceededError(Exception):
+    """单方向种子条目达到上限。"""
+
+
+class SeedPromptTotalLimitExceededError(Exception):
+    """角色种子总数达到上限。"""
+
+
 def count_inflight_tasks_for_character(db: Session, character_id: str) -> int:
-    """统计该角色当前 in-flight 的任务总数（跨任务表）。"""
-    return (
+    """跨 direction + seed 任务表合并计数 in-flight 任务数。"""
+    n_dir = (
         db.query(MaterialCreativeDirectionTask)
         .filter(
             MaterialCreativeDirectionTask.character_id == character_id,
@@ -37,6 +45,15 @@ def count_inflight_tasks_for_character(db: Session, character_id: str) -> int:
         )
         .count()
     )
+    n_seed = (
+        db.query(MaterialSeedPromptTask)
+        .filter(
+            MaterialSeedPromptTask.character_id == character_id,
+            MaterialSeedPromptTask.status.in_(["pending", "processing"]),
+        )
+        .count()
+    )
+    return n_dir + n_seed
 
 
 def assert_can_start_task(db: Session, character_id: str) -> None:

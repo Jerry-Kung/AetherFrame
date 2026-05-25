@@ -213,6 +213,7 @@ class OfficialSeedPromptRowIn(BaseModel):
     id: str = Field(..., min_length=1, max_length=256)
     text: str = Field(default="", max_length=100_000)
     used: bool = False
+    creative_direction_id: Optional[str] = None
 
 
 class OfficialSeedPromptsPatch(BaseModel):
@@ -233,7 +234,6 @@ class OfficialSeedPromptsPatch(BaseModel):
 
 class BioPatchRequest(BaseModel):
     chara_profile: Optional[str] = Field(None, description="角色小档案全文（Markdown）")
-    creative_advice: Optional[str] = Field(None, description="创作建议全文")
     official_seed_prompts: Optional[OfficialSeedPromptsPatch] = Field(
         None,
         description="正式种子提示词；character_specific 与 general 均为空时服务端从 bio 中移除该字段",
@@ -241,12 +241,8 @@ class BioPatchRequest(BaseModel):
 
     @model_validator(mode="after")
     def at_least_one_field(self):
-        if (
-            self.chara_profile is None
-            and self.creative_advice is None
-            and self.official_seed_prompts is None
-        ):
-            raise ValueError("至少提供 chara_profile、creative_advice、official_seed_prompts 之一")
+        if self.chara_profile is None and self.official_seed_prompts is None:
+            raise ValueError("至少提供 chara_profile、official_seed_prompts 之一")
         return self
 
 
@@ -286,6 +282,30 @@ class Divergence(str, Enum):
 class MaterialErrorCode(str, Enum):
     TASK_CONCURRENCY_EXCEEDED = "MATERIAL_TASK_CONCURRENCY_EXCEEDED"
     DIRECTION_LIMIT_EXCEEDED = "CREATIVE_DIRECTION_LIMIT_EXCEEDED"
+    SEED_PER_DIRECTION_EXCEEDED = "SEED_PROMPT_PER_DIRECTION_LIMIT_EXCEEDED"
+    SEED_TOTAL_EXCEEDED = "SEED_PROMPT_TOTAL_LIMIT_EXCEEDED"
+
+
+class SeedPromptStartRequest(BaseModel):
+    creative_direction_id: Optional[str] = None
+
+
+class SeedPromptDraft(BaseModel):
+    """LLM 输出落盘形态——只有 character_specific，无 general。"""
+
+    character_specific: List[str]
+
+
+class SeedPromptTaskStatusResponse(BaseModel):
+    task_id: str
+    character_id: str
+    creative_direction_id: Optional[str]
+    status: str
+    current_step: Optional[str]
+    seed_draft: Optional[SeedPromptDraft]
+    error_message: Optional[str]
+    created_at: ApiDateTime
+    updated_at: ApiDateTime
 
 
 class CreativeDirectionStartRequest(BaseModel):

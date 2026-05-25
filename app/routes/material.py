@@ -4,7 +4,7 @@
 import json
 import logging
 import os
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import (
     APIRouter,
@@ -44,11 +44,11 @@ from app.schemas.material import (
     CreativeDirectionResponse,
     CreativeDirectionStartRequest,
     CreativeDirectionTaskStatusResponse,
-    CreationAdviceStartResponse,
-    CreationAdviceStatusResponse,
-    CreationAdviceSeedDraftData,
     Divergence,
     MaterialErrorCode,
+    SeedPromptDraft,
+    SeedPromptStartRequest,
+    SeedPromptTaskStatusResponse,
     StandardPhotoSelectRequest,
     StandardPhotoStartRequest,
     StandardPhotoStartResponse,
@@ -64,6 +64,8 @@ from app.services.material_service import MaterialService
 from app.services.material_service.task_concurrency import (
     CharacterConcurrencyError,
     CreativeDirectionLimitExceededError,
+    SeedPromptPerDirectionLimitExceededError,
+    SeedPromptTotalLimitExceededError,
 )
 from app.services.file_service import FileSaveError, FileValidationError
 
@@ -91,6 +93,12 @@ def _translate_material_409(exc: Exception) -> JSONResponse:
     elif isinstance(exc, CreativeDirectionLimitExceededError):
         code = MaterialErrorCode.DIRECTION_LIMIT_EXCEEDED
         msg = "方向已达上限 20 条，请先删除部分再生成新方向"
+    elif isinstance(exc, SeedPromptPerDirectionLimitExceededError):
+        code = MaterialErrorCode.SEED_PER_DIRECTION_EXCEEDED
+        msg = "该方向种子已达 20 条上限"
+    elif isinstance(exc, SeedPromptTotalLimitExceededError):
+        code = MaterialErrorCode.SEED_TOTAL_EXCEEDED
+        msg = "角色种子总数已达 100 条上限"
     else:
         raise exc
     return JSONResponse(
@@ -244,19 +252,53 @@ async def get_character(
 @router.patch("/characters/{character_id}/bio", response_model=ApiResponse)
 async def patch_character_bio(
     character_id: str,
-    body: BioPatchRequest,
+    body: Dict[str, Any],
     service: MaterialService = Depends(get_material_service),
 ):
     character_id = ensure_valid_character_id(character_id)
     logger.info(f"API 请求 - 更新角色 bio: {character_id}")
+
+    if "creative_advice" in body:
+        raise HTTPException(
+            status_code=400,
+            detail="creative_advice is no longer writable; use creative-directions endpoints",
+        )
+
+    seeds = body.get("official_seed_prompts") or {}
+    cs = seeds.get("character_specific") or []
+    for entry in cs:
+        if not isinstance(entry, dict):
+            continue
+        dir_id = entry.get("creative_direction_id")
+        if dir_id is None:
+            continue
+        if not service.is_direction_owned_by_character(dir_id, character_id):
+            raise HTTPException(
+                status_code=400,
+                detail=f"invalid creative_direction_id: {dir_id}",
+            )
+
+    gen = seeds.get("general") or []
+    for entry in gen:
+        if isinstance(entry, dict) and "creative_direction_id" in entry:
+            logger.warning(
+                "PATCH /bio: ignoring creative_direction_id on general[] entry (character=%s)",
+                character_id,
+            )
+            entry.pop("creative_direction_id", None)
+
+    try:
+        patch = BioPatchRequest.model_validate(body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     try:
         char = service.patch_character_bio(
             character_id,
-            chara_profile=body.chara_profile,
-            creative_advice=body.creative_advice,
+            chara_profile=patch.chara_profile,
             official_seed_prompts=(
-                body.official_seed_prompts.model_dump(mode="json")
-                if body.official_seed_prompts is not None
+                patch.official_seed_prompts.model_dump(mode="json")
+                if patch.official_seed_prompts is not None
                 else None
             ),
         )
@@ -264,7 +306,7 @@ async def patch_character_bio(
         return ApiResponse(
             success=True,
             data=CharacterDetail(**detail).model_dump(mode="json"),
-            message="角色档案已更新",
+            message="已保存",
         )
     except ValueError as e:
         msg = str(e)
@@ -836,52 +878,69 @@ async def delete_creative_direction(
     return ApiResponse(success=True, data={"deleted": True}, message="已删除")
 
 
-@router.post("/characters/{character_id}/creation-advice/start", response_model=ApiResponse)
-async def start_creation_advice(
+@router.post(
+    "/characters/{character_id}/seed-prompts/start",
+    response_model=ApiResponse,
+)
+async def start_seed_prompt(
     character_id: str,
+    body: SeedPromptStartRequest,
     background_tasks: BackgroundTasks,
     service: MaterialService = Depends(get_material_service),
 ):
     character_id = ensure_valid_character_id(character_id)
-    logger.info(f"API 请求 - 启动生成创作建议任务: {character_id}")
     try:
-        data = service.start_creation_advice_task(
+        task = service.start_seed_prompt_task(
             character_id=character_id,
+            creative_direction_id=body.creative_direction_id,
             background_tasks=background_tasks,
         )
-        return ApiResponse(
-            success=True,
-            data=CreationAdviceStartResponse(**data).model_dump(mode="json"),
-            message="生成创作建议任务已启动",
-        )
+    except (
+        CharacterConcurrencyError,
+        SeedPromptPerDirectionLimitExceededError,
+        SeedPromptTotalLimitExceededError,
+    ) as e:
+        return _translate_material_409(e)
     except ValueError as e:
         msg = str(e)
-        if msg == "角色不存在":
+        if msg in {"character not found", "creative_direction not found"}:
             raise HTTPException(status_code=404, detail=msg) from e
         raise HTTPException(status_code=400, detail=msg) from e
-    except Exception as e:
-        logger.error(f"API 错误 - 启动生成创作建议任务失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="启动生成创作建议任务失败")
+    return ApiResponse(
+        success=True,
+        data={"task_id": task.id, "status": task.status},
+        message="任务已提交",
+    )
 
 
-@router.get("/characters/{character_id}/creation-advice/status", response_model=ApiResponse)
-async def get_creation_advice_status(
+@router.get(
+    "/characters/{character_id}/seed-prompts/tasks/{task_id}",
+    response_model=ApiResponse,
+)
+async def get_seed_prompt_task_status(
     character_id: str,
+    task_id: str,
     service: MaterialService = Depends(get_material_service),
 ):
     character_id = ensure_valid_character_id(character_id)
-    task = service.get_creation_advice_task_status(character_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="生成创作建议任务不存在")
-    seed = task.get("seed_draft")
-    seed_model = CreationAdviceSeedDraftData(**seed) if seed else None
-    payload = {k: v for k, v in task.items() if k != "seed_draft"}
-    payload["seed_draft"] = seed_model
-    return ApiResponse(
-        success=True,
-        data=CreationAdviceStatusResponse(**payload).model_dump(mode="json"),
-        message="获取生成创作建议任务状态成功",
+    try:
+        task, draft = service.get_seed_prompt_task_status(character_id, task_id)
+    except ValueError as e:
+        if str(e) == "task not found":
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    payload = SeedPromptTaskStatusResponse(
+        task_id=task.id,
+        character_id=task.character_id,
+        creative_direction_id=task.creative_direction_id,
+        status=task.status,
+        current_step=task.current_step,
+        seed_draft=SeedPromptDraft(**draft) if draft else None,
+        error_message=task.error_message,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
     )
+    return ApiResponse(success=True, data=payload.model_dump(mode="json"), message="ok")
 
 
 @router.get("/characters/{character_id}/standard-photo/result-images/{filename}")

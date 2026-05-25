@@ -225,6 +225,35 @@ class MaterialCreativeDirectionTask(Base):
         )
 
 
+class MaterialSeedPromptTask(Base):
+    """素材加工 — 种子提示词生成任务（每角色可多条；并发由应用层控制）"""
+
+    __tablename__ = "material_seed_prompt_tasks"
+
+    id = Column(String, primary_key=True, index=True)
+    character_id = Column(
+        String,
+        ForeignKey("material_characters.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # FK 弱关联：方向被删时置 NULL（应用层补偿与 direction 模块一致）
+    creative_direction_id = Column(String, nullable=True)
+    status = Column(String(20), nullable=False, index=True, default="pending")
+    current_step = Column(String(40), nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    character = relationship("MaterialCharacter")
+
+    def __repr__(self):
+        return (
+            f"<MaterialSeedPromptTask(id={self.id!r}, character_id={self.character_id!r}, "
+            f"status={self.status!r})>"
+        )
+
+
 @event.listens_for(MaterialCreativeDirection, "after_delete")
 def _null_task_result_direction_on_direction_delete(mapper, connection, target):
     """result_direction_id 无 DB 级 FK；删除方向时应用层置空关联任务字段。"""
@@ -232,4 +261,9 @@ def _null_task_result_direction_on_direction_delete(mapper, connection, target):
         MaterialCreativeDirectionTask.__table__.update()
         .where(MaterialCreativeDirectionTask.result_direction_id == target.id)
         .values(result_direction_id=None)
+    )
+    connection.execute(
+        MaterialSeedPromptTask.__table__.update()
+        .where(MaterialSeedPromptTask.creative_direction_id == target.id)
+        .values(creative_direction_id=None)
     )

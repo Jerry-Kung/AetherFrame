@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy import create_engine, event, text
@@ -73,6 +74,36 @@ BackgroundSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=ba
 
 # 基类
 Base = declarative_base()
+
+
+def _ensure_app_migrations_table() -> None:
+    """惰性创建 app_migrations 元表（启动期幂等）。"""
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS app_migrations (
+                name TEXT PRIMARY KEY,
+                applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.commit()
+
+
+def _is_migration_applied(conn, name: str) -> bool:
+    row = conn.execute(
+        text("SELECT 1 FROM app_migrations WHERE name = :name"),
+        {"name": name},
+    ).fetchone()
+    return row is not None
+
+
+def _mark_migration_applied(conn, name: str) -> None:
+    conn.execute(
+        text(
+            "INSERT OR IGNORE INTO app_migrations(name, applied_at) "
+            "VALUES (:name, CURRENT_TIMESTAMP)"
+        ),
+        {"name": name},
+    )
 
 
 def get_db():
@@ -370,6 +401,62 @@ def migrate_create_material_creative_direction_tasks() -> None:
     logger.info("migrate: material_creative_direction_tasks ensured")
 
 
+def migrate_create_material_seed_prompt_tasks() -> None:
+    """创建 material_seed_prompt_tasks 表（幂等：依赖 create_all）。"""
+    from app.models.material import MaterialSeedPromptTask  # noqa: F401
+
+    logger.info("migrate: material_seed_prompt_tasks ensured")
+
+
+_BIO_WALK_FLAG = "seed_prompts_direction_fk_v1"
+
+
+def migrate_bio_official_seed_prompts_add_direction_fk() -> None:
+    """
+    一次性 walk：为所有 character 的 bio.official_seed_prompts.character_specific[*]
+    补上 `creative_direction_id: null` 字段（若缺失）。general[*] 不动。
+
+    幂等：通过 app_migrations 表记录已迁移；二次启动立即返回。
+    """
+    with engine.connect() as conn:
+        if _is_migration_applied(conn, _BIO_WALK_FLAG):
+            return
+
+        rows = conn.execute(
+            text("SELECT id, bio_json FROM material_characters")
+        ).fetchall()
+
+        updated = 0
+        for r in rows:
+            raw = r.bio_json or ""
+            if not raw.strip():
+                continue
+            try:
+                bio = json.loads(raw)
+            except json.JSONDecodeError:
+                logger.warning("bio_walk: skip character %s due to malformed bio_json", r.id)
+                continue
+
+            seeds = bio.get("official_seed_prompts") or {}
+            cs = seeds.get("character_specific") or []
+            changed = False
+            for entry in cs:
+                if isinstance(entry, dict) and "creative_direction_id" not in entry:
+                    entry["creative_direction_id"] = None
+                    changed = True
+
+            if changed:
+                conn.execute(
+                    text("UPDATE material_characters SET bio_json = :bio WHERE id = :id"),
+                    {"bio": json.dumps(bio, ensure_ascii=False), "id": r.id},
+                )
+                updated += 1
+
+        _mark_migration_applied(conn, _BIO_WALK_FLAG)
+        conn.commit()
+        logger.info("bio_walk: migrated %d characters (flag=%s)", updated, _BIO_WALK_FLAG)
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
@@ -384,6 +471,7 @@ def init_db():
             MaterialCreationAdviceTask,
             MaterialCreativeDirection,
             MaterialCreativeDirectionTask,
+            MaterialSeedPromptTask,
             MaterialStandardPhotoTask,
         )
         from app.models.creation import CreationPromptPrecreationTask, CreationQuickCreateTask  # noqa: F401
@@ -391,6 +479,7 @@ def init_db():
         from app.models.beautify import ImageBeautifyTask  # noqa: F401
 
         Base.metadata.create_all(bind=engine)
+        _ensure_app_migrations_table()
         migrate_prompt_templates_add_description()
         migrate_prompt_templates_add_tags()
         migrate_material_raw_images_add_type()
@@ -401,6 +490,8 @@ def init_db():
         migrate_fixed_seed_templates_seed_defaults()
         migrate_create_material_creative_directions()
         migrate_create_material_creative_direction_tasks()
+        migrate_create_material_seed_prompt_tasks()
+        migrate_bio_official_seed_prompts_add_direction_fk()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:

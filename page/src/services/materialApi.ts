@@ -337,25 +337,62 @@ export interface CharaProfileStatusResult {
   updated_at: string;
 }
 
-export interface CreationAdviceStartResult {
+export interface SeedPromptDraftApi {
+  character_specific: string[];
+}
+
+export interface SeedPromptTaskStartResult {
   task_id: string;
   status: string;
 }
 
-export interface CreationAdviceSeedDraft {
-  character_specific: string[];
-  general: string[];
-}
-
-export interface CreationAdviceStatusResult {
+export interface SeedPromptTaskStatus {
   task_id: string;
   character_id: string;
+  creative_direction_id: string | null;
   status: "pending" | "processing" | "completed" | "failed";
-  error_message: string | null;
   current_step: string | null;
+  seed_draft: SeedPromptDraftApi | null;
+  error_message: string | null;
   created_at: string;
   updated_at: string;
-  seed_draft: CreationAdviceSeedDraft | null;
+}
+
+export async function startSeedPromptTask(
+  characterId: string,
+  body: { creative_direction_id?: string | null }
+): Promise<SeedPromptTaskStartResult> {
+  assertValidCharacterId(characterId, "启动种子提示词任务");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/seed-prompts/start`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      timeout: 60000,
+    });
+    const data = await parseJson<SeedPromptTaskStartResult>(response);
+    throwIfError(response, data);
+    return data.data as SeedPromptTaskStartResult;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function getSeedPromptTaskStatus(
+  characterId: string,
+  taskId: string
+): Promise<SeedPromptTaskStatus> {
+  assertValidCharacterId(characterId, "查询种子提示词任务状态");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/seed-prompts/tasks/${encodeURIComponent(taskId)}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET", timeout: 20000 });
+    const data = await parseJson<SeedPromptTaskStatus>(response);
+    throwIfError(response, data);
+    return data.data as SeedPromptTaskStatus;
+  } catch (e) {
+    rethrow(e);
+  }
 }
 
 export async function startCharaProfileTask(
@@ -392,44 +429,6 @@ export async function getCharaProfileStatus(
     const data = await parseJson<CharaProfileStatusResult>(response);
     throwIfError(response, data);
     return data.data as CharaProfileStatusResult;
-  } catch (e) {
-    rethrow(e);
-  }
-}
-
-export async function startCreationAdviceTask(
-  characterId: string
-): Promise<CreationAdviceStartResult> {
-  assertValidCharacterId(characterId, "启动生成创作建议任务");
-  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creation-advice/start`;
-  try {
-    const response = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-      timeout: 120000,
-    });
-    const data = await parseJson<CreationAdviceStartResult>(response);
-    throwIfError(response, data);
-    return data.data as CreationAdviceStartResult;
-  } catch (e) {
-    rethrow(e);
-  }
-}
-
-export async function getCreationAdviceStatus(
-  characterId: string
-): Promise<CreationAdviceStatusResult> {
-  assertValidCharacterId(characterId, "查询生成创作建议任务状态");
-  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creation-advice/status`;
-  try {
-    const response = await fetchWithTimeout(url, {
-      method: "GET",
-      timeout: 20000,
-    });
-    const data = await parseJson<CreationAdviceStatusResult>(response);
-    throwIfError(response, data);
-    return data.data as CreationAdviceStatusResult;
   } catch (e) {
     rethrow(e);
   }
@@ -528,11 +527,10 @@ export async function deleteOfficialPhotoSlot(
 
 export type PatchCharacterBioBody = {
   chara_profile?: string;
-  creative_advice?: string;
   official_seed_prompts?: OfficialSeedPromptsApiPatch;
 };
 
-/** 合并更新角色 bio（chara_profile / creative_advice / official_seed_prompts 至少一项） */
+/** 合并更新角色 bio（chara_profile / official_seed_prompts 至少一项） */
 export async function patchCharacterBio(
   characterId: string,
   body: PatchCharacterBioBody
@@ -540,7 +538,6 @@ export async function patchCharacterBio(
   assertValidCharacterId(characterId, "更新角色档案");
   const payload: Record<string, unknown> = {};
   if (body.chara_profile !== undefined) payload.chara_profile = body.chara_profile;
-  if (body.creative_advice !== undefined) payload.creative_advice = body.creative_advice;
   if (body.official_seed_prompts !== undefined) {
     payload.official_seed_prompts = body.official_seed_prompts;
   }
@@ -568,14 +565,6 @@ export async function saveCharaProfile(
   charaProfile: string
 ): Promise<ApiCharacterDetail> {
   return patchCharacterBio(characterId, { chara_profile: charaProfile });
-}
-
-/** 保存角色创作建议 */
-export async function saveCreativeAdvice(
-  characterId: string,
-  creativeAdvice: string
-): Promise<ApiCharacterDetail> {
-  return patchCharacterBio(characterId, { creative_advice: creativeAdvice });
 }
 
 /** GET /api/material/fixed-seed-templates — 全角色共享固定模板 */

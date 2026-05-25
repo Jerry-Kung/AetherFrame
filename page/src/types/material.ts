@@ -71,11 +71,15 @@ export interface SeedPrompt {
   text: string;
   /** 是否在创作流程中标记为「已使用」（仅展示，不参与「保存为正式内容」的筛选） */
   used: boolean;
+  /** 仅 character_specific 实际填充；general[] 始终为 null */
+  creativeDirectionId?: string | null;
+  /** Task 03 由后端回填；本 Task 字段位预留 */
+  creativeDirectionMeta?: { title: string; divergence: Divergence } | null;
   /**
    * 创作建议页：勾选则纳入「保存为正式种子提示词」；持久化到 bio 时不会写入该字段。
    * 从接口读入的旧数据若无该字段，视为 true（与历史「全部保存」行为兼容）。
    */
-  selected: boolean;
+  selected?: boolean;
 }
 
 export interface OfficialSeedPrompts {
@@ -91,7 +95,6 @@ export interface CharaBio {
   ability: string;
   appearance: string;
   charaProfile?: string;
-  creativeAdvice?: string;
   /** 已保存至正式内容的种子提示词；未保存过为 null */
   officialSeedPrompts?: OfficialSeedPrompts | null;
 }
@@ -158,7 +161,34 @@ function parseSeedPromptItem(x: unknown, index: number): SeedPrompt | null {
   const text = typeof o.text === "string" ? o.text : "";
   const used = o.used === true;
   const selected = o.selected === false ? false : true;
-  return { id, text, used, selected };
+  const dirRaw = o.creative_direction_id ?? o.creativeDirectionId;
+  const creativeDirectionId =
+    dirRaw === null || dirRaw === undefined
+      ? null
+      : typeof dirRaw === "string"
+        ? dirRaw
+        : undefined;
+  const metaRaw = o.creative_direction_meta ?? o.creativeDirectionMeta;
+  let creativeDirectionMeta: SeedPrompt["creativeDirectionMeta"] = null;
+  if (metaRaw && typeof metaRaw === "object" && !Array.isArray(metaRaw)) {
+    const m = metaRaw as Record<string, unknown>;
+    const title = typeof m.title === "string" ? m.title : "";
+    const div = m.divergence;
+    if (
+      title &&
+      (div === "low" || div === "mid" || div === "high")
+    ) {
+      creativeDirectionMeta = { title, divergence: div };
+    }
+  }
+  return {
+    id,
+    text,
+    used,
+    selected,
+    creativeDirectionId: creativeDirectionId ?? null,
+    creativeDirectionMeta,
+  };
 }
 
 function parseSeedPromptArray(raw: unknown): SeedPrompt[] {
@@ -184,16 +214,27 @@ export function parseOfficialSeedPromptsFromBio(bio: Record<string, unknown>): O
 
 /** PATCH /characters/:id/bio 的 official_seed_prompts（与后端 OfficialSeedPromptsPatch 一致） */
 export type OfficialSeedPromptsApiPatch = {
-  character_specific: { id: string; text: string; used: boolean }[];
+  character_specific: {
+    id: string;
+    text: string;
+    used: boolean;
+    creative_direction_id?: string | null;
+  }[];
   general: { id: string; text: string; used: boolean }[];
 };
 
 /** 写入 PATCH 请求体用的 snake_case 结构 */
 export function officialSeedPromptsToApiPayload(p: OfficialSeedPrompts): OfficialSeedPromptsApiPatch {
-  const row = (s: SeedPrompt) => ({ id: s.id, text: s.text, used: s.used });
+  const rowCs = (s: SeedPrompt) => ({
+    id: s.id,
+    text: s.text,
+    used: s.used,
+    creative_direction_id: s.creativeDirectionId ?? null,
+  });
+  const rowGe = (s: SeedPrompt) => ({ id: s.id, text: s.text, used: s.used });
   return {
-    character_specific: p.characterSpecific.map(row),
-    general: p.general.map(row),
+    character_specific: p.characterSpecific.map(rowCs),
+    general: p.general.map(rowGe),
   };
 }
 
@@ -334,7 +375,6 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
     ability: str(b.ability, "待补充"),
     appearance: str(b.appearance, "待补充"),
     charaProfile: extractCharaProfileMarkdown(bioRecord),
-    creativeAdvice: str(b.creativeAdvice ?? (b as { creative_advice?: unknown }).creative_advice, ""),
     officialSeedPrompts: seeds,
   };
 
@@ -410,6 +450,8 @@ export interface CreativeDirection {
 export const MATERIAL_ERROR_CODES = {
   TASK_CONCURRENCY_EXCEEDED: "MATERIAL_TASK_CONCURRENCY_EXCEEDED",
   DIRECTION_LIMIT_EXCEEDED: "CREATIVE_DIRECTION_LIMIT_EXCEEDED",
+  SEED_PER_DIRECTION_EXCEEDED: "SEED_PROMPT_PER_DIRECTION_LIMIT_EXCEEDED",
+  SEED_TOTAL_EXCEEDED: "SEED_PROMPT_TOTAL_LIMIT_EXCEEDED",
 } as const;
 
 export type MaterialErrorCode = (typeof MATERIAL_ERROR_CODES)[keyof typeof MATERIAL_ERROR_CODES];

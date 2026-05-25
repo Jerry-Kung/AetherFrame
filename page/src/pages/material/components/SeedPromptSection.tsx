@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { SeedPrompt } from "@/types/material";
+import DirectionChip from "@/pages/material/components/direction/DirectionChip";
 
 export interface SeedPromptSectionProps {
   title: string;
@@ -103,7 +104,21 @@ function SeedRow({
             </div>
           </div>
         ) : (
-          <p className="text-xs leading-relaxed text-rose-700/80 break-words">{prompt.text}</p>
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            {prompt.creativeDirectionId != null &&
+              (prompt.creativeDirectionMeta ? (
+                <DirectionChip meta={prompt.creativeDirectionMeta} compact />
+              ) : (
+                <DirectionChip
+                  meta={{ title: "", divergence: "low" }}
+                  compact
+                  fallback="方向已删除"
+                />
+              ))}
+            <p className="text-xs leading-relaxed text-rose-700/80 break-words flex-1 min-w-0">
+              {prompt.text}
+            </p>
+          </div>
         )}
       </div>
 

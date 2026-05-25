@@ -78,6 +78,9 @@ export default function MaterialPage() {
   );
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
   const [fixedTemplatesRows, setFixedTemplatesRows] = useState<SeedPrompt[]>([]);
+  const [creativeDirections, setCreativeDirections] = useState<
+    Awaited<ReturnType<typeof materialApi.listCreativeDirections>>
+  >([]);
   const lastFetchedRef = useRef<{ id: string; ts: number } | null>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -183,6 +186,25 @@ export default function MaterialPage() {
       cancelled = true;
     };
   }, [selectedId, mergeChara, showToast]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setCreativeDirections([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const list = await materialApi.listCreativeDirections(selectedId);
+        if (!cancelled) setCreativeDirections(list);
+      } catch {
+        if (!cancelled) setCreativeDirections([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
 
   const selected = useMemo(
     () => charas.find((c) => c.id === selectedId) ?? null,
@@ -801,6 +823,7 @@ export default function MaterialPage() {
                   <OfficialContentTab
                     officialPhotos={selected.officialPhotos}
                     bio={selected.bio}
+                    directions={creativeDirections}
                     fixedTemplates={fixedTemplatesRows}
                     onPhotoClick={handleOfficialPhotoClick}
                     onOfficialPhotoDelete={handleOfficialPhotoDelete}

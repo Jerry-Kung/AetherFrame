@@ -15,6 +15,7 @@ from app.models.material import (
     MaterialCreationAdviceTask,
     MaterialCreativeDirection,
     MaterialCreativeDirectionTask,
+    MaterialSeedPromptTask,
     MaterialStandardPhotoTask,
 )
 
@@ -409,6 +410,21 @@ class MaterialCreativeDirectionTaskRepository(BaseRepository[MaterialCreativeDir
             .filter(
                 MaterialCreativeDirectionTask.character_id == character_id,
                 MaterialCreativeDirectionTask.status.in_(["pending", "processing"]),
+            )
+            .count()
+        )
+
+
+class MaterialSeedPromptTaskRepository(BaseRepository[MaterialSeedPromptTask]):
+    def __init__(self, db: Session):
+        super().__init__(db, MaterialSeedPromptTask)
+
+    def count_inflight_by_character(self, character_id: str) -> int:
+        return (
+            self.db.query(MaterialSeedPromptTask)
+            .filter(
+                MaterialSeedPromptTask.character_id == character_id,
+                MaterialSeedPromptTask.status.in_(["pending", "processing"]),
             )
             .count()
         )
