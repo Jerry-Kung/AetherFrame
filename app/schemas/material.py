@@ -3,6 +3,7 @@
 """
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Dict, List, Optional, Literal
 
 from pydantic import BaseModel, Field, ConfigDict, model_validator
@@ -274,3 +275,51 @@ class FixedSeedTemplatePatch(BaseModel):
         if self.text is None and self.used is None:
             raise ValueError("至少提供 text 或 used 之一")
         return self
+
+
+class Divergence(str, Enum):
+    low = "low"
+    mid = "mid"
+    high = "high"
+
+
+class MaterialErrorCode(str, Enum):
+    TASK_CONCURRENCY_EXCEEDED = "MATERIAL_TASK_CONCURRENCY_EXCEEDED"
+    DIRECTION_LIMIT_EXCEEDED = "CREATIVE_DIRECTION_LIMIT_EXCEEDED"
+
+
+class CreativeDirectionStartRequest(BaseModel):
+    divergence: Divergence
+    initial_input: Optional[str] = Field(None, max_length=500)
+
+
+class CreativeDirectionResponse(BaseModel):
+    id: str
+    character_id: str
+    title: str
+    description: str
+    divergence: Divergence
+    initial_input: Optional[str]
+    source_task_id: Optional[str]
+    created_at: ApiDateTime
+    updated_at: ApiDateTime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CreativeDirectionTaskStatusResponse(BaseModel):
+    task_id: str
+    character_id: str
+    status: str
+    current_step: Optional[str]
+    divergence: Divergence
+    initial_input: Optional[str]
+    result_direction: Optional[CreativeDirectionResponse] = None
+    error_message: Optional[str]
+    created_at: ApiDateTime
+    updated_at: ApiDateTime
+
+
+class CreativeDirectionPatchRequest(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    description: Optional[str] = Field(None, min_length=1)

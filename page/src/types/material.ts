@@ -392,6 +392,28 @@ export function toCharaProfile(d: ApiCharacterDetail): CharaProfile {
 }
 
 /** 列表摘要 → 可渲染的轻量档案（选中后需再拉详情） */
+export type Divergence = "low" | "mid" | "high";
+
+export interface CreativeDirection {
+  id: string;
+  characterId: string;
+  title: string;
+  description: string;
+  divergence: Divergence;
+  initialInput: string | null;
+  sourceTaskId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 错误码常量；与后端 schemas/material.py:MaterialErrorCode 对齐 */
+export const MATERIAL_ERROR_CODES = {
+  TASK_CONCURRENCY_EXCEEDED: "MATERIAL_TASK_CONCURRENCY_EXCEEDED",
+  DIRECTION_LIMIT_EXCEEDED: "CREATIVE_DIRECTION_LIMIT_EXCEEDED",
+} as const;
+
+export type MaterialErrorCode = (typeof MATERIAL_ERROR_CODES)[keyof typeof MATERIAL_ERROR_CODES];
+
 export function summaryToListProfile(s: ApiCharacterSummary): CharaProfile {
   const avatarUrl =
     s.avatar_url && s.avatar_url.length > 0 ? s.avatar_url : DEFAULT_CHARA_AVATAR_PLACEHOLDER;

@@ -57,6 +57,7 @@ def _sqlite_on_connect(dbapi_connection, _connection_record):
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA foreign_keys=ON")
     finally:
         cursor.close()
 
@@ -355,6 +356,20 @@ def migrate_fixed_seed_templates_seed_defaults() -> None:
         raise
 
 
+def migrate_create_material_creative_directions() -> None:
+    """创建 material_creative_directions 表（幂等：依赖 create_all + 不做额外 ALTER）。"""
+    from app.models.material import MaterialCreativeDirection  # noqa: F401
+
+    logger.info("migrate: material_creative_directions ensured")
+
+
+def migrate_create_material_creative_direction_tasks() -> None:
+    """创建 material_creative_direction_tasks 表（幂等）。"""
+    from app.models.material import MaterialCreativeDirectionTask  # noqa: F401
+
+    logger.info("migrate: material_creative_direction_tasks ensured")
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
@@ -367,6 +382,8 @@ def init_db():
             MaterialCharacterRawImage,
             MaterialCharaProfileTask,
             MaterialCreationAdviceTask,
+            MaterialCreativeDirection,
+            MaterialCreativeDirectionTask,
             MaterialStandardPhotoTask,
         )
         from app.models.creation import CreationPromptPrecreationTask, CreationQuickCreateTask  # noqa: F401
@@ -382,6 +399,8 @@ def init_db():
         migrate_creation_quick_create_tasks_add_seed_prompt()
         migrate_creation_prompt_precreation_tasks_add_chain_fields()
         migrate_fixed_seed_templates_seed_defaults()
+        migrate_create_material_creative_directions()
+        migrate_create_material_creative_direction_tasks()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:

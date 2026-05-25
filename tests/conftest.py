@@ -49,7 +49,12 @@ def db_session(temp_data_dir):
     import sys
 
     for key in list(sys.modules.keys()):
-        if key.startswith("app.models") or key.startswith("app.repositories"):
+        if (
+            key.startswith("app.models")
+            or key.startswith("app.repositories")
+            or key == "app.main"
+            or key.startswith("app.routes")
+        ):
             del sys.modules[key]
 
     from app.models import database
@@ -58,6 +63,8 @@ def db_session(temp_data_dir):
         FixedSeedTemplate,
         MaterialCharacterRawImage,
         MaterialCharacter,
+        MaterialCreativeDirection,
+        MaterialCreativeDirectionTask,
         MaterialStandardPhotoTask,
     )
     from app.models.creation import CreationPromptPrecreationTask, CreationQuickCreateTask
@@ -66,6 +73,10 @@ def db_session(temp_data_dir):
 
     database.init_db()
     db = database.SessionLocal()
+    from sqlalchemy import text
+
+    db.execute(text("PRAGMA foreign_keys=ON"))
+    db.commit()
 
     yield db
 
@@ -75,6 +86,8 @@ def db_session(temp_data_dir):
         db.query(CreationBatchRun).delete()
         db.query(CreationQuickCreateTask).delete()
         db.query(CreationPromptPrecreationTask).delete()
+        db.query(MaterialCreativeDirection).delete()
+        db.query(MaterialCreativeDirectionTask).delete()
         db.query(MaterialCharacterRawImage).delete()
         db.query(MaterialStandardPhotoTask).delete()
         db.query(MaterialCharacter).delete()

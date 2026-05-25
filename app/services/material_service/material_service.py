@@ -2,13 +2,18 @@ import asyncio
 import json
 import logging
 import os
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import BackgroundTasks
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
-from app.models.material import MaterialCharacter
+from app.models.material import (
+    MaterialCharacter,
+    MaterialCreativeDirection,
+    MaterialCreativeDirectionTask,
+)
 from app.prompts.material.standard_photo import (
     face_close_prompt,
     full_front_prompt,
@@ -17,13 +22,26 @@ from app.prompts.material.standard_photo import (
     half_side_prompt,
 )
 from app.repositories.fixed_seed_template_repository import FixedSeedTemplateRepository
-from app.repositories.material_repository import INDEX_TO_SHOT_TYPE, MaterialCharacterRepository
+from app.repositories.material_repository import (
+    INDEX_TO_SHOT_TYPE,
+    MaterialCharacterRepository,
+    MaterialCreativeDirectionRepository,
+    MaterialCreativeDirectionTaskRepository,
+)
 from app.utils.image_generation_timeout import (
     IMAGE_GEN_TIMEOUT_ERROR_MESSAGE,
     deadline_exceeded,
 )
+from app.config import MATERIAL_CREATIVE_DIRECTION_PER_CHARACTER_LIMIT
 from app.services.material_service import chara_profile_generation_service
 from app.services.material_service import creation_advice_generation_service
+from app.services.material_service.creative_direction_generation_service import (
+    run_creative_direction_task,
+)
+from app.services.material_service.task_concurrency import (
+    assert_can_start_task,
+    CreativeDirectionLimitExceededError,
+)
 from app.services.material_service import material_file_service
 from app.services.file_service import FileDeleteError, FileSaveError, FileValidationError
 from app.services.material_service import standard_photo_generation_service
@@ -48,6 +66,8 @@ class MaterialService:
         self.db = db
         self.repo = MaterialCharacterRepository(db)
         self.fixed_seed_repo = FixedSeedTemplateRepository(db)
+        self._direction_repo = MaterialCreativeDirectionRepository(db)
+        self._direction_task_repo = MaterialCreativeDirectionTaskRepository(db)
 
     def raw_image_url(self, character_id: str, stored_filename: str) -> str:
         return f"/api/material/characters/{character_id}/images/raw/{stored_filename}"
@@ -1034,6 +1054,86 @@ class MaterialService:
         if not updated:
             raise ValueError("角色不存在")
         return updated
+
+    def start_creative_direction_task(
+        self,
+        character_id: str,
+        divergence: str,
+        initial_input: Optional[str],
+        background_tasks: BackgroundTasks,
+    ) -> MaterialCreativeDirectionTask:
+        char = self.repo.get_by_id(character_id)
+        if char is None:
+            raise ValueError("character not found")
+
+        n_directions = self._direction_repo.count_by_character(character_id)
+        if n_directions >= MATERIAL_CREATIVE_DIRECTION_PER_CHARACTER_LIMIT:
+            raise CreativeDirectionLimitExceededError()
+
+        assert_can_start_task(self.db, character_id)
+
+        task = MaterialCreativeDirectionTask(
+            id=str(uuid.uuid4()),
+            character_id=character_id,
+            status="pending",
+            divergence=divergence,
+            initial_input=initial_input or None,
+        )
+        self.db.add(task)
+        self.db.commit()
+        self.db.refresh(task)
+
+        background_tasks.add_task(run_creative_direction_task, task.id)
+        return task
+
+    def get_creative_direction_task_status(
+        self, character_id: str, task_id: str
+    ) -> Tuple[MaterialCreativeDirectionTask, Optional[MaterialCreativeDirection]]:
+        task = self._direction_task_repo.get_by_id(task_id)
+        if task is None or task.character_id != character_id:
+            raise ValueError("task not found")
+        direction = None
+        if task.status == "completed" and task.result_direction_id:
+            direction = self._direction_repo.get_by_id(task.result_direction_id)
+        return task, direction
+
+    def list_creative_directions(self, character_id: str) -> List[MaterialCreativeDirection]:
+        return self._direction_repo.list_by_character(character_id)
+
+    def patch_creative_direction(
+        self,
+        character_id: str,
+        direction_id: str,
+        title: Optional[str],
+        description: Optional[str],
+    ) -> MaterialCreativeDirection:
+        row = self._direction_repo.get_by_id(direction_id)
+        if row is None or row.character_id != character_id:
+            raise ValueError("direction not found")
+        if title is not None:
+            row.title = title
+        if description is not None:
+            row.description = description
+        self.db.commit()
+        self.db.refresh(row)
+        return row
+
+    def delete_creative_direction(self, character_id: str, direction_id: str) -> None:
+        row = self._direction_repo.get_by_id(direction_id)
+        if row is None or row.character_id != character_id:
+            raise ValueError("direction not found")
+        self.db.delete(row)
+        self.db.commit()
+        try:
+            path = os.path.join(
+                material_file_service.get_character_dir(character_id),
+                "creative_directions",
+                f"{direction_id}.json",
+            )
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception as e:
+            logger.warning("failed to delete direction json file: %s", e)
 
     # --- 固定种子模板（全角色共享） ---
 

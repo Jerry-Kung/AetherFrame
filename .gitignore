@@ -8,6 +8,7 @@ app/tools/llm/config.py
 app/tools/beautify/config.py
 *.png
 *example.py
+test*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

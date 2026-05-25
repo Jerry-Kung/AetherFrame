@@ -25,7 +25,7 @@ from app.utils.cache_response import (
     build_revalidate_file_response,
     guess_media_type,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from app.schemas.material import (
     ApiResponse,
     BioPatchRequest,
@@ -40,9 +40,15 @@ from app.schemas.material import (
     CharaProfileStartRequest,
     CharaProfileStartResponse,
     CharaProfileStatusResponse,
+    CreativeDirectionPatchRequest,
+    CreativeDirectionResponse,
+    CreativeDirectionStartRequest,
+    CreativeDirectionTaskStatusResponse,
     CreationAdviceStartResponse,
     CreationAdviceStatusResponse,
     CreationAdviceSeedDraftData,
+    Divergence,
+    MaterialErrorCode,
     StandardPhotoSelectRequest,
     StandardPhotoStartRequest,
     StandardPhotoStartResponse,
@@ -55,6 +61,10 @@ from app.schemas.material import (
 )
 from app.repositories.material_repository import SHOT_TYPE_TO_INDEX
 from app.services.material_service import MaterialService
+from app.services.material_service.task_concurrency import (
+    CharacterConcurrencyError,
+    CreativeDirectionLimitExceededError,
+)
 from app.services.file_service import FileSaveError, FileValidationError
 
 logger = logging.getLogger(__name__)
@@ -71,6 +81,27 @@ def ensure_valid_character_id(character_id: str) -> str:
     if not cid or cid in {"undefined", "null"}:
         raise HTTPException(status_code=400, detail="character_id 无效")
     return cid
+
+
+def _translate_material_409(exc: Exception) -> JSONResponse:
+    """把 service 层错误翻译为 409 + code 字段。"""
+    if isinstance(exc, CharacterConcurrencyError):
+        code = MaterialErrorCode.TASK_CONCURRENCY_EXCEEDED
+        msg = "该角色已有 2 个任务在跑，请等一个完成再来"
+    elif isinstance(exc, CreativeDirectionLimitExceededError):
+        code = MaterialErrorCode.DIRECTION_LIMIT_EXCEEDED
+        msg = "方向已达上限 20 条，请先删除部分再生成新方向"
+    else:
+        raise exc
+    return JSONResponse(
+        status_code=409,
+        content={
+            "success": False,
+            "data": None,
+            "message": msg,
+            "code": code.value,
+        },
+    )
 
 
 @router.get("/characters", response_model=ApiResponse)
@@ -675,6 +706,134 @@ async def get_chara_profile_status(
         data=CharaProfileStatusResponse(**task).model_dump(mode="json"),
         message="获取角色小档案任务状态成功",
     )
+
+
+@router.post("/characters/{character_id}/creative-directions/start", response_model=ApiResponse)
+async def start_creative_direction(
+    character_id: str,
+    body: CreativeDirectionStartRequest,
+    background_tasks: BackgroundTasks,
+    service: MaterialService = Depends(get_material_service),
+):
+    character_id = ensure_valid_character_id(character_id)
+    try:
+        task = service.start_creative_direction_task(
+            character_id=character_id,
+            divergence=body.divergence.value,
+            initial_input=body.initial_input,
+            background_tasks=background_tasks,
+        )
+    except (CharacterConcurrencyError, CreativeDirectionLimitExceededError) as e:
+        return _translate_material_409(e)
+    except ValueError as e:
+        msg = str(e)
+        if msg == "character not found":
+            raise HTTPException(status_code=404, detail=msg) from e
+        raise HTTPException(status_code=400, detail=msg) from e
+    return ApiResponse(
+        success=True,
+        data={"task_id": task.id, "status": task.status},
+        message="任务已提交",
+    )
+
+
+@router.get(
+    "/characters/{character_id}/creative-directions/tasks/{task_id}",
+    response_model=ApiResponse,
+)
+async def get_creative_direction_task_status(
+    character_id: str,
+    task_id: str,
+    service: MaterialService = Depends(get_material_service),
+):
+    character_id = ensure_valid_character_id(character_id)
+    try:
+        task, direction = service.get_creative_direction_task_status(character_id, task_id)
+    except ValueError as e:
+        if str(e) == "task not found":
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    char = service.repo.get_by_id(character_id)
+    if not char:
+        raise HTTPException(status_code=404, detail="character not found")
+    payload = CreativeDirectionTaskStatusResponse(
+        task_id=task.id,
+        character_id=task.character_id,
+        status=task.status,
+        current_step=task.current_step,
+        divergence=Divergence(task.divergence),
+        initial_input=task.initial_input,
+        result_direction=(
+            CreativeDirectionResponse.model_validate(direction) if direction else None
+        ),
+        error_message=task.error_message,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+    )
+    return ApiResponse(success=True, data=payload.model_dump(mode="json"), message="ok")
+
+
+@router.get("/characters/{character_id}/creative-directions", response_model=ApiResponse)
+async def list_creative_directions(
+    character_id: str,
+    service: MaterialService = Depends(get_material_service),
+):
+    character_id = ensure_valid_character_id(character_id)
+    if not service.repo.get_by_id(character_id):
+        raise HTTPException(status_code=404, detail="character not found")
+    rows = service.list_creative_directions(character_id)
+    data = [CreativeDirectionResponse.model_validate(r).model_dump(mode="json") for r in rows]
+    return ApiResponse(success=True, data=data, message="ok")
+
+
+@router.patch(
+    "/characters/{character_id}/creative-directions/{direction_id}",
+    response_model=ApiResponse,
+)
+async def patch_creative_direction(
+    character_id: str,
+    direction_id: str,
+    body: CreativeDirectionPatchRequest,
+    service: MaterialService = Depends(get_material_service),
+):
+    character_id = ensure_valid_character_id(character_id)
+    if body.title is None and body.description is None:
+        raise HTTPException(status_code=400, detail="至少需要一项更新字段")
+    try:
+        updated = service.patch_creative_direction(
+            character_id=character_id,
+            direction_id=direction_id,
+            title=body.title,
+            description=body.description,
+        )
+    except ValueError as e:
+        if str(e) == "direction not found":
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return ApiResponse(
+        success=True,
+        data=CreativeDirectionResponse.model_validate(updated).model_dump(mode="json"),
+        message="已保存",
+    )
+
+
+@router.delete(
+    "/characters/{character_id}/creative-directions/{direction_id}",
+    response_model=ApiResponse,
+)
+async def delete_creative_direction(
+    character_id: str,
+    direction_id: str,
+    service: MaterialService = Depends(get_material_service),
+):
+    character_id = ensure_valid_character_id(character_id)
+    try:
+        service.delete_creative_direction(character_id, direction_id)
+    except ValueError as e:
+        if str(e) == "direction not found":
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return ApiResponse(success=True, data={"deleted": True}, message="已删除")
 
 
 @router.post("/characters/{character_id}/creation-advice/start", response_model=ApiResponse)

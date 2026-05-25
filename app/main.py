@@ -89,6 +89,15 @@ async def lifespan(app: FastAPI):
         init_prompt_templates()
         logger.info("Prompt 模板初始化完成")
 
+        from app.models.database import SessionLocal
+        from app.services.material_service.cleanup import cleanup_old_material_tasks
+
+        try:
+            with SessionLocal() as db:
+                cleanup_old_material_tasks(db)
+        except Exception as e:
+            logger.warning(f"启动期清理素材任务失败（不阻塞启动）: {e}", exc_info=True)
+
     except Exception as e:
         logger.error(f"数据库初始化失败: {e}", exc_info=True)
         raise

@@ -16,6 +16,7 @@ import { toCharaProfile } from "@/types/material";
 import * as materialApi from "@/services/materialApi";
 import type { CreationAdviceSeedDraft } from "@/services/materialApi";
 import { ApiError } from "@/services/api";
+import DirectionStage from "@/pages/material/components/DirectionStage";
 
 interface CharaProfilePageProps {
   characterId: string;
@@ -61,7 +62,7 @@ const CREATION_ADVICE_STEP_LABELS: Record<string, string> = {
   done: "即将完成…",
 };
 
-type StageTab = "profile" | "advice";
+type StageTab = "profile" | "direction" | "advice";
 type AdvicePhase = "hydrating" | "idle" | "generating" | "done";
 
 /* ── Prerequisite check helpers ── */
@@ -1678,6 +1679,7 @@ const CharaProfilePage = ({
 
   const [activeStage, setActiveStage] = useState<StageTab>("profile");
   const [profileSaved, setProfileSaved] = useState(!!chara.bio.charaProfile?.trim());
+  const [directionCount, setDirectionCount] = useState(0);
 
   useEffect(() => {
     setProfileSaved(!!chara.bio.charaProfile?.trim());
@@ -1750,7 +1752,54 @@ const CharaProfilePage = ({
             )}
           </button>
 
-          {/* Stage 2 */}
+          {/* Stage 2 — 创意方向 */}
+          <button
+            onClick={() => profileSaved && setActiveStage("direction")}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-all duration-200 whitespace-nowrap"
+            style={{
+              fontFamily: "'ZCOOL KuaiLe', cursive",
+              background:
+                activeStage === "direction"
+                  ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
+                  : "transparent",
+              color:
+                activeStage === "direction"
+                  ? "white"
+                  : profileSaved
+                    ? "#f472b6"
+                    : "rgba(244,114,182,0.35)",
+              boxShadow:
+                activeStage === "direction"
+                  ? "0 2px 8px rgba(244,114,182,0.3)"
+                  : "none",
+              cursor: profileSaved ? "pointer" : "not-allowed",
+            }}
+          >
+            <div className="w-4 h-4 flex items-center justify-center">
+              {profileSaved ? (
+                <i className="ri-compass-3-line text-sm" />
+              ) : (
+                <i className="ri-lock-2-line text-sm" />
+              )}
+            </div>
+            创意方向
+            {profileSaved && (
+              <span
+                className="ml-1 text-xs px-1.5 py-0.5 rounded-full"
+                style={{
+                  background:
+                    activeStage === "direction"
+                      ? "rgba(255,255,255,0.25)"
+                      : "rgba(244,114,182,0.12)",
+                  color: activeStage === "direction" ? "white" : "#f472b6",
+                }}
+              >
+                ({directionCount}/20)
+              </span>
+            )}
+          </button>
+
+          {/* Stage 3 — 创作建议 */}
           <button
             onClick={() => profileSaved && setActiveStage("advice")}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-all duration-200 whitespace-nowrap"
@@ -1798,14 +1847,22 @@ const CharaProfilePage = ({
 
       {/* Stage content */}
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {activeStage === "profile" ? (
+        {activeStage === "profile" && (
           <ProfileStage
             chara={chara}
             characterId={characterId}
             onCharacterUpdated={onCharacterUpdated}
             showToast={showToast}
           />
-        ) : (
+        )}
+        {activeStage === "direction" && (
+          <DirectionStage
+            characterId={characterId}
+            showToast={showToast}
+            onCountChange={setDirectionCount}
+          />
+        )}
+        {activeStage === "advice" && (
           <AdviceStage
             characterId={characterId}
             chara={chara}

@@ -6,6 +6,7 @@ import type {
   ApiCharacterSummary,
   OfficialSeedPromptsApiPatch,
 } from "@/types/material";
+import type { MaterialErrorCode } from "@/types/material";
 import { ApiError, parseResponseBodyAsJson } from "@/services/api";
 
 const API_BASE = "/api/material";
@@ -675,4 +676,133 @@ export async function getCharactersBatch(ids: string[]): Promise<ApiCharacterDet
   } catch (e) {
     rethrow(e);
   }
+}
+
+export type DivergenceApi = "low" | "mid" | "high";
+
+export interface CreativeDirectionApi {
+  id: string;
+  character_id: string;
+  title: string;
+  description: string;
+  divergence: DivergenceApi;
+  initial_input: string | null;
+  source_task_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreativeDirectionTaskStartResult {
+  task_id: string;
+  status: string;
+}
+
+export interface CreativeDirectionTaskStatus {
+  task_id: string;
+  character_id: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  current_step: string | null;
+  divergence: DivergenceApi;
+  initial_input: string | null;
+  result_direction: CreativeDirectionApi | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function startCreativeDirectionTask(
+  characterId: string,
+  body: { divergence: DivergenceApi; initial_input?: string | null }
+): Promise<CreativeDirectionTaskStartResult> {
+  assertValidCharacterId(characterId, "启动创意方向任务");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creative-directions/start`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      timeout: 60000,
+    });
+    const data = await parseJson<CreativeDirectionTaskStartResult>(response);
+    throwIfError(response, data);
+    return data.data as CreativeDirectionTaskStartResult;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function getCreativeDirectionTaskStatus(
+  characterId: string,
+  taskId: string
+): Promise<CreativeDirectionTaskStatus> {
+  assertValidCharacterId(characterId, "查询创意方向任务状态");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creative-directions/tasks/${encodeURIComponent(taskId)}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET", timeout: 20000 });
+    const data = await parseJson<CreativeDirectionTaskStatus>(response);
+    throwIfError(response, data);
+    return data.data as CreativeDirectionTaskStatus;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function listCreativeDirections(
+  characterId: string
+): Promise<CreativeDirectionApi[]> {
+  assertValidCharacterId(characterId, "查询创意方向列表");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creative-directions`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<CreativeDirectionApi[]>(response);
+    throwIfError(response, data);
+    return (data.data ?? []) as CreativeDirectionApi[];
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function patchCreativeDirection(
+  characterId: string,
+  directionId: string,
+  body: { title?: string; description?: string }
+): Promise<CreativeDirectionApi> {
+  assertValidCharacterId(characterId, "更新创意方向");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creative-directions/${encodeURIComponent(directionId)}`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await parseJson<CreativeDirectionApi>(response);
+    throwIfError(response, data);
+    return data.data as CreativeDirectionApi;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function deleteCreativeDirection(
+  characterId: string,
+  directionId: string
+): Promise<void> {
+  assertValidCharacterId(characterId, "删除创意方向");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creative-directions/${encodeURIComponent(directionId)}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "DELETE" });
+    const data = await parseJson(response);
+    throwIfError(response, data);
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+/** 从 ApiError 中安全提取后端 code 字段；非 ApiError 返回 null */
+export function readApiErrorCode(e: unknown): MaterialErrorCode | string | null {
+  if (e instanceof ApiError && e.details && typeof e.details === "object") {
+    const code = (e.details as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+  }
+  return null;
 }

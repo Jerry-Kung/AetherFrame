@@ -1,5 +1,5 @@
 import logging
-from sqlalchemy import Boolean, Column, String, Text, DateTime, ForeignKey, Integer
+from sqlalchemy import Boolean, Column, String, Text, DateTime, ForeignKey, Integer, event
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -160,3 +160,76 @@ class FixedSeedTemplate(Base):
 
     def __repr__(self):
         return f"<FixedSeedTemplate(id={self.id!r}, used={self.used!r})>"
+
+
+class MaterialCreativeDirection(Base):
+    """素材加工 — 创意方向（每角色可有 0..N 条）"""
+
+    __tablename__ = "material_creative_directions"
+
+    id = Column(String, primary_key=True, index=True)
+    character_id = Column(
+        String,
+        ForeignKey("material_characters.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    divergence = Column(String(10), nullable=False)
+    initial_input = Column(Text, nullable=True)
+    source_task_id = Column(
+        String,
+        ForeignKey("material_creative_direction_tasks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    character = relationship("MaterialCharacter")
+
+    def __repr__(self):
+        return (
+            f"<MaterialCreativeDirection(id={self.id!r}, character_id={self.character_id!r}, "
+            f"divergence={self.divergence!r})>"
+        )
+
+
+class MaterialCreativeDirectionTask(Base):
+    """素材加工 — 创意方向生成任务（每角色可有多条；并发由应用层控制）"""
+
+    __tablename__ = "material_creative_direction_tasks"
+
+    id = Column(String, primary_key=True, index=True)
+    character_id = Column(
+        String,
+        ForeignKey("material_characters.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status = Column(String(20), nullable=False, index=True, default="pending")
+    current_step = Column(String(40), nullable=True)
+    divergence = Column(String(10), nullable=False)
+    initial_input = Column(Text, nullable=True)
+    result_direction_id = Column(String, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    character = relationship("MaterialCharacter")
+
+    def __repr__(self):
+        return (
+            f"<MaterialCreativeDirectionTask(id={self.id!r}, character_id={self.character_id!r}, "
+            f"status={self.status!r})>"
+        )
+
+
+@event.listens_for(MaterialCreativeDirection, "after_delete")
+def _null_task_result_direction_on_direction_delete(mapper, connection, target):
+    """result_direction_id 无 DB 级 FK；删除方向时应用层置空关联任务字段。"""
+    connection.execute(
+        MaterialCreativeDirectionTask.__table__.update()
+        .where(MaterialCreativeDirectionTask.result_direction_id == target.id)
+        .values(result_direction_id=None)
+    )

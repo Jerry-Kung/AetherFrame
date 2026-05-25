@@ -13,6 +13,8 @@ from app.models.material import (
     MaterialCharacterRawImage,
     MaterialCharaProfileTask,
     MaterialCreationAdviceTask,
+    MaterialCreativeDirection,
+    MaterialCreativeDirectionTask,
     MaterialStandardPhotoTask,
 )
 
@@ -375,3 +377,38 @@ class MaterialCharacterRepository(BaseRepository[MaterialCharacter]):
         self.db.commit()
         self.db.refresh(task)
         return task
+
+
+class MaterialCreativeDirectionRepository(BaseRepository[MaterialCreativeDirection]):
+    def __init__(self, db: Session):
+        super().__init__(db, MaterialCreativeDirection)
+
+    def list_by_character(self, character_id: str) -> List[MaterialCreativeDirection]:
+        return (
+            self.db.query(MaterialCreativeDirection)
+            .filter_by(character_id=character_id)
+            .order_by(desc(MaterialCreativeDirection.created_at))
+            .all()
+        )
+
+    def count_by_character(self, character_id: str) -> int:
+        return (
+            self.db.query(MaterialCreativeDirection)
+            .filter_by(character_id=character_id)
+            .count()
+        )
+
+
+class MaterialCreativeDirectionTaskRepository(BaseRepository[MaterialCreativeDirectionTask]):
+    def __init__(self, db: Session):
+        super().__init__(db, MaterialCreativeDirectionTask)
+
+    def count_inflight_by_character(self, character_id: str) -> int:
+        return (
+            self.db.query(MaterialCreativeDirectionTask)
+            .filter(
+                MaterialCreativeDirectionTask.character_id == character_id,
+                MaterialCreativeDirectionTask.status.in_(["pending", "processing"]),
+            )
+            .count()
+        )
