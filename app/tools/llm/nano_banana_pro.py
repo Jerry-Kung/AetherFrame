@@ -173,7 +173,7 @@ def generate_image_with_nano_banana_pro(
                 )
                 conn.request(
                     "POST",
-                    f"/v1beta/models/gemini-3-pro-image-preview:generateContent?key={api_key}",
+                    f"/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key={api_key}",
                     payload,
                     headers,
                 )
