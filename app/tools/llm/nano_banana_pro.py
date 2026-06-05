@@ -2,7 +2,9 @@ import http.client
 import json
 import os
 import base64
+import socket
 import sys
+import time
 import logging
 from datetime import datetime
 
@@ -59,6 +61,7 @@ def generate_image_with_nano_banana_pro(
     output_path: str,
     file_name: str,
     aspect_ratio: str = "16:9",
+    timeout: int = 2700,
 ):
     """
     调用 nano_banana_pro 模型生成图片并保存到指定目录。
@@ -70,6 +73,8 @@ def generate_image_with_nano_banana_pro(
         output_path: 输出目录（不存在则创建）
         file_name: 保存的图片文件名（可带扩展名；无扩展名时按响应 MIME 自动补全）
         aspect_ratio: 生成图片的宽高比，如 "16:9"、"1:1" 等，默认为 "16:9"
+        timeout: 单次 HTTP 调用的超时时间（秒），默认 2700（45 分钟）。
+                 超时后视为本次失败并自动重试，最多 3 次尝试。
 
     返回:
         bool: 成功返回 True，失败返回 False
@@ -144,133 +149,213 @@ def generate_image_with_nano_banana_pro(
             }
         )
 
-        # 3. 发送API请求
-        logger.info("正在发送API请求...")
-        conn = http.client.HTTPSConnection(base_url)
         headers = {
             "Authorization": "Bearer <token>",
             "Content-Type": "application/json",
         }
-        conn.request(
-            "POST",
-            f"/v1beta/models/gemini-3-pro-image-preview:generateContent?key={api_key}",
-            payload,
-            headers,
-        )
 
-        res = conn.getresponse()
-        data = res.read()
-
-        # 检查HTTP状态码
-        if res.status != 200:
-            logger.error("API请求失败，HTTP状态码: %s", res.status)
-            logger.error("响应内容: %s", data.decode("utf-8"))
-            return False
-
-        logger.info("API请求成功，HTTP状态码: %s", res.status)
-
-        # 4. 解析响应
-        decoded_data = data.decode("utf-8")
-        preview = (
-            decoded_data[:500] + "..."
-            if len(decoded_data) > 500
-            else decoded_data
-        )
-        logger.info("响应内容预览: %s", preview)
-
-        # 5. 创建输出目录并保存结果
+        # 创建输出目录（在尝试循环外只做一次）
         os.makedirs(output_path, exist_ok=True)
         logger.info("输出目录: %s", output_path)
 
-        # 保存 JSON 响应
-        json_file_path = os.path.join(output_path, "response.json")
-        try:
-            json_data = json.loads(decoded_data)
-            with open(json_file_path, "w", encoding="utf-8") as f:
-                json.dump(json_data, f, ensure_ascii=False, indent=2)
-            logger.info("JSON响应数据已保存到: %s", json_file_path)
+        # 3. 发送 API 请求（最多 3 次尝试：1 次初始 + 2 次重试）
+        max_retries = 2
+        total_attempts = 1 + max_retries
+        last_error: str = "unknown error"
 
-            # 提取并保存图片数据
-            # 根据JSON结构：candidates[].content.parts[].inlineData.data
-            image_saved = False
-            if "candidates" in json_data:
-                for i, candidate in enumerate(json_data.get("candidates", [])):
-                    if "content" in candidate and "parts" in candidate["content"]:
-                        for j, part in enumerate(candidate["content"]["parts"]):
-                            # 注意字段名是 inlineData（驼峰命名），不是 inline_data
-                            if "inlineData" in part:
-                                inline_data = part["inlineData"]
-                                image_data_base64 = inline_data.get("data", "")
-                                mime_type = inline_data.get("mimeType", "image/jpeg")
+        for attempt_idx in range(total_attempts):
+            conn = http.client.HTTPSConnection(base_url, timeout=timeout)
+            try:
+                logger.info(
+                    "Nano Banana Pro 第 %s/%s 次：发送API请求...",
+                    attempt_idx + 1,
+                    total_attempts,
+                )
+                conn.request(
+                    "POST",
+                    f"/v1beta/models/gemini-3-pro-image-preview:generateContent?key={api_key}",
+                    payload,
+                    headers,
+                )
 
-                                if image_data_base64:
-                                    # 确定文件扩展名
-                                    ext = "jpg"  # 默认jpg
-                                    if (
-                                        "jpeg" in mime_type.lower()
-                                        or "jpg" in mime_type.lower()
+                res = conn.getresponse()
+                data = res.read()
+
+                # 检查HTTP状态码
+                if res.status != 200:
+                    decoded_err = data.decode("utf-8", errors="replace")
+                    logger.error(
+                        "Nano Banana Pro 第 %s/%s 次：API请求失败，HTTP状态码: %s",
+                        attempt_idx + 1,
+                        total_attempts,
+                        res.status,
+                    )
+                    logger.error("响应内容: %s", decoded_err)
+                    last_error = f"HTTP {res.status}: {decoded_err[:200]}"
+                else:
+                    logger.info(
+                        "Nano Banana Pro 第 %s/%s 次：API请求成功，HTTP状态码: %s",
+                        attempt_idx + 1,
+                        total_attempts,
+                        res.status,
+                    )
+
+                    # 4. 解析响应
+                    decoded_data = data.decode("utf-8")
+                    preview = (
+                        decoded_data[:500] + "..."
+                        if len(decoded_data) > 500
+                        else decoded_data
+                    )
+                    logger.info("响应内容预览: %s", preview)
+
+                    # 保存 JSON 响应
+                    json_file_path = os.path.join(output_path, "response.json")
+                    try:
+                        json_data = json.loads(decoded_data)
+                        with open(json_file_path, "w", encoding="utf-8") as f:
+                            json.dump(json_data, f, ensure_ascii=False, indent=2)
+                        logger.info("JSON响应数据已保存到: %s", json_file_path)
+
+                        # 提取并保存图片数据
+                        # 根据JSON结构：candidates[].content.parts[].inlineData.data
+                        image_saved = False
+                        decode_failed = False
+                        if "candidates" in json_data:
+                            for i, candidate in enumerate(
+                                json_data.get("candidates", [])
+                            ):
+                                if (
+                                    "content" in candidate
+                                    and "parts" in candidate["content"]
+                                ):
+                                    for j, part in enumerate(
+                                        candidate["content"]["parts"]
                                     ):
-                                        ext = "jpg"
-                                    elif "png" in mime_type.lower():
-                                        ext = "png"
-                                    elif "gif" in mime_type.lower():
-                                        ext = "gif"
-                                    elif "webp" in mime_type.lower():
-                                        ext = "webp"
-
-                                    # 将base64数据解码为图片
-                                    try:
-                                        image_bytes = base64.b64decode(
-                                            image_data_base64
-                                        )
-                                        # 仅将第一张图写入用户指定的 file_name
-                                        if not image_saved:
-                                            image_file_path = _resolve_image_save_path(
-                                                output_path, file_name, ext
+                                        # 注意字段名是 inlineData（驼峰命名），不是 inline_data
+                                        if "inlineData" in part:
+                                            inline_data = part["inlineData"]
+                                            image_data_base64 = inline_data.get(
+                                                "data", ""
                                             )
-                                            with open(image_file_path, "wb") as f:
-                                                f.write(image_bytes)
-                                            logger.info(
-                                                "图片已保存到: %s (MIME类型: %s, 大小: %s 字节)",
-                                                image_file_path,
-                                                mime_type,
-                                                len(image_bytes),
+                                            mime_type = inline_data.get(
+                                                "mimeType", "image/jpeg"
                                             )
-                                            image_saved = True
-                                        else:
-                                            logger.info(
-                                                "响应中另有图片 (candidates[%s].parts[%s])，已跳过（仅保存第一张到 %s）",
-                                                i,
-                                                j,
-                                                file_name,
-                                            )
-                                    except Exception as e:
-                                        logger.error("解码图片数据时出错: %s", e)
-                                        return False
-                                else:
-                                    logger.warning(
-                                        "candidates[%s].content.parts[%s] 中的 inlineData.data 为空",
-                                        i,
-                                        j,
-                                    )
 
-            if not image_saved:
-                logger.warning("响应中未找到图片数据")
+                                            if image_data_base64:
+                                                # 确定文件扩展名
+                                                ext = "jpg"  # 默认jpg
+                                                if (
+                                                    "jpeg" in mime_type.lower()
+                                                    or "jpg" in mime_type.lower()
+                                                ):
+                                                    ext = "jpg"
+                                                elif "png" in mime_type.lower():
+                                                    ext = "png"
+                                                elif "gif" in mime_type.lower():
+                                                    ext = "gif"
+                                                elif "webp" in mime_type.lower():
+                                                    ext = "webp"
 
-            logger.info("%s", "=" * 50)
-            logger.info("图片生成完成！")
-            logger.info("%s", "=" * 50)
-            return True
+                                                # 将base64数据解码为图片
+                                                try:
+                                                    image_bytes = base64.b64decode(
+                                                        image_data_base64
+                                                    )
+                                                    # 仅将第一张图写入用户指定的 file_name
+                                                    if not image_saved:
+                                                        image_file_path = (
+                                                            _resolve_image_save_path(
+                                                                output_path,
+                                                                file_name,
+                                                                ext,
+                                                            )
+                                                        )
+                                                        with open(
+                                                            image_file_path, "wb"
+                                                        ) as f:
+                                                            f.write(image_bytes)
+                                                        logger.info(
+                                                            "图片已保存到: %s (MIME类型: %s, 大小: %s 字节)",
+                                                            image_file_path,
+                                                            mime_type,
+                                                            len(image_bytes),
+                                                        )
+                                                        image_saved = True
+                                                    else:
+                                                        logger.info(
+                                                            "响应中另有图片 (candidates[%s].parts[%s])，已跳过（仅保存第一张到 %s）",
+                                                            i,
+                                                            j,
+                                                            file_name,
+                                                        )
+                                                except Exception as e:
+                                                    logger.error(
+                                                        "解码图片数据时出错: %s", e
+                                                    )
+                                                    decode_failed = True
+                                                    break
+                                            else:
+                                                logger.warning(
+                                                    "candidates[%s].content.parts[%s] 中的 inlineData.data 为空",
+                                                    i,
+                                                    j,
+                                                )
+                                    if decode_failed:
+                                        break
 
-        except json.JSONDecodeError as e:
-            # 如果不是JSON格式，直接保存为文本
-            with open(json_file_path, "w", encoding="utf-8") as f:
-                f.write(decoded_data)
-            logger.warning(
-                "响应不是JSON格式，已保存为文本: %s", json_file_path
-            )
-            logger.warning("JSON解析错误: %s", e)
-            return False
+                        if decode_failed:
+                            last_error = "图片数据解码失败"
+                        elif image_saved:
+                            logger.info("%s", "=" * 50)
+                            logger.info("图片生成完成！")
+                            logger.info("%s", "=" * 50)
+                            return True
+                        else:
+                            logger.warning(
+                                "Nano Banana Pro 第 %s/%s 次：响应中未找到图片数据",
+                                attempt_idx + 1,
+                                total_attempts,
+                            )
+                            last_error = "响应中未找到图片数据"
+
+                    except json.JSONDecodeError as e:
+                        # 如果不是JSON格式，直接保存为文本
+                        with open(json_file_path, "w", encoding="utf-8") as f:
+                            f.write(decoded_data)
+                        logger.warning(
+                            "响应不是JSON格式，已保存为文本: %s", json_file_path
+                        )
+                        logger.warning("JSON解析错误: %s", e)
+                        last_error = f"JSON 解析失败: {e}"
+
+            except socket.timeout:
+                logger.error(
+                    "Nano Banana Pro 第 %s/%s 次：HTTP 调用超时（%s 秒未返回）",
+                    attempt_idx + 1,
+                    total_attempts,
+                    timeout,
+                )
+                last_error = f"timeout after {timeout}s"
+            except Exception as e:
+                logger.error(
+                    "Nano Banana Pro 第 %s/%s 次：调用失败: %s",
+                    attempt_idx + 1,
+                    total_attempts,
+                    e,
+                    exc_info=True,
+                )
+                last_error = str(e) or type(e).__name__
+            finally:
+                conn.close()
+
+            if attempt_idx < max_retries:
+                logger.info("等待 10 秒后进行重试...")
+                time.sleep(10)
+                continue
+
+        logger.error("Nano Banana Pro 调用最终失败: %s", last_error)
+        return False
 
     except Exception as e:
         logger.exception("执行过程中发生异常: %s", e)
