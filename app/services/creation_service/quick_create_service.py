@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import shutil
+import tempfile
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
@@ -39,11 +40,22 @@ def _write_json(path: str, data: Any) -> None:
 
 
 def _dump_json_atomic(path: str, payload: Any) -> None:
-    directory_service.ensure_dir_exists(os.path.dirname(path))
-    tmp = f"{path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+    """并发安全的原子写：使用每次唯一的临时文件名，避免多线程共用 .tmp 互相覆盖。"""
+    dir_name = os.path.dirname(path)
+    directory_service.ensure_dir_exists(dir_name)
+    base_name = os.path.basename(path)
+    fd, tmp = tempfile.mkstemp(prefix=f".{base_name}.", suffix=".tmp", dir=dir_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except Exception:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+        raise
 
 
 def _to_iso(dt: Optional[datetime]) -> str:
