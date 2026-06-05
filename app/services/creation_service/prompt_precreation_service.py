@@ -12,6 +12,8 @@ from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.models.database import BackgroundSessionLocal, SessionLocal
+from app.models.material import MaterialCreativeDirection
+from app.schemas.creation import SeedPayload
 from app.prompts.creation.prompt_precreation import (
     prompt_review,
     prompt_review_backup,
@@ -28,6 +30,39 @@ from app.tools.llm.yibu_llm_infer import yibu_gemini_infer
 logger = logging.getLogger(__name__)
 
 PREVIEW_MAX_LEN = 160
+
+
+def compose_seed_prompt_with_direction(
+    seed_payload: SeedPayload | str | dict,
+    db: Session,
+) -> str:
+    """把方向折叠进 seed text，返回最终用于填入 prompt_precreation 模板 {seed_prompt} 槽的字符串。
+
+    数据来源以 DB 为准（不接受外部传入的方向正文）。
+    方向不存在时降级为无方向分支 + warn log。
+    """
+    payload = SeedPayload.from_raw(seed_payload)
+
+    if not payload.creative_direction_id:
+        return payload.text
+
+    dir_row = db.get(MaterialCreativeDirection, payload.creative_direction_id)
+    if dir_row is None:
+        logger.warning(
+            "compose: direction %s not found (deleted?), fallback to plain seed",
+            payload.creative_direction_id,
+        )
+        return payload.text
+
+    return (
+        f"### 创作创意方向\n"
+        f"{dir_row.title}\n"
+        f"\n"
+        f"{dir_row.description}\n"
+        f"\n"
+        f"### 初始创作种子\n"
+        f"{payload.text}"
+    )
 DEFAULT_HISTORY_LIMIT = 50
 
 

@@ -1,4 +1,5 @@
 import type { PromptCard } from "@/types/creation";
+import type { Divergence } from "@/types/material";
 import type { QuickCreateGroup, QuickCreateImage } from "@/types/quickCreate";
 
 /** 任务配置弹窗与提交 API 共用 */
@@ -38,6 +39,8 @@ export interface BatchTask {
   seedPromptId: string;
   seedPromptSection: BatchSeedSection;
   seedPromptText: string;
+  creativeDirectionId: string | null;
+  creativeDirectionMeta: { title: string; divergence: Divergence } | null;
   promptRecordId: string;
   quickCreateRecordId: string;
   config: BatchTaskConfig;

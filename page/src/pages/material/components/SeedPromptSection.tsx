@@ -20,14 +20,12 @@ function SeedRow({
   onToggle,
   onDelete,
   onEdit,
-  accentColor,
 }: {
   prompt: SeedPrompt;
   busyId: string | null;
   onToggle: () => void | Promise<void>;
   onDelete: () => void | Promise<void>;
   onEdit: (text: string) => void | Promise<void>;
-  accentColor: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(prompt.text);
@@ -50,8 +48,8 @@ function SeedRow({
     <div
       className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-200"
       style={{
-        background: prompt.used ? `${accentColor}0d` : "rgba(253,164,175,0.04)",
-        border: `1px solid ${prompt.used ? `${accentColor}33` : "rgba(253,164,175,0.12)"}`,
+        background: prompt.used ? "rgba(110,231,183,0.08)" : "rgba(253,164,175,0.04)",
+        border: `1px solid ${prompt.used ? "rgba(110,231,183,0.3)" : "rgba(253,164,175,0.12)"}`,
       }}
     >
       <div className="flex-1 min-w-0">
@@ -130,16 +128,16 @@ function SeedRow({
             onClick={() => void onToggle()}
             className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs cursor-pointer transition-all duration-200 whitespace-nowrap disabled:opacity-50"
             style={{
-              background: prompt.used ? `${accentColor}18` : "rgba(253,164,175,0.08)",
-              color: prompt.used ? accentColor : "#fda4af",
-              border: `1px solid ${prompt.used ? `${accentColor}40` : "rgba(253,164,175,0.2)"}`,
+              background: prompt.used ? "rgba(110,231,183,0.18)" : "rgba(253,164,175,0.08)",
+              color: prompt.used ? "#059669" : "#fda4af",
+              border: `1px solid ${prompt.used ? "rgba(110,231,183,0.4)" : "rgba(253,164,175,0.2)"}`,
               fontFamily: "'ZCOOL KuaiLe', cursive",
             }}
             title={prompt.used ? "取消已使用标记" : "标记为已使用"}
           >
             {prompt.used ? (
               <>
-                <i className="ri-check-line text-xs" />
+                <i className="ri-check-double-line text-xs" />
                 已使用
               </>
             ) : (
@@ -361,7 +359,6 @@ export default function SeedPromptSection({
               onToggle={() => onToggle(p.id)}
               onDelete={() => onDelete(p.id)}
               onEdit={(text) => onEdit(p.id, text)}
-              accentColor={accentColor}
             />
           ))
         )}

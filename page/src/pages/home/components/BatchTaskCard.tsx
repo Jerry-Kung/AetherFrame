@@ -1,6 +1,7 @@
 import { memo, useState, useCallback } from "react";
 import CreationResultLightbox from "@/components/CreationResultLightbox";
 import AiCommentModal from "@/pages/creation/components/AiCommentModal";
+import DirectionChip from "@/pages/material/components/direction/DirectionChip";
 import type { BatchTask } from "@/types/batchAutomation";
 import type { AiComment, QuickCreateImage } from "@/types/quickCreate";
 
@@ -134,6 +135,11 @@ export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed }
                 </span>
               )}
             </div>
+            {task.creativeDirectionMeta && (
+              <div className="mb-1">
+                <DirectionChip meta={task.creativeDirectionMeta} compact />
+              </div>
+            )}
             <p className="text-xs text-rose-400/50 truncate">{seedPreview(task.seedPromptText)}</p>
           </div>
         </div>

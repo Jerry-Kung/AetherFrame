@@ -458,6 +458,7 @@ export interface BatchAutomationRunItemRow {
   seed_prompt_id: string;
   seed_section: string;
   seed_prompt_text: string;
+  seed_creative_direction_id?: string | null;
   prompt_precreation_task_id?: string | null;
   quick_create_task_id?: string | null;
   status: string;

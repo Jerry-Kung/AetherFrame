@@ -5,9 +5,29 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class SeedPayload(BaseModel):
+    """批量创作 / 预生成 Prompt 链路使用的种子结构。
+
+    向后兼容：当外部调用方传入纯字符串时，调 `SeedPayload.from_raw(s)` 包装。
+    """
+
+    text: str
+    creative_direction_id: Optional[str] = None
+
+    @classmethod
+    def from_raw(cls, raw: Union[str, dict, "SeedPayload"]) -> "SeedPayload":
+        if isinstance(raw, cls):
+            return raw
+        if isinstance(raw, str):
+            return cls(text=raw, creative_direction_id=None)
+        if isinstance(raw, dict):
+            return cls(**raw)
+        raise TypeError(f"Cannot build SeedPayload from {type(raw)}")
 
 
 class PromptPrecreationChainQuickCreate(BaseModel):
@@ -241,6 +261,7 @@ class BatchAutomationItemOut(BaseModel):
     seed_prompt_id: str
     seed_section: str
     seed_prompt_text: str
+    seed_creative_direction_id: Optional[str] = None
     prompt_precreation_task_id: Optional[str] = None
     quick_create_task_id: Optional[str] = None
     status: str

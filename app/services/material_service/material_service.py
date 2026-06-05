@@ -443,7 +443,7 @@ class MaterialService:
         if char.avatar_filename:
             avatar_url = self.avatar_url_for_character(char.id, char.avatar_filename)
 
-        return {
+        detail = {
             "id": char.id,
             "name": char.name,
             "display_name": char.display_name or char.name,
@@ -456,6 +456,13 @@ class MaterialService:
             "official_photos": self._normalize_official_photos(official_photos),
             "bio": bio,
         }
+        if isinstance(detail.get("bio"), dict):
+            from app.services.material_service.seed_meta_enrichment import (
+                enrich_seeds_with_direction_meta,
+            )
+
+            enrich_seeds_with_direction_meta(detail["bio"], self.db)
+        return detail
 
     def get_characters_batch_details(self, character_ids: List[str]) -> List[Dict[str, Any]]:
         """批量获取多个角色的完整详情，用于前端一次性加载。"""

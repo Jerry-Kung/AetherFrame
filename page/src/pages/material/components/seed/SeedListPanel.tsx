@@ -10,18 +10,6 @@ function countTotalSeeds(seeds: OfficialSeedPrompts): number {
   return seeds.characterSpecific.length + seeds.general.length;
 }
 
-function enrichSeeds(
-  items: SeedPrompt[],
-  directionMap: Map<string, { title: string; divergence: Divergence }>
-): SeedPrompt[] {
-  return items.map((s) => ({
-    ...s,
-    creativeDirectionMeta: s.creativeDirectionId
-      ? (directionMap.get(s.creativeDirectionId) ?? null)
-      : null,
-  }));
-}
-
 export default function SeedListPanel({
   chara,
   directions,
@@ -42,16 +30,8 @@ export default function SeedListPanel({
     [chara.bio.officialSeedPrompts]
   );
 
-  const directionMap = useMemo(() => {
-    const m = new Map<string, { title: string; divergence: Divergence }>();
-    for (const d of directions) {
-      m.set(d.id, { title: d.title, divergence: d.divergence as Divergence });
-    }
-    return m;
-  }, [directions]);
-
   const groups = useMemo((): SeedGroup[] => {
-    const cs = enrichSeeds(seeds.characterSpecific, directionMap);
+    const cs = seeds.characterSpecific;
     const sortedDirs = [...directions].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
@@ -66,11 +46,10 @@ export default function SeedListPanel({
     ];
 
     for (const d of sortedDirs) {
-      const meta = directionMap.get(d.id);
       result.push({
         key: d.id,
         label: d.title,
-        directionMeta: meta,
+        directionMeta: { title: d.title, divergence: d.divergence as Divergence },
         items: cs.filter((s) => s.creativeDirectionId === d.id),
         generateBinding: d.id,
       });
@@ -84,7 +63,7 @@ export default function SeedListPanel({
     });
 
     return result;
-  }, [seeds, directions, directionMap]);
+  }, [seeds, directions]);
 
   const totalAtLimit = countTotalSeeds(seeds) >= TOTAL_LIMIT;
 

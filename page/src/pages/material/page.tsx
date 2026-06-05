@@ -823,7 +823,6 @@ export default function MaterialPage() {
                   <OfficialContentTab
                     officialPhotos={selected.officialPhotos}
                     bio={selected.bio}
-                    directions={creativeDirections}
                     fixedTemplates={fixedTemplatesRows}
                     onPhotoClick={handleOfficialPhotoClick}
                     onOfficialPhotoDelete={handleOfficialPhotoDelete}

@@ -16,8 +16,10 @@ from app.repositories.creation_batch_repository import CreationBatchRepository
 from app.repositories.creation_repository import CreationQuickCreateRepository
 from app.repositories.fixed_seed_template_repository import FixedSeedTemplateRepository
 from app.repositories.material_repository import MaterialCharacterRepository
+from app.schemas.creation import SeedPayload
 from app.services.creation_service.prompt_precreation_service import (
     PromptPrecreationService,
+    compose_seed_prompt_with_direction,
     resolve_chara_profile_text,
 )
 from app.services.creation_service.quick_create_service import QuickCreateService
@@ -53,12 +55,18 @@ def _collect_unused_seed_pairs(character_id: str, bio_json: Optional[str]) -> Li
             text = str(row.get("text") or "").strip()
             if not text or row.get("used") is True:
                 continue
+            dir_id = row.get("creative_direction_id")
+            if dir_id is not None and not isinstance(dir_id, str):
+                dir_id = str(dir_id) if dir_id else None
+            elif isinstance(dir_id, str) and not dir_id.strip():
+                dir_id = None
             out.append(
                 {
                     "character_id": character_id,
                     "seed_prompt_id": sid,
                     "seed_section": section_api,
                     "seed_prompt_text": text,
+                    "seed_creative_direction_id": dir_id,
                 }
             )
 
@@ -122,6 +130,7 @@ class BatchAutomationService:
                         "seed_prompt_id": tmpl.id,
                         "seed_section": "fixed",
                         "seed_prompt_text": txt,
+                        "seed_creative_direction_id": None,
                     }
                 )
         return pool
@@ -215,6 +224,7 @@ class BatchAutomationService:
                 seed_prompt_id=pair["seed_prompt_id"],
                 seed_section=_normalize_section(pair["seed_section"]),
                 seed_prompt_text=pair["seed_prompt_text"],
+                seed_creative_direction_id=pair.get("seed_creative_direction_id"),
                 status="pending",
             )
         return {"run_id": run.id, "status": run.status}
@@ -259,9 +269,16 @@ class BatchAutomationService:
                 qc_tid: Optional[str] = None
                 item_status = "failed"
                 try:
+                    composed_seed = compose_seed_prompt_with_direction(
+                        SeedPayload(
+                            text=item.seed_prompt_text,
+                            creative_direction_id=item.seed_creative_direction_id,
+                        ),
+                        self.db,
+                    )
                     out = ppc.start_prompt_precreation(
                         character_id=item.character_id,
-                        seed_prompt=item.seed_prompt_text,
+                        seed_prompt=composed_seed,
                         count=prompt_count,
                         background_tasks=None,
                         chain_quick_create=chain_payload,
@@ -343,6 +360,7 @@ class BatchAutomationService:
                     "seed_prompt_id": it.seed_prompt_id,
                     "seed_section": it.seed_section,
                     "seed_prompt_text": it.seed_prompt_text,
+                    "seed_creative_direction_id": it.seed_creative_direction_id,
                     "prompt_precreation_task_id": it.prompt_precreation_task_id,
                     "quick_create_task_id": it.quick_create_task_id,
                     "status": it.status,
@@ -384,6 +402,7 @@ class BatchAutomationService:
                     "seed_prompt_id": it.seed_prompt_id,
                     "seed_section": it.seed_section,
                     "seed_prompt_text": it.seed_prompt_text,
+                    "seed_creative_direction_id": it.seed_creative_direction_id,
                     "prompt_precreation_task_id": it.prompt_precreation_task_id,
                     "quick_create_task_id": it.quick_create_task_id,
                     "status": it.status,
@@ -417,6 +436,7 @@ class BatchAutomationService:
                 "seed_prompt_id": it.seed_prompt_id,
                 "seed_section": it.seed_section,
                 "seed_prompt_text": it.seed_prompt_text,
+                "seed_creative_direction_id": it.seed_creative_direction_id,
                 "prompt_precreation_task_id": it.prompt_precreation_task_id,
                 "quick_create_task_id": it.quick_create_task_id,
                 "status": it.status,

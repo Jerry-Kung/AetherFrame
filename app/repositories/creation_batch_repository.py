@@ -65,6 +65,7 @@ class CreationBatchRepository:
         seed_prompt_id: str,
         seed_section: str,
         seed_prompt_text: str,
+        seed_creative_direction_id: Optional[str] = None,
         status: str = "pending",
     ) -> CreationBatchRunItem:
         item = CreationBatchRunItem(
@@ -75,6 +76,7 @@ class CreationBatchRepository:
             seed_prompt_id=seed_prompt_id,
             seed_section=seed_section,
             seed_prompt_text=seed_prompt_text,
+            seed_creative_direction_id=seed_creative_direction_id,
             prompt_precreation_task_id=None,
             quick_create_task_id=None,
             status=status,

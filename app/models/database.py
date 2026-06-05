@@ -411,6 +411,38 @@ def migrate_create_material_seed_prompt_tasks() -> None:
 _BIO_WALK_FLAG = "seed_prompts_direction_fk_v1"
 
 
+def migrate_creation_batch_run_items_add_seed_dir_id() -> None:
+    """ALTER TABLE creation_batch_run_items ADD COLUMN seed_creative_direction_id（幂等）。"""
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='creation_batch_run_items'"
+                )
+            ).fetchone()
+            if row is None:
+                return
+            cols = conn.execute(text("PRAGMA table_info(creation_batch_run_items)")).fetchall()
+            existing = {c[1] for c in cols}
+            if "seed_creative_direction_id" in existing:
+                return
+            conn.execute(
+                text(
+                    "ALTER TABLE creation_batch_run_items ADD COLUMN seed_creative_direction_id TEXT"
+                )
+            )
+        logger.info("migrate: creation_batch_run_items ADD COLUMN seed_creative_direction_id")
+    except Exception as e:
+        logger.error(
+            "迁移 creation_batch_run_items.seed_creative_direction_id 失败: %s",
+            e,
+            exc_info=True,
+        )
+        raise
+
+
 def migrate_bio_official_seed_prompts_add_direction_fk() -> None:
     """
     一次性 walk：为所有 character 的 bio.official_seed_prompts.character_specific[*]
@@ -492,6 +524,7 @@ def init_db():
         migrate_create_material_creative_direction_tasks()
         migrate_create_material_seed_prompt_tasks()
         migrate_bio_official_seed_prompts_add_direction_fk()
+        migrate_creation_batch_run_items_add_seed_dir_id()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:

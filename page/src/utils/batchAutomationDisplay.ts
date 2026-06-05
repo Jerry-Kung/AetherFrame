@@ -4,7 +4,30 @@ import type { PromptCard } from "@/types/creation";
 import type { QuickCreateGroup, QuickCreateImage } from "@/types/quickCreate";
 import { apiSeedSectionToUi, type BatchTask, type BatchTaskConfig } from "@/types/batchAutomation";
 import { quickCreateImageFromApiEntry } from "@/utils/quickCreateReview";
-import type { CharaProfile } from "@/types/material";
+import type { CharaProfile, SeedPrompt } from "@/types/material";
+
+function resolveSeedDirectionMeta(
+  chara: CharaProfile | undefined,
+  seedPromptId: string,
+  seedSection: string,
+  seedCreativeDirectionId: string | null | undefined
+): { creativeDirectionId: string | null; creativeDirectionMeta: SeedPrompt["creativeDirectionMeta"] } {
+  if (seedSection === "fixed" || !chara?.bio.officialSeedPrompts) {
+    return {
+      creativeDirectionId: seedCreativeDirectionId ?? null,
+      creativeDirectionMeta: null,
+    };
+  }
+  const section =
+    seedSection === "general"
+      ? chara.bio.officialSeedPrompts.general
+      : chara.bio.officialSeedPrompts.characterSpecific;
+  const seed = section.find((s) => s.id === seedPromptId);
+  return {
+    creativeDirectionId: seed?.creativeDirectionId ?? seedCreativeDirectionId ?? null,
+    creativeDirectionMeta: seed?.creativeDirectionMeta ?? null,
+  };
+}
 
 function fmtShortTime(iso: string): string {
   const d = Date.parse(iso);
@@ -70,6 +93,7 @@ export interface BatchAutomationListItemApi {
   seed_prompt_id: string;
   seed_section: string;
   seed_prompt_text: string;
+  seed_creative_direction_id?: string | null;
   prompt_precreation_task_id?: string | null;
   quick_create_task_id?: string | null;
   status: string;
@@ -84,6 +108,13 @@ export function buildSkeletonBatchTask(
   config: BatchTaskConfig
 ): BatchTask {
   const chara = charas.find((c) => c.id === row.character_id);
+  const sectionUi = apiSeedSectionToUi(row.seed_section);
+  const dir = resolveSeedDirectionMeta(
+    chara,
+    row.seed_prompt_id,
+    row.seed_section,
+    row.seed_creative_direction_id
+  );
   return {
     id: row.id,
     runId: row.run_id,
@@ -93,8 +124,10 @@ export function buildSkeletonBatchTask(
     charaName: row.chara_name || chara?.name || "未知角色",
     charaAvatar: chara?.avatarUrl || row.chara_avatar || "",
     seedPromptId: row.seed_prompt_id,
-    seedPromptSection: apiSeedSectionToUi(row.seed_section),
+    seedPromptSection: sectionUi,
     seedPromptText: row.seed_prompt_text,
+    creativeDirectionId: dir.creativeDirectionId,
+    creativeDirectionMeta: dir.creativeDirectionMeta,
     promptRecordId: row.prompt_precreation_task_id ?? "",
     quickCreateRecordId: row.quick_create_task_id ?? "",
     config: { ...config },
@@ -142,6 +175,13 @@ export function buildBatchTaskFromHydrated(
   config: BatchTaskConfig
 ): BatchTask {
   const chara = charas.find((c) => c.id === row.character_id);
+  const sectionUi = apiSeedSectionToUi(row.seed_section);
+  const dir = resolveSeedDirectionMeta(
+    chara,
+    row.seed_prompt_id,
+    row.seed_section,
+    row.seed_creative_direction_id
+  );
 
   const promptCards: PromptCard[] = (row.prompt_cards ?? []).map((c) => ({
     id: c.id ?? "",
@@ -188,8 +228,10 @@ export function buildBatchTaskFromHydrated(
     charaName: row.chara_name || chara?.name || "未知角色",
     charaAvatar: chara?.avatarUrl || row.chara_avatar || "",
     seedPromptId: row.seed_prompt_id,
-    seedPromptSection: apiSeedSectionToUi(row.seed_section),
+    seedPromptSection: sectionUi,
     seedPromptText: row.seed_prompt_text,
+    creativeDirectionId: dir.creativeDirectionId,
+    creativeDirectionMeta: dir.creativeDirectionMeta,
     promptRecordId: row.prompt_precreation_task_id ?? "",
     quickCreateRecordId: row.quick_create_task_id ?? "",
     config: { ...config },

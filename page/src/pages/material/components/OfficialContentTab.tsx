@@ -1,14 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
-import type { CharaBio, Divergence, OfficialSeedPrompts, SeedPrompt } from "@/types/material";
+import type { CharaBio, OfficialSeedPrompts, SeedPrompt } from "@/types/material";
 import { emptyOfficialSeedPrompts } from "@/types/material";
-import type { CreativeDirectionApi } from "@/services/materialApi";
 import type { SeedPromptSection } from "@/mocks/materialChara";
 import SeedPromptSectionPanel from "./SeedPromptSection";
 
 interface OfficialContentTabProps {
   officialPhotos: [string | null, string | null, string | null, string | null, string | null];
   bio: CharaBio;
-  directions?: CreativeDirectionApi[];
   fixedTemplates: SeedPrompt[];
   onPhotoClick: (slotIndex: number) => void;
   onOfficialPhotoDelete: (slotIndex: number) => void | Promise<void>;
@@ -49,7 +47,6 @@ function countUsedFixed(fixed: SeedPrompt[]): number {
 const OfficialContentTab = ({
   officialPhotos,
   bio,
-  directions = [],
   fixedTemplates,
   onPhotoClick,
   onOfficialPhotoDelete,
@@ -94,24 +91,6 @@ const OfficialContentTab = ({
   const officialSeeds = bio.officialSeedPrompts ?? null;
   const effectiveSeeds = officialSeeds ?? emptyOfficialSeedPrompts();
 
-  const directionMap = useMemo(() => {
-    const m = new Map<string, { title: string; divergence: Divergence }>();
-    for (const d of directions) {
-      m.set(d.id, { title: d.title, divergence: d.divergence as Divergence });
-    }
-    return m;
-  }, [directions]);
-
-  const enrichedCharacterSpecific = useMemo(
-    () =>
-      effectiveSeeds.characterSpecific.map((s) => ({
-        ...s,
-        creativeDirectionMeta: s.creativeDirectionId
-          ? (directionMap.get(s.creativeDirectionId) ?? null)
-          : null,
-      })),
-    [effectiveSeeds.characterSpecific, directionMap]
-  );
   const bioSeedRowCount =
     (officialSeeds?.characterSpecific.length ?? 0) + (officialSeeds?.general.length ?? 0);
   const hasAnySeedContent = bioSeedRowCount > 0 || fixedTemplates.length > 0;
@@ -446,7 +425,7 @@ const OfficialContentTab = ({
             title="角色专属"
             icon="ri-user-star-line"
             accentColor="#f472b6"
-            prompts={enrichedCharacterSpecific}
+            prompts={effectiveSeeds.characterSpecific}
             busyId={togglingId ?? deletingSeedId}
             onToggle={(id) => void runToggle("characterSpecific", id)}
             onDelete={(id) => {
