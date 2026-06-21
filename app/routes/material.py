@@ -273,10 +273,12 @@ async def patch_character_bio(
         if dir_id is None:
             continue
         if not service.is_direction_owned_by_character(dir_id, character_id):
-            raise HTTPException(
-                status_code=400,
-                detail=f"invalid creative_direction_id: {dir_id}",
+            logger.warning(
+                "PATCH /bio: dropping stale creative_direction_id=%s on character=%s (direction missing); coercing to null",
+                dir_id,
+                character_id,
             )
+            entry["creative_direction_id"] = None
 
     gen = seeds.get("general") or []
     for entry in gen:

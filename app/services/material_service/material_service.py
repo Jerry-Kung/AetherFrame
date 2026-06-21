@@ -1012,6 +1012,7 @@ class MaterialService:
             raise ValueError("direction not found")
         self.db.delete(row)
         self.db.commit()
+        self._detach_seeds_from_direction(character_id, direction_id)
         try:
             path = os.path.join(
                 material_file_service.get_character_dir(character_id),
@@ -1022,6 +1023,32 @@ class MaterialService:
                 os.remove(path)
         except Exception as e:
             logger.warning("failed to delete direction json file: %s", e)
+
+    def _detach_seeds_from_direction(self, character_id: str, direction_id: str) -> None:
+        """方向被删后，把 bio_json 中绑定到该方向的种子转为「默认世界观」(creative_direction_id=None)。"""
+        char = self.repo.get_by_id(character_id)
+        if not char:
+            return
+        try:
+            bio = json.loads(char.bio_json or "{}")
+            if not isinstance(bio, dict):
+                return
+        except json.JSONDecodeError:
+            return
+        seeds = bio.get("official_seed_prompts")
+        if not isinstance(seeds, dict):
+            return
+        cs = seeds.get("character_specific")
+        if not isinstance(cs, list):
+            return
+        changed = False
+        for entry in cs:
+            if isinstance(entry, dict) and entry.get("creative_direction_id") == direction_id:
+                entry["creative_direction_id"] = None
+                changed = True
+        if not changed:
+            return
+        self.repo.update(character_id, {"bio_json": json.dumps(bio, ensure_ascii=False)})
 
     def is_direction_owned_by_character(self, direction_id: str, character_id: str) -> bool:
         row = self._direction_repo.get_by_id(direction_id)
