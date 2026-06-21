@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { CreativeDirectionApi } from "@/services/materialApi";
 import DivergenceBadge from "@/pages/material/components/direction/DivergenceBadge";
 
@@ -44,7 +45,7 @@ export default function DirectionEditDrawer({
     }
   };
 
-  return (
+  return createPortal(
     <>
       <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
       <div
@@ -119,6 +120,7 @@ export default function DirectionEditDrawer({
           to   { transform: translateX(0); }
         }
       `}</style>
-    </>
+    </>,
+    document.body
   );
 }

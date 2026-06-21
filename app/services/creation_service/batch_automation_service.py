@@ -147,8 +147,8 @@ class BatchAutomationService:
         iterations: int,
         character_ids: Optional[List[str]],
     ) -> Tuple[List[MaterialCharacter], List[Dict[str, Any]]]:
-        if iterations < 2 or iterations > 10:
-            raise ValueError("创作内容条数必须在 2 到 10 之间")
+        if iterations < 2 or iterations > 20:
+            raise ValueError("创作内容条数必须在 2 到 20 之间")
         requested = (
             [str(x).strip() for x in character_ids if str(x).strip()] if character_ids else None
         )

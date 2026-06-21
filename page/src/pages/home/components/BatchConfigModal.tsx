@@ -11,7 +11,8 @@ const ASPECT_RATIO_OPTIONS = [
 
 const PROMPT_COUNT_OPTIONS = [1, 2, 3, 4] as const;
 const IMAGES_PER_PROMPT_OPTIONS = [1, 2, 3, 4] as const;
-const BATCH_COUNT_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+const BATCH_COUNT_MIN = 2;
+const BATCH_COUNT_MAX = 20;
 
 interface BatchConfigModalProps {
   visible: boolean;
@@ -78,32 +79,48 @@ export default function BatchConfigModal({
               <i className="ri-repeat-line mr-1"></i>产出批次数量
             </label>
             <div
-              className="flex flex-wrap items-center gap-1 p-1 rounded-2xl"
+              className="rounded-2xl px-4 py-3"
               style={{
                 background: "rgba(253,164,175,0.1)",
                 border: "1px solid rgba(253,164,175,0.18)",
               }}
             >
-              {BATCH_COUNT_OPTIONS.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setConfig((c) => ({ ...c, batchCount: n }))}
-                  className="w-9 h-8 flex items-center justify-center rounded-xl text-sm cursor-pointer transition-all duration-200 whitespace-nowrap"
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={BATCH_COUNT_MIN}
+                  max={BATCH_COUNT_MAX}
+                  step={1}
+                  value={Math.min(
+                    BATCH_COUNT_MAX,
+                    Math.max(BATCH_COUNT_MIN, Math.round(config.batchCount))
+                  )}
+                  onChange={(e) =>
+                    setConfig((c) => ({ ...c, batchCount: Number(e.target.value) }))
+                  }
+                  className="flex-1 h-1.5 cursor-pointer"
+                  style={{ accentColor: "#f472b6" }}
+                  aria-label="产出批次数量"
+                />
+                <span
+                  className="shrink-0 min-w-[3.25rem] h-8 px-3 flex items-center justify-center rounded-xl text-sm font-semibold text-white"
                   style={{
                     fontFamily: "'ZCOOL KuaiLe', cursive",
-                    background:
-                      config.batchCount === n
-                        ? "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)"
-                        : "transparent",
-                    color: config.batchCount === n ? "white" : "#f472b6",
-                    boxShadow:
-                      config.batchCount === n ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
+                    background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+                    boxShadow: "0 2px 8px rgba(244,114,182,0.3)",
                   }}
                 >
-                  {n}
-                </button>
-              ))}
+                  {Math.min(
+                    BATCH_COUNT_MAX,
+                    Math.max(BATCH_COUNT_MIN, Math.round(config.batchCount))
+                  )}{" "}
+                  批
+                </span>
+              </div>
+              <div className="flex items-center justify-between mt-1.5 px-0.5 text-[10px] text-rose-300/70">
+                <span>{BATCH_COUNT_MIN}</span>
+                <span>{BATCH_COUNT_MAX}</span>
+              </div>
             </div>
           </div>
 

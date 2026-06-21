@@ -13,9 +13,9 @@ export interface BatchTaskConfig {
 
 export const DEFAULT_BATCH_CONFIG: BatchTaskConfig = {
   batchCount: 5,
-  promptCount: 2,
-  imagesPerPrompt: 2,
-  aspectRatio: "1:1",
+  promptCount: 3,
+  imagesPerPrompt: 3,
+  aspectRatio: "16:9",
 };
 
 /** 与素材模块 `SeedPromptSection` 一致，用于标记「已使用」 */

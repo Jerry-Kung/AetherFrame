@@ -9,6 +9,7 @@ import type { SeedPromptSection } from "@/mocks/materialChara";
 import { buildBatchTaskFromHydrated } from "@/utils/batchAutomationDisplay";
 import BatchConfigModal from "./BatchConfigModal";
 import BatchTaskCard from "./BatchTaskCard";
+import CuteConfirmModal from "@/pages/repair/components/CuteConfirmModal";
 
 interface BatchCreationPageProps {
   charas: CharaProfile[];
@@ -101,6 +102,7 @@ export default function BatchCreationPage({
   const [genState, setGenState] = useState<GenState>("idle");
   const [config, setConfig] = useState<BatchTaskConfig>(DEFAULT_BATCH_CONFIG);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [showStartConfirm, setShowStartConfirm] = useState(false);
   const [tasks, setTasks] = useState<BatchTask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState<string | null>(null);
@@ -209,7 +211,7 @@ export default function BatchCreationPage({
       | "3:4"
       | "9:16";
     const maxPrompts = pc;
-    const iterations = Math.min(10, Math.max(2, Math.round(config.batchCount)));
+    const iterations = Math.min(20, Math.max(2, Math.round(config.batchCount)));
 
     pollCancelRef.current = false;
     setGenState("generating");
@@ -277,8 +279,19 @@ export default function BatchCreationPage({
 
   const canStart = eligibleCharas.length > 0;
   const allSelected = selectedCharaIds.size === eligibleCharas.length && eligibleCharas.length > 0;
-  const bc = Math.min(10, Math.max(2, Math.round(config.batchCount)));
+  const bc = Math.min(20, Math.max(2, Math.round(config.batchCount)));
   const expectedImages = bc * config.promptCount * config.imagesPerPrompt;
+
+  const requestStartBatch = useCallback(() => {
+    const pickCharas =
+      selectedCharaIds.size === 0 ? eligibleCharas : eligibleCharas.filter((c) => selectedCharaIds.has(c.id));
+    if (pickCharas.length === 0) return;
+    if (!hasAnyAvailableSeed(pickCharas, fixedUnusedCount)) {
+      setGenHint("没有可用的未使用种子提示词，请先在素材加工里备好正式种子，产线才能开工～");
+      return;
+    }
+    setShowStartConfirm(true);
+  }, [eligibleCharas, fixedUnusedCount, selectedCharaIds]);
 
   if (listLoading) {
     return (
@@ -403,7 +416,7 @@ export default function BatchCreationPage({
 
         <button
           type="button"
-          onClick={() => void startBatch()}
+          onClick={requestStartBatch}
           disabled={!canStart || genState === "generating"}
           className="flex items-center gap-2 px-6 py-2.5 rounded-2xl text-sm font-semibold text-white transition-all duration-200 whitespace-nowrap"
           style={{
@@ -520,6 +533,21 @@ export default function BatchCreationPage({
           setShowConfigModal(false);
         }}
         onCancel={() => setShowConfigModal(false)}
+      />
+
+      <CuteConfirmModal
+        isOpen={showStartConfirm}
+        icon="warning"
+        title="启动灵感产线？"
+        message={`即将启动 ${bc} 批次，预计共 ${expectedImages} 张图，启动后将顺序调用云端 Prompt 预生成与美图创作。是否继续？`}
+        confirmText="启动"
+        cancelText="再想想"
+        titleId="batch-start-confirm-title"
+        onConfirm={() => {
+          setShowStartConfirm(false);
+          void startBatch();
+        }}
+        onCancel={() => setShowStartConfirm(false)}
       />
     </div>
   );
