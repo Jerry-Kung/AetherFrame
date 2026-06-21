@@ -226,7 +226,7 @@ class ApiResponse(BaseModel):
 class BatchAutomationStartRequest(BaseModel):
     """首页批量自动化创作提交"""
 
-    iterations: int = Field(..., ge=2, le=10, description="创作内容条数")
+    iterations: int = Field(..., ge=2, le=20, description="创作内容条数")
     prompt_count: Literal[1, 2, 3, 4] = Field(..., description="Prompt 预生成数量")
     images_per_prompt: Literal[1, 2, 3, 4] = Field(..., description="每个 Prompt 生成图片数")
     aspect_ratio: Literal["16:9", "4:3", "1:1", "3:4", "9:16"] = Field(..., description="图片长宽比")
