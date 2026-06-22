@@ -14,8 +14,12 @@ from sqlalchemy.orm import Session
 
 from app.config import CREATION_BATCH_PARALLEL_WORKERS
 from app.models.material import MaterialCharacter
+from app.repositories.beautify_repository import BeautifyRepository
 from app.repositories.creation_batch_repository import CreationBatchRepository
-from app.repositories.creation_repository import CreationQuickCreateRepository
+from app.repositories.creation_repository import (
+    CreationPromptPrecreationRepository,
+    CreationQuickCreateRepository,
+)
 from app.repositories.fixed_seed_template_repository import FixedSeedTemplateRepository
 from app.repositories.material_repository import MaterialCharacterRepository
 from app.schemas.creation import SeedPayload
@@ -373,16 +377,65 @@ class BatchAutomationService:
         return {"items": items_payload, "total": total}
 
     def list_items_hydrated(self, *, limit: int, offset: int) -> Dict[str, Any]:
-        """返回 batch items 列表，已完成的条目内联 prompt cards 和 quick create results。"""
+        """返回 batch items 列表，已完成的条目内联 prompt cards 和 quick create results。
+
+        批量装配：一次性把 runs / characters / prompt_precreation / quick_create / beautify
+        全部按 IN 查询拉好，再在 Python 里拼装，避免逐条 N+1。
+        """
         rows = self.batch_repo.list_all_items(limit=limit, offset=offset)
         total = self.batch_repo.count_all_items()
+        if not rows:
+            return {"items": [], "total": total}
+
+        run_ids = [it.run_id for it in rows]
+        char_ids = [it.character_id for it in rows]
+        ppc_ids = [
+            (it.prompt_precreation_task_id or "").strip()
+            for it in rows
+            if it.status == "completed" and (it.prompt_precreation_task_id or "").strip()
+        ]
+        qc_ids = [
+            (it.quick_create_task_id or "").strip()
+            for it in rows
+            if it.status == "completed" and (it.quick_create_task_id or "").strip()
+        ]
+
+        runs_map = self.batch_repo.get_runs_by_ids(run_ids)
+        char_map = {ch.id: ch for ch in self.material_repo.get_by_ids(char_ids)}
+
+        ppc_repo = CreationPromptPrecreationRepository(self.db)
+        qc_repo = CreationQuickCreateRepository(self.db)
+        ppc_map = ppc_repo.get_by_ids(ppc_ids) if ppc_ids else {}
+        qc_map = qc_repo.get_by_ids(qc_ids) if qc_ids else {}
+
+        # PPC / QC 详情里要拿 character.name；把它们涉及的 character_id 一并补齐到 char_map
+        extra_char_ids = {
+            t.character_id
+            for t in list(ppc_map.values()) + list(qc_map.values())
+            if t.character_id and t.character_id not in char_map
+        }
+        if extra_char_ids:
+            for ch in self.material_repo.get_by_ids(list(extra_char_ids)):
+                char_map[ch.id] = ch
+
+        # beautify rows 一次 IN 查询，按 quick_create task id 分组
+        beautify_groups = (
+            BeautifyRepository(self.db).list_by_sources("quick_create", list(qc_map.keys()))
+            if qc_map
+            else {}
+        )
+
+        ppc_service = PromptPrecreationService(self.db) if ppc_map else None
+        qc_service = QuickCreateService(self.db) if qc_map else None
+
+        ms = self._material_service()
         items_payload: List[Dict[str, Any]] = []
 
         for it in rows:
-            run = self.batch_repo.get_run(it.run_id)
+            run = runs_map.get(it.run_id)
             if not run:
                 continue
-            ch = self.material_repo.get_by_id(it.character_id)
+            ch = char_map.get(it.character_id)
 
             item_data: Dict[str, Any] = {
                 "id": it.id,
@@ -391,7 +444,9 @@ class BatchAutomationService:
                 "step_index": it.step_index,
                 "character_id": it.character_id,
                 "chara_name": ch.name if ch else "未知角色",
-                "chara_avatar": self._get_chara_avatar_url(ch) if ch else "",
+                "chara_avatar": ms.avatar_url_for_character(ch.id, ch.avatar_filename)
+                if ch
+                else "",
                 "seed_prompt_id": it.seed_prompt_id,
                 "seed_section": it.seed_section,
                 "seed_prompt_text": it.seed_prompt_text,
@@ -406,40 +461,57 @@ class BatchAutomationService:
                 "quick_create_results": None,
             }
 
-            # 仅对已完成的条目内联详情
             if it.status == "completed":
                 ppc_id = (it.prompt_precreation_task_id or "").strip()
                 qc_id = (it.quick_create_task_id or "").strip()
 
-                if ppc_id:
+                if ppc_id and ppc_service is not None:
                     try:
-                        ppc_service = PromptPrecreationService(self.db)
-                        ppc_detail = ppc_service.get_history_detail(ppc_id)
-                        if ppc_detail:
-                            item_data["prompt_cards"] = ppc_detail.get("cards", [])
+                        ppc_task = ppc_map.get(ppc_id)
+                        if ppc_task is not None:
+                            ppc_detail = ppc_service._build_history_detail_from_parts(
+                                ppc_task, char_map.get(ppc_task.character_id)
+                            )
+                            if ppc_detail:
+                                item_data["prompt_cards"] = ppc_detail.get("cards", [])
                     except Exception:
-                        pass
+                        logger.exception(
+                            "批量装配 prompt_precreation 详情失败 ppc_id=%s", ppc_id
+                        )
 
-                if qc_id:
+                if qc_id and qc_service is not None:
                     try:
-                        qc_service = QuickCreateService(self.db)
-                        qc_detail = qc_service.get_history_detail(qc_id)
-                        if qc_detail:
-                            item_data["quick_create_results"] = qc_detail.get("results", [])
-                            item_data["quick_create_selected_prompts"] = qc_detail.get("selected_prompts", [])
+                        qc_task = qc_map.get(qc_id)
+                        if qc_task is not None:
+                            qc_detail = qc_service._build_history_detail_from_parts(
+                                qc_task,
+                                char_map.get(qc_task.character_id),
+                                beautify_groups.get(qc_id, []),
+                            )
+                            if qc_detail:
+                                item_data["quick_create_results"] = qc_detail.get(
+                                    "results", []
+                                )
+                                item_data["quick_create_selected_prompts"] = (
+                                    qc_detail.get("selected_prompts", [])
+                                )
                     except Exception:
-                        pass
+                        logger.exception(
+                            "批量装配 quick_create 详情失败 qc_id=%s", qc_id
+                        )
 
             items_payload.append(item_data)
 
         return {"items": items_payload, "total": total}
 
-    def _get_chara_avatar_url(self, ch: MaterialCharacter) -> str:
-        """获取角色头像 URL。"""
+    def _material_service(self):
         from app.services.material_service.material_service import MaterialService
 
-        ms = MaterialService(self.db)
-        return ms.avatar_url_for_character(ch.id, ch.avatar_filename)
+        return MaterialService(self.db)
+
+    def _get_chara_avatar_url(self, ch: MaterialCharacter) -> str:
+        """获取角色头像 URL（保留为单条入口；批量路径使用 _material_service()）。"""
+        return self._material_service().avatar_url_for_character(ch.id, ch.avatar_filename)
 
     def delete_batch_item(self, item_id: str) -> Dict[str, Any]:
         item = self.batch_repo.get_item(item_id)

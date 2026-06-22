@@ -63,11 +63,15 @@ export default function DirectionStage({
   chara,
   showToast,
   onCountChange,
+  onRefreshChara,
+  onRefreshDirections,
 }: {
   characterId: string;
   chara: CharaProfile;
   showToast: (msg: string) => void;
   onCountChange?: (count: number) => void;
+  onRefreshChara?: (id: string) => Promise<void>;
+  onRefreshDirections?: () => Promise<void>;
 }) {
   const [phase, setPhase] = useState<DirectionStagePhase>("hydrating");
   const [directions, setDirections] = useState<CreativeDirectionApi[]>([]);
@@ -100,12 +104,15 @@ export default function DirectionStage({
         setPhase("idle");
         setRecentError(null);
         showToast("创意方向已生成");
+        // P2-3: 终态后强制刷新 chara 详情与 directions 列表，绕过 MaterialPage 的 30s 缓存
+        if (onRefreshChara) void onRefreshChara(characterId);
+        if (onRefreshDirections) void onRefreshDirections();
       } else if (status.status === "failed") {
         setRecentError(status.error_message || "生成失败");
         setPhase("idle");
       }
     },
-    [characterId, showToast]
+    [characterId, showToast, onRefreshChara, onRefreshDirections]
   );
 
   const handleGiveUp = useCallback((lastError: unknown) => {

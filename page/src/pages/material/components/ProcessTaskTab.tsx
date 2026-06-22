@@ -11,6 +11,7 @@ interface ProcessTaskTabProps {
   charaName: string;
   chara?: CharaProfile;
   onCharacterUpdated: (detail: ApiCharacterDetail) => void;
+  onRefreshChara: (id: string) => Promise<void>;
   showToast: (msg: string) => void;
   onGoRaw: () => void;
   onGoStandard: () => void;
@@ -38,6 +39,7 @@ const ProcessTaskTab = ({
   charaName,
   chara,
   onCharacterUpdated,
+  onRefreshChara,
   showToast,
   onGoRaw,
   onGoStandard,
@@ -83,6 +85,7 @@ const ProcessTaskTab = ({
             characterId={chara.id}
             chara={chara}
             onCharacterUpdated={onCharacterUpdated}
+            onRefreshChara={onRefreshChara}
             showToast={showToast}
             onGoRaw={onGoRaw}
             onGoPhoto={onGoStandard}

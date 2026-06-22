@@ -138,6 +138,28 @@ class MaterialCharacterRepository(BaseRepository[MaterialCharacter]):
             .all()
         )
 
+    def list_raw_images_by_character_ids(
+        self, character_ids: List[str]
+    ) -> Dict[str, List[MaterialCharacterRawImage]]:
+        """批量按 character_id 拉 raw_images，返回 {character_id: [rows]}。
+        各分组内部按 created_at 升序，与 list_raw_images 一致；缺角色返回空列表。
+        """
+        if not character_ids:
+            return {}
+        ids = list({cid for cid in character_ids if cid})
+        if not ids:
+            return {}
+        rows = (
+            self.db.query(MaterialCharacterRawImage)
+            .filter(MaterialCharacterRawImage.character_id.in_(ids))
+            .order_by(MaterialCharacterRawImage.created_at)
+            .all()
+        )
+        grouped: Dict[str, List[MaterialCharacterRawImage]] = {cid: [] for cid in ids}
+        for row in rows:
+            grouped.setdefault(row.character_id, []).append(row)
+        return grouped
+
     def delete_raw_image(self, character_id: str, image_id: str) -> Optional[str]:
         row = self.get_raw_image(character_id, image_id)
         if not row:

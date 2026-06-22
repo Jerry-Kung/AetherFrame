@@ -59,6 +59,17 @@ class CreationPromptPrecreationRepository:
             .first()
         )
 
+    def get_by_ids(self, ids: List[str]) -> Dict[str, CreationPromptPrecreationTask]:
+        """批量按 ID 获取，返回 {task_id: task}。"""
+        if not ids:
+            return {}
+        rows = (
+            self.db.query(CreationPromptPrecreationTask)
+            .filter(CreationPromptPrecreationTask.id.in_(list(set(ids))))
+            .all()
+        )
+        return {r.id: r for r in rows}
+
     def update(self, task_id: str, updates: Dict[str, Any]) -> Optional[CreationPromptPrecreationTask]:
         task = self.get_by_id(task_id)
         if not task:
@@ -179,6 +190,17 @@ class CreationQuickCreateRepository:
             .filter(CreationQuickCreateTask.id == task_id)
             .first()
         )
+
+    def get_by_ids(self, ids: List[str]) -> Dict[str, CreationQuickCreateTask]:
+        """批量按 ID 获取，返回 {task_id: task}。"""
+        if not ids:
+            return {}
+        rows = (
+            self.db.query(CreationQuickCreateTask)
+            .filter(CreationQuickCreateTask.id.in_(list(set(ids))))
+            .all()
+        )
+        return {r.id: r for r in rows}
 
     def update(self, task_id: str, updates: Dict[str, Any]) -> Optional[CreationQuickCreateTask]:
         task = self.get_by_id(task_id)

@@ -412,8 +412,39 @@ class MaterialService:
             .order_by(MaterialCharacterRawImage.created_at)
             .all()
         )
+        from app.services.material_service.seed_meta_enrichment import (
+            collect_direction_ids_from_bio,
+            fetch_direction_meta_map,
+        )
+
+        bio_preview = self._parse_bio_safe(char.bio_json)
+        dir_ids = collect_direction_ids_from_bio(bio_preview)
+        dir_map = fetch_direction_meta_map(self.db, dir_ids) if dir_ids else {}
+        return self._assemble_character_detail(char, rows, dir_map)
+
+    @staticmethod
+    def _parse_bio_safe(bio_json: Optional[str]) -> Dict[str, Any]:
+        try:
+            bio = json.loads(bio_json or "{}")
+            if not isinstance(bio, dict):
+                return {}
+            return bio
+        except json.JSONDecodeError:
+            return {}
+
+    def _assemble_character_detail(
+        self,
+        char: MaterialCharacter,
+        raw_rows: List[Any],
+        dir_map: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """供批量装配使用：raw_images + direction_meta 已由上层一次性查询。"""
+        from app.services.material_service.seed_meta_enrichment import (
+            enrich_seeds_with_direction_meta_from_map,
+        )
+
         raw_images = []
-        for r in rows:
+        for r in raw_rows:
             try:
                 tags = json.loads(r.tags_json or "[]")
                 if not isinstance(tags, list):
@@ -432,12 +463,7 @@ class MaterialService:
             official_photos = json.loads(char.official_photos_json or "[null,null,null]")
         except json.JSONDecodeError:
             official_photos = []
-        try:
-            bio = json.loads(char.bio_json or "{}")
-            if not isinstance(bio, dict):
-                bio = {}
-        except json.JSONDecodeError:
-            bio = {}
+        bio = self._parse_bio_safe(char.bio_json)
 
         avatar_url = ""
         if char.avatar_filename:
@@ -457,19 +483,36 @@ class MaterialService:
             "bio": bio,
         }
         if isinstance(detail.get("bio"), dict):
-            from app.services.material_service.seed_meta_enrichment import (
-                enrich_seeds_with_direction_meta,
-            )
-
-            enrich_seeds_with_direction_meta(detail["bio"], self.db)
+            enrich_seeds_with_direction_meta_from_map(detail["bio"], dir_map)
         return detail
 
     def get_characters_batch_details(self, character_ids: List[str]) -> List[Dict[str, Any]]:
-        """批量获取多个角色的完整详情，用于前端一次性加载。"""
+        """批量获取多个角色的完整详情，用于前端一次性加载。
+        3 次 SQL：chars + raw_images IN + creative_directions IN。
+        """
         if not character_ids:
             return []
         chars = self.repo.get_by_ids(character_ids)
-        return [self.character_to_detail_dict(c) for c in chars]
+        if not chars:
+            return []
+
+        from app.services.material_service.seed_meta_enrichment import (
+            collect_direction_ids_from_bio,
+            fetch_direction_meta_map,
+        )
+
+        ids = [c.id for c in chars]
+        raw_map = self.repo.list_raw_images_by_character_ids(ids)
+        all_dir_ids: set = set()
+        for c in chars:
+            bio = self._parse_bio_safe(c.bio_json)
+            all_dir_ids.update(collect_direction_ids_from_bio(bio))
+        dir_map = fetch_direction_meta_map(self.db, all_dir_ids) if all_dir_ids else {}
+
+        return [
+            self._assemble_character_detail(c, raw_map.get(c.id, []), dir_map)
+            for c in chars
+        ]
 
     def start_standard_photo_task(
         self,

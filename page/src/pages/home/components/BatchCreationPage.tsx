@@ -256,7 +256,7 @@ export default function BatchCreationPage({
             );
             break;
           }
-          await sleep(2500);
+          await sleep(10000);
         }
       } finally {
         if (hintTimer !== null) window.clearInterval(hintTimer);

@@ -21,6 +21,7 @@ interface CharaProfilePageProps {
   characterId: string;
   chara: CharaProfile;
   onCharacterUpdated: (detail: ApiCharacterDetail) => void;
+  onRefreshChara: (id: string) => Promise<void>;
   showToast: (msg: string) => void;
   onGoRaw: () => void;
   onGoPhoto: () => void;
@@ -1001,6 +1002,7 @@ const CharaProfilePage = ({
   characterId,
   chara,
   onCharacterUpdated,
+  onRefreshChara,
   showToast,
   onGoRaw,
   onGoPhoto,
@@ -1026,6 +1028,15 @@ const CharaProfilePage = ({
   useEffect(() => {
     setSeedCount(seedCountFromBio);
   }, [seedCountFromBio]);
+
+  const refreshDirections = useCallback(async () => {
+    try {
+      const list = await listCreativeDirections(characterId);
+      setDirections(list);
+    } catch {
+      /* keep previous list on error */
+    }
+  }, [characterId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1219,6 +1230,8 @@ const CharaProfilePage = ({
             chara={chara}
             showToast={showToast}
             onCountChange={setDirectionCount}
+            onRefreshChara={onRefreshChara}
+            onRefreshDirections={refreshDirections}
           />
         )}
         {activeStage === "seed" && profileSaved && (
@@ -1228,6 +1241,7 @@ const CharaProfilePage = ({
             directions={directions}
             onCountChange={setSeedCount}
             onSaveBio={(payload) => Promise.resolve(onSaveSeedPrompts(payload))}
+            onRefreshChara={onRefreshChara}
             showToast={showToast}
           />
         )}

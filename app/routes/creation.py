@@ -64,7 +64,7 @@ def get_batch_automation_service(db: Session = Depends(get_db)) -> BatchAutomati
     "/characters/{character_id}/prompt-precreation/start",
     response_model=ApiResponse,
 )
-async def start_prompt_precreation(
+def start_prompt_precreation(
     character_id: str,
     body: PromptPrecreationStartRequest,
     background_tasks: BackgroundTasks,
@@ -109,7 +109,7 @@ async def start_prompt_precreation(
     "/prompt-precreation/tasks/{task_id}/status",
     response_model=ApiResponse,
 )
-async def get_prompt_precreation_status(
+def get_prompt_precreation_status(
     task_id: str,
     service: PromptPrecreationService = Depends(get_prompt_precreation_service),
 ):
@@ -146,7 +146,7 @@ async def get_prompt_precreation_status(
     "/prompt-precreation/history",
     response_model=ApiResponse,
 )
-async def list_prompt_precreation_history(
+def list_prompt_precreation_history(
     limit: int = 50,
     offset: int = 0,
     status: Optional[str] = Query(
@@ -176,7 +176,7 @@ async def list_prompt_precreation_history(
     "/prompt-precreation/history/latest",
     response_model=ApiResponse,
 )
-async def get_latest_prompt_precreation_history(
+def get_latest_prompt_precreation_history(
     service: PromptPrecreationService = Depends(get_prompt_precreation_service),
 ):
     raw = service.get_latest_history()
@@ -199,7 +199,7 @@ async def get_latest_prompt_precreation_history(
     "/prompt-precreation/history/latest-completed",
     response_model=ApiResponse,
 )
-async def get_latest_completed_prompt_precreation_history(
+def get_latest_completed_prompt_precreation_history(
     service: PromptPrecreationService = Depends(get_prompt_precreation_service),
 ):
     """一键创作默认灵感来源：全库最近一条已完成的 Prompt 预生成任务（含 cards）。"""
@@ -223,7 +223,7 @@ async def get_latest_completed_prompt_precreation_history(
     "/prompt-precreation/history/{history_id}",
     response_model=ApiResponse,
 )
-async def get_prompt_precreation_history_detail(
+def get_prompt_precreation_history_detail(
     history_id: str,
     service: PromptPrecreationService = Depends(get_prompt_precreation_service),
 ):
@@ -250,7 +250,7 @@ async def get_prompt_precreation_history_detail(
     "/prompt-precreation/history/{history_id}",
     response_model=ApiResponse,
 )
-async def delete_prompt_precreation_history(
+def delete_prompt_precreation_history(
     history_id: str,
     service: PromptPrecreationService = Depends(get_prompt_precreation_service),
 ):
@@ -268,7 +268,7 @@ async def delete_prompt_precreation_history(
     "/characters/{character_id}/quick-create/start",
     response_model=ApiResponse,
 )
-async def start_quick_create(
+def start_quick_create(
     character_id: str,
     body: QuickCreateStartRequest,
     background_tasks: BackgroundTasks,
@@ -310,7 +310,7 @@ async def start_quick_create(
     "/quick-create/tasks/{task_id}/status",
     response_model=ApiResponse,
 )
-async def get_quick_create_status(
+def get_quick_create_status(
     task_id: str,
     service: QuickCreateService = Depends(get_quick_create_service),
 ):
@@ -348,7 +348,7 @@ async def get_quick_create_status(
     "/quick-create/history",
     response_model=ApiResponse,
 )
-async def list_quick_create_history(
+def list_quick_create_history(
     limit: int = 50,
     offset: int = 0,
     service: QuickCreateService = Depends(get_quick_create_service),
@@ -365,7 +365,7 @@ async def list_quick_create_history(
     "/quick-create/history/latest",
     response_model=ApiResponse,
 )
-async def get_latest_quick_create_history(
+def get_latest_quick_create_history(
     service: QuickCreateService = Depends(get_quick_create_service),
 ):
     raw = service.get_latest_history()
@@ -385,7 +385,7 @@ async def get_latest_quick_create_history(
     "/quick-create/history/{history_id}",
     response_model=ApiResponse,
 )
-async def get_quick_create_history_detail(
+def get_quick_create_history_detail(
     history_id: str,
     service: QuickCreateService = Depends(get_quick_create_service),
 ):
@@ -409,7 +409,7 @@ async def get_quick_create_history_detail(
     "/quick-create/history/{history_id}",
     response_model=ApiResponse,
 )
-async def delete_quick_create_history(
+def delete_quick_create_history(
     history_id: str,
     service: QuickCreateService = Depends(get_quick_create_service),
 ):
@@ -427,7 +427,7 @@ async def delete_quick_create_history(
     "/batch-automation/start",
     response_model=ApiResponse,
 )
-async def batch_automation_start(
+def batch_automation_start(
     body: BatchAutomationStartRequest,
     background_tasks: BackgroundTasks,
     service: BatchAutomationService = Depends(get_batch_automation_service),
@@ -463,7 +463,7 @@ async def batch_automation_start(
     "/batch-automation/runs/{run_id}",
     response_model=ApiResponse,
 )
-async def batch_automation_get_run(
+def batch_automation_get_run(
     run_id: str,
     service: BatchAutomationService = Depends(get_batch_automation_service),
 ):
@@ -485,7 +485,7 @@ async def batch_automation_get_run(
     "/batch-automation/items",
     response_model=ApiResponse,
 )
-async def batch_automation_list_items(
+def batch_automation_list_items(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     service: BatchAutomationService = Depends(get_batch_automation_service),
@@ -503,7 +503,7 @@ async def batch_automation_list_items(
     "/batch-automation/items-hydrated",
     response_model=ApiResponse,
 )
-async def batch_automation_list_items_hydrated(
+def batch_automation_list_items_hydrated(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     service: BatchAutomationService = Depends(get_batch_automation_service),
@@ -521,7 +521,7 @@ async def batch_automation_list_items_hydrated(
     "/batch-automation/items/{item_id}",
     response_model=ApiResponse,
 )
-async def batch_automation_delete_item(
+def batch_automation_delete_item(
     item_id: str,
     service: BatchAutomationService = Depends(get_batch_automation_service),
 ):
@@ -536,7 +536,7 @@ async def batch_automation_delete_item(
 
 
 @router.get("/quick-create/tasks/{task_id}/images/{image_path:path}")
-async def get_quick_create_image(
+def get_quick_create_image(
     task_id: str,
     image_path: str,
     service: QuickCreateService = Depends(get_quick_create_service),

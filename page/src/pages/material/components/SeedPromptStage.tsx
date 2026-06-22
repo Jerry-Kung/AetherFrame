@@ -73,6 +73,7 @@ export default function SeedPromptStage({
   directions,
   onCountChange,
   onSaveBio,
+  onRefreshChara,
   showToast,
 }: {
   characterId: string;
@@ -80,6 +81,7 @@ export default function SeedPromptStage({
   directions: CreativeDirectionApi[];
   onCountChange?: (count: number) => void;
   onSaveBio: (payload: OfficialSeedPrompts) => Promise<void>;
+  onRefreshChara?: (id: string) => Promise<void>;
   showToast: (msg: string) => void;
 }) {
   const [phase, setPhase] = useState<SeedStagePhase>("hydrating");
@@ -229,6 +231,8 @@ export default function SeedPromptStage({
     setPendingMerge(null);
     setPhase("idle");
     showToast("已合入");
+    // P2-3: 合入后强制刷新 chara，确保 bio 中 creative_direction_meta 与服务端最新一致
+    if (onRefreshChara) void onRefreshChara(characterId);
   };
 
   const handleCancelMerge = () => {

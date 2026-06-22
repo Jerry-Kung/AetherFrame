@@ -52,7 +52,7 @@ def get_repair_task_service(db: Session = Depends(get_db)) -> RepairTaskService:
 
 @router.get("/tasks", response_model=ApiResponse)
 @router.get("/tasks/", response_model=ApiResponse)
-async def list_tasks(
+def list_tasks(
     skip: int = Query(0, ge=0, description="跳过数量"),
     limit: int = Query(50, ge=1, le=100, description="返回数量"),
     order_by: str = Query("created_at", description="排序字段"),
@@ -117,7 +117,7 @@ async def list_tasks(
 
 @router.post("/tasks", response_model=ApiResponse)
 @router.post("/tasks/", response_model=ApiResponse)
-async def create_task(
+def create_task(
     task_data: TaskCreate,
     repair_service: RepairService = Depends(get_repair_service)
 ):
@@ -146,7 +146,7 @@ async def create_task(
 
 
 @router.get("/tasks/{task_id}", response_model=ApiResponse)
-async def get_task(
+def get_task(
     task_id: str,
     repair_service: RepairService = Depends(get_repair_service)
 ):
@@ -179,7 +179,7 @@ async def get_task(
 
 
 @router.put("/tasks/{task_id}", response_model=ApiResponse)
-async def update_task(
+def update_task(
     task_id: str,
     task_data: TaskUpdate,
     repair_service: RepairService = Depends(get_repair_service)
@@ -224,7 +224,7 @@ async def update_task(
 
 
 @router.delete("/tasks/{task_id}", response_model=ApiResponse)
-async def delete_task(
+def delete_task(
     task_id: str,
     repair_service: RepairService = Depends(get_repair_service)
 ):
@@ -270,7 +270,7 @@ async def delete_task(
 # ==========================================
 
 @router.post("/tasks/{task_id}/main-image", response_model=ApiResponse)
-async def upload_main_image(
+def upload_main_image(
     task_id: str,
     file: UploadFile = File(...),
     repair_service: RepairService = Depends(get_repair_service)
@@ -319,7 +319,7 @@ async def upload_main_image(
 
 
 @router.post("/tasks/{task_id}/reference-images", response_model=ApiResponse)
-async def upload_reference_images(
+def upload_reference_images(
     task_id: str,
     files: List[UploadFile] = File(...),
     repair_service: RepairService = Depends(get_repair_service)
@@ -367,7 +367,7 @@ async def upload_reference_images(
 
 
 @router.get("/tasks/{task_id}/images/{image_type}/{filename}")
-async def get_image(
+def get_image(
     task_id: str,
     image_type: str,
     filename: str,
@@ -415,7 +415,7 @@ async def get_image(
 
 
 @router.delete("/tasks/{task_id}/main-image", response_model=ApiResponse)
-async def delete_main_image(
+def delete_main_image(
     task_id: str,
     repair_service: RepairService = Depends(get_repair_service)
 ):
@@ -452,7 +452,7 @@ async def delete_main_image(
 
 
 @router.delete("/tasks/{task_id}/reference-images/{filename}", response_model=ApiResponse)
-async def delete_reference_image(
+def delete_reference_image(
     task_id: str,
     filename: str,
     repair_service: RepairService = Depends(get_repair_service)
@@ -494,7 +494,7 @@ async def delete_reference_image(
 # ==========================================
 
 @router.get("/templates", response_model=ApiResponse)
-async def list_templates(
+def list_templates(
     template_type: Optional[str] = Query(None, description="模板类型 (builtin/custom)"),
     repair_service: RepairService = Depends(get_repair_service)
 ):
@@ -532,7 +532,7 @@ async def list_templates(
 
 
 @router.post("/templates", response_model=ApiResponse)
-async def create_template(
+def create_template(
     template_data: PromptTemplateCreate,
     repair_service: RepairService = Depends(get_repair_service)
 ):
@@ -561,7 +561,7 @@ async def create_template(
 
 
 @router.get("/templates/{template_id}", response_model=ApiResponse)
-async def get_template(
+def get_template(
     template_id: str,
     repair_service: RepairService = Depends(get_repair_service)
 ):
@@ -594,7 +594,7 @@ async def get_template(
 
 
 @router.put("/templates/{template_id}", response_model=ApiResponse)
-async def update_template(
+def update_template(
     template_id: str,
     template_data: PromptTemplateUpdate,
     repair_service: RepairService = Depends(get_repair_service)
@@ -637,7 +637,7 @@ async def update_template(
 
 
 @router.delete("/templates/{template_id}", response_model=ApiResponse)
-async def delete_template(
+def delete_template(
     template_id: str,
     repair_service: RepairService = Depends(get_repair_service)
 ):
@@ -731,7 +731,7 @@ async def start_repair_task(
 
 
 @router.get("/tasks/{task_id}/status", response_model=ApiResponse)
-async def get_task_status(
+def get_task_status(
     task_id: str,
     repair_service: RepairService = Depends(get_repair_service),
 ):

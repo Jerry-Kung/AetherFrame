@@ -17,9 +17,6 @@ from app.repositories.beautify_repository import BeautifyRepository
 from app.repositories.creation_repository import CreationQuickCreateRepository
 from app.repositories.material_repository import MaterialCharacterRepository
 from app.repositories.repair_repository import RepairTaskRepository
-from app.services.creation_service.quick_create_service import (
-    _sync_quick_create_history_files_for_task_id,
-)
 from app.utils.beautify_timeout import BEAUTIFY_RESTART_ERROR_MESSAGE
 from app.utils.image_generation_timeout import IMAGE_GEN_RESTART_ERROR_MESSAGE
 
@@ -72,7 +69,6 @@ def run_fail_inflight_image_generation_tasks() -> Dict[str, int]:
                 },
             )
             if updated:
-                _sync_quick_create_history_files_for_task_id(db, t.id)
                 counts["quick_create"] += 1
 
         repair_tasks = (

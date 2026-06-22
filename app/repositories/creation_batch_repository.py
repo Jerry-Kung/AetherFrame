@@ -56,6 +56,17 @@ class CreationBatchRepository:
     def get_run(self, run_id: str) -> Optional[CreationBatchRun]:
         return self.db.query(CreationBatchRun).filter(CreationBatchRun.id == run_id).first()
 
+    def get_runs_by_ids(self, ids: List[str]) -> Dict[str, CreationBatchRun]:
+        """批量按 ID 获取 run，返回 {run_id: run}。"""
+        if not ids:
+            return {}
+        rows = (
+            self.db.query(CreationBatchRun)
+            .filter(CreationBatchRun.id.in_(list(set(ids))))
+            .all()
+        )
+        return {r.id: r for r in rows}
+
     def create_item(
         self,
         *,

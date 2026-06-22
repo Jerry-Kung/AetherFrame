@@ -114,7 +114,7 @@ def _translate_material_409(exc: Exception) -> JSONResponse:
 
 @router.get("/characters", response_model=ApiResponse)
 @router.get("/characters/", response_model=ApiResponse)
-async def list_characters(
+def list_characters(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     service: MaterialService = Depends(get_material_service),
@@ -135,7 +135,7 @@ async def list_characters(
 
 
 @router.get("/characters/batch", response_model=ApiResponse)
-async def get_characters_batch(
+def get_characters_batch(
     ids: str = Query(..., description="逗号分隔的角色ID列表"),
     service: MaterialService = Depends(get_material_service),
 ):
@@ -156,7 +156,7 @@ async def get_characters_batch(
 
 @router.post("/characters", response_model=ApiResponse)
 @router.post("/characters/", response_model=ApiResponse)
-async def create_character(
+def create_character(
     body: CharacterCreate,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -175,7 +175,7 @@ async def create_character(
 
 
 @router.patch("/characters/{character_id}", response_model=ApiResponse)
-async def patch_character(
+def patch_character(
     character_id: str,
     body: CharacterUpdate,
     service: MaterialService = Depends(get_material_service),
@@ -203,7 +203,7 @@ async def patch_character(
 
 
 @router.post("/characters/{character_id}/avatar", response_model=ApiResponse)
-async def upload_character_avatar(
+def upload_character_avatar(
     character_id: str,
     file: UploadFile = File(...),
     service: MaterialService = Depends(get_material_service),
@@ -233,7 +233,7 @@ async def upload_character_avatar(
 
 
 @router.get("/characters/{character_id}", response_model=ApiResponse)
-async def get_character(
+def get_character(
     character_id: str,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -250,7 +250,7 @@ async def get_character(
 
 
 @router.patch("/characters/{character_id}/bio", response_model=ApiResponse)
-async def patch_character_bio(
+def patch_character_bio(
     character_id: str,
     body: Dict[str, Any],
     service: MaterialService = Depends(get_material_service),
@@ -321,7 +321,7 @@ async def patch_character_bio(
 
 
 @router.get("/fixed-seed-templates", response_model=ApiResponse)
-async def list_fixed_seed_templates(
+def list_fixed_seed_templates(
     service: MaterialService = Depends(get_material_service),
 ):
     rows = service.list_fixed_seed_templates()
@@ -330,7 +330,7 @@ async def list_fixed_seed_templates(
 
 
 @router.post("/fixed-seed-templates", response_model=ApiResponse)
-async def create_fixed_seed_template(
+def create_fixed_seed_template(
     body: FixedSeedTemplateCreate,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -349,7 +349,7 @@ async def create_fixed_seed_template(
 
 
 @router.patch("/fixed-seed-templates/{template_id}", response_model=ApiResponse)
-async def patch_fixed_seed_template(
+def patch_fixed_seed_template(
     template_id: str,
     body: FixedSeedTemplatePatch,
     service: MaterialService = Depends(get_material_service),
@@ -379,7 +379,7 @@ async def patch_fixed_seed_template(
 
 
 @router.delete("/fixed-seed-templates/{template_id}", response_model=ApiResponse)
-async def delete_fixed_seed_template(
+def delete_fixed_seed_template(
     template_id: str,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -397,7 +397,7 @@ async def delete_fixed_seed_template(
 
 
 @router.delete("/fixed-seed-templates", response_model=ApiResponse)
-async def clear_fixed_seed_templates(
+def clear_fixed_seed_templates(
     service: MaterialService = Depends(get_material_service),
 ):
     try:
@@ -409,7 +409,7 @@ async def clear_fixed_seed_templates(
 
 
 @router.delete("/characters/{character_id}", response_model=ApiResponse)
-async def delete_character(
+def delete_character(
     character_id: str,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -471,7 +471,7 @@ async def update_setting(
 
 
 @router.post("/characters/{character_id}/raw-images", response_model=ApiResponse)
-async def upload_raw_images(
+def upload_raw_images(
     character_id: str,
     files: List[UploadFile] = File(...),
     tags: Optional[str] = Form(None),
@@ -545,7 +545,7 @@ async def upload_raw_images(
 @router.delete(
     "/characters/{character_id}/raw-images/{image_id}", response_model=ApiResponse
 )
-async def delete_raw_image(
+def delete_raw_image(
     character_id: str,
     image_id: str,
     service: MaterialService = Depends(get_material_service),
@@ -568,7 +568,7 @@ async def delete_raw_image(
 @router.patch(
     "/characters/{character_id}/raw-images/{image_id}", response_model=ApiResponse
 )
-async def patch_raw_image_tags(
+def patch_raw_image_tags(
     character_id: str,
     image_id: str,
     body: RawImageTagsUpdate,
@@ -596,7 +596,7 @@ async def patch_raw_image_tags(
 
 
 @router.get("/characters/{character_id}/images/raw/{filename}")
-async def get_raw_image(
+def get_raw_image(
     character_id: str,
     filename: str,
     service: MaterialService = Depends(get_material_service),
@@ -609,7 +609,7 @@ async def get_raw_image(
 
 
 @router.get("/characters/{character_id}/images/avatar/{filename}")
-async def get_avatar_image(
+def get_avatar_image(
     character_id: str,
     filename: str,
     request: Request,
@@ -623,7 +623,7 @@ async def get_avatar_image(
 
 
 @router.post("/characters/{character_id}/standard-photo/start", response_model=ApiResponse)
-async def start_standard_photo(
+def start_standard_photo(
     character_id: str,
     body: StandardPhotoStartRequest,
     background_tasks: BackgroundTasks,
@@ -655,7 +655,7 @@ async def start_standard_photo(
 
 
 @router.post("/characters/{character_id}/standard-photo/retry", response_model=ApiResponse)
-async def retry_standard_photo(
+def retry_standard_photo(
     character_id: str,
     background_tasks: BackgroundTasks,
     service: MaterialService = Depends(get_material_service),
@@ -686,7 +686,7 @@ async def retry_standard_photo(
 
 
 @router.get("/characters/{character_id}/standard-photo/status", response_model=ApiResponse)
-async def get_standard_photo_status(
+def get_standard_photo_status(
     character_id: str,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -705,7 +705,7 @@ async def get_standard_photo_status(
 
 
 @router.post("/characters/{character_id}/chara-profile/start", response_model=ApiResponse)
-async def start_chara_profile(
+def start_chara_profile(
     character_id: str,
     body: CharaProfileStartRequest,
     background_tasks: BackgroundTasks,
@@ -737,7 +737,7 @@ async def start_chara_profile(
 
 
 @router.get("/characters/{character_id}/chara-profile/status", response_model=ApiResponse)
-async def get_chara_profile_status(
+def get_chara_profile_status(
     character_id: str,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -753,7 +753,7 @@ async def get_chara_profile_status(
 
 
 @router.post("/characters/{character_id}/creative-directions/start", response_model=ApiResponse)
-async def start_creative_direction(
+def start_creative_direction(
     character_id: str,
     body: CreativeDirectionStartRequest,
     background_tasks: BackgroundTasks,
@@ -785,7 +785,7 @@ async def start_creative_direction(
     "/characters/{character_id}/creative-directions/tasks/{task_id}",
     response_model=ApiResponse,
 )
-async def get_creative_direction_task_status(
+def get_creative_direction_task_status(
     character_id: str,
     task_id: str,
     service: MaterialService = Depends(get_material_service),
@@ -818,7 +818,7 @@ async def get_creative_direction_task_status(
 
 
 @router.get("/characters/{character_id}/creative-directions", response_model=ApiResponse)
-async def list_creative_directions(
+def list_creative_directions(
     character_id: str,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -834,7 +834,7 @@ async def list_creative_directions(
     "/characters/{character_id}/creative-directions/{direction_id}",
     response_model=ApiResponse,
 )
-async def patch_creative_direction(
+def patch_creative_direction(
     character_id: str,
     direction_id: str,
     body: CreativeDirectionPatchRequest,
@@ -865,7 +865,7 @@ async def patch_creative_direction(
     "/characters/{character_id}/creative-directions/{direction_id}",
     response_model=ApiResponse,
 )
-async def delete_creative_direction(
+def delete_creative_direction(
     character_id: str,
     direction_id: str,
     service: MaterialService = Depends(get_material_service),
@@ -884,7 +884,7 @@ async def delete_creative_direction(
     "/characters/{character_id}/seed-prompts/start",
     response_model=ApiResponse,
 )
-async def start_seed_prompt(
+def start_seed_prompt(
     character_id: str,
     body: SeedPromptStartRequest,
     background_tasks: BackgroundTasks,
@@ -919,7 +919,7 @@ async def start_seed_prompt(
     "/characters/{character_id}/seed-prompts/tasks/{task_id}",
     response_model=ApiResponse,
 )
-async def get_seed_prompt_task_status(
+def get_seed_prompt_task_status(
     character_id: str,
     task_id: str,
     service: MaterialService = Depends(get_material_service),
@@ -946,7 +946,7 @@ async def get_seed_prompt_task_status(
 
 
 @router.get("/characters/{character_id}/standard-photo/result-images/{filename}")
-async def get_standard_photo_result_image(
+def get_standard_photo_result_image(
     character_id: str,
     filename: str,
     service: MaterialService = Depends(get_material_service),
@@ -963,7 +963,7 @@ async def get_standard_photo_result_image(
 
 
 @router.get("/characters/{character_id}/standard-photo/slot-images/{shot_type}")
-async def get_standard_slot_image(
+def get_standard_slot_image(
     character_id: str,
     shot_type: str,
     request: Request,
@@ -984,7 +984,7 @@ async def get_standard_slot_image(
 
 
 @router.post("/characters/{character_id}/standard-photo/select", response_model=ApiResponse)
-async def select_standard_photo_result(
+def select_standard_photo_result(
     character_id: str,
     body: StandardPhotoSelectRequest,
     service: MaterialService = Depends(get_material_service),
@@ -1013,7 +1013,7 @@ async def select_standard_photo_result(
 
 
 @router.delete("/characters/{character_id}/standard-photo/slot/{slot_index}", response_model=ApiResponse)
-async def delete_official_photo_slot(
+def delete_official_photo_slot(
     character_id: str,
     slot_index: int,
     service: MaterialService = Depends(get_material_service),

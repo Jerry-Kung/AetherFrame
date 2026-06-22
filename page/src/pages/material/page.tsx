@@ -219,6 +219,26 @@ export default function MaterialPage() {
 
   const handleSelect = useCallback((id: string) => setSelectedId(id), []);
 
+  /** P2-3: 强制刷新某个角色：清掉 30s 缓存并立即重拉一次详情。
+   * 由 stage 在创意方向 / 种子提示词生成完成的终态调用，避免新数据被缓存窗口挡住。
+   */
+  const refreshCharacter = useCallback(
+    async (id: string): Promise<void> => {
+      if (!id) return;
+      try {
+        if (lastFetchedRef.current?.id === id) {
+          lastFetchedRef.current = null;
+        }
+        const d = await materialApi.getCharacter(id);
+        lastFetchedRef.current = { id, ts: Date.now() };
+        mergeChara(toCharaProfile(d));
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "刷新角色详情失败");
+      }
+    },
+    [mergeChara, showToast]
+  );
+
   const handleNew = useCallback(() => {
     setCreateModalOpen(true);
   }, []);
@@ -814,6 +834,7 @@ export default function MaterialPage() {
                     charaName={selected.name}
                     chara={selected}
                     onCharacterUpdated={handleCharacterDetailUpdated}
+                    onRefreshChara={refreshCharacter}
                     showToast={showToast}
                     onGoRaw={handleGoRaw}
                     onGoStandard={handleGoStandard}

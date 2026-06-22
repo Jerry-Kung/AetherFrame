@@ -13,6 +13,19 @@ def decorate_quick_create_results(
     if not results:
         return results
     rows = BeautifyRepository(db).list_by_source("quick_create", task_id)
+    return _apply_quick_create_rows(rows, results)
+
+
+def decorate_quick_create_results_with_rows(
+    rows: Optional[List[Any]], results: Optional[List[Any]]
+) -> Optional[List[Any]]:
+    """供批量装配使用：调用方已经一次性拉好 beautify 行，无需再 DB 查询。"""
+    if not results:
+        return results
+    return _apply_quick_create_rows(rows or [], results)
+
+
+def _apply_quick_create_rows(rows: List[Any], results: List[Any]) -> List[Any]:
     beautify_map = {row.source_image_path: row for row in rows}
     for prompt_result in results:
         if not isinstance(prompt_result, dict):
