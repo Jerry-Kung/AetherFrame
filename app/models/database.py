@@ -489,6 +489,41 @@ def migrate_bio_official_seed_prompts_add_direction_fk() -> None:
         logger.info("bio_walk: migrated %d characters (flag=%s)", updated, _BIO_WALK_FLAG)
 
 
+def migrate_material_creative_directions_add_home_settings() -> None:
+    """轻量迁移:为 material_creative_directions 补 home_settings TEXT 列(JSON 数组或 NULL)。"""
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' "
+                    "AND name='material_creative_directions'"
+                )
+            ).fetchone()
+            if row is None:
+                return
+            cols = conn.execute(
+                text("PRAGMA table_info(material_creative_directions)")
+            ).fetchall()
+            names = {c[1] for c in cols}
+            if "home_settings" in names:
+                return
+            conn.execute(
+                text(
+                    "ALTER TABLE material_creative_directions "
+                    "ADD COLUMN home_settings TEXT"
+                )
+            )
+        logger.info("已迁移: material_creative_directions 增加 home_settings 列")
+    except Exception as e:
+        logger.error(
+            f"迁移 material_creative_directions.home_settings 失败: {e}",
+            exc_info=True,
+        )
+        raise
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
@@ -525,6 +560,7 @@ def init_db():
         migrate_create_material_seed_prompt_tasks()
         migrate_bio_official_seed_prompts_add_direction_fk()
         migrate_creation_batch_run_items_add_seed_dir_id()
+        migrate_material_creative_directions_add_home_settings()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:

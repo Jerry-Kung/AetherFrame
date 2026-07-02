@@ -185,6 +185,7 @@ class MaterialCreativeDirection(Base):
     )
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    home_settings = Column(Text, nullable=True)
 
     character = relationship("MaterialCharacter")
 
