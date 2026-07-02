@@ -33,7 +33,7 @@ def _strip_json_fence(s: str) -> str:
     return s.strip()
 
 
-def _parse_direction_json(raw: str) -> tuple[str, str]:
+def _parse_direction_json(raw: str) -> tuple[str, str, Optional[list[str]]]:
     cleaned = _strip_json_fence(raw)
     try:
         obj = json.loads(cleaned)
@@ -46,7 +46,23 @@ def _parse_direction_json(raw: str) -> tuple[str, str]:
         raise ValueError("LLM output missing 'title'")
     if not isinstance(desc, str) or not desc.strip():
         raise ValueError("LLM output missing 'description'")
-    return title.strip(), desc
+    raw_home = obj.get("home_settings")
+    home: Optional[list[str]] = None
+    if isinstance(raw_home, list):
+        seen: set[str] = set()
+        cleaned_home: list[str] = []
+        for x in raw_home:
+            if not isinstance(x, str):
+                continue
+            s = x.strip()
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            cleaned_home.append(s)
+            if len(cleaned_home) >= 3:
+                break
+        home = cleaned_home or None
+    return title.strip(), desc, home
 
 
 def _resolve_chara_profile_text(character_id: str) -> str:
@@ -66,6 +82,14 @@ def _write_direction_json_file(character_id: str, direction: MaterialCreativeDir
     )
     os.makedirs(dir_path, exist_ok=True)
     file_path = os.path.join(dir_path, f"{direction.id}.json")
+    home_settings_val: Optional[list[str]] = None
+    if direction.home_settings:
+        try:
+            parsed = json.loads(direction.home_settings)
+            if isinstance(parsed, list):
+                home_settings_val = [x for x in parsed if isinstance(x, str)]
+        except json.JSONDecodeError:
+            home_settings_val = None
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(
@@ -73,6 +97,7 @@ def _write_direction_json_file(character_id: str, direction: MaterialCreativeDir
                     "id": direction.id,
                     "title": direction.title,
                     "description": direction.description,
+                    "home_settings": home_settings_val,
                     "divergence": direction.divergence,
                     "initial_input": direction.initial_input,
                     "created_at": (
@@ -125,7 +150,7 @@ async def run_creative_direction_task(task_id: str) -> None:
                 thinking_level="high",
                 temperature=1.0,
             )
-            title, description = _parse_direction_json(llm_raw)
+            title, description, home_settings = _parse_direction_json(llm_raw)
 
             with BackgroundSessionLocal() as db:
                 direction = MaterialCreativeDirection(
@@ -136,6 +161,10 @@ async def run_creative_direction_task(task_id: str) -> None:
                     divergence=divergence,
                     initial_input=initial_input or None,
                     source_task_id=task_id,
+                    home_settings=(
+                        json.dumps(home_settings, ensure_ascii=False)
+                        if home_settings else None
+                    ),
                 )
                 db.add(direction)
                 db.flush()

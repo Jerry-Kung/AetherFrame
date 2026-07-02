@@ -3,10 +3,12 @@
 """
 from __future__ import annotations
 
+import json
+
 from enum import Enum
 from typing import Any, Dict, List, Optional, Literal
 
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.serialization import ApiDateTime
 
@@ -318,6 +320,7 @@ class CreativeDirectionResponse(BaseModel):
     character_id: str
     title: str
     description: str
+    home_settings: Optional[List[str]] = None
     divergence: Divergence
     initial_input: Optional[str]
     source_task_id: Optional[str]
@@ -325,6 +328,22 @@ class CreativeDirectionResponse(BaseModel):
     updated_at: ApiDateTime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("home_settings", mode="before")
+    @classmethod
+    def _coerce_home_settings(cls, v):
+        if v is None or isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return None
+            try:
+                parsed = json.loads(s)
+                return parsed if isinstance(parsed, list) else None
+            except json.JSONDecodeError:
+                return None
+        return None
 
 
 class CreativeDirectionTaskStatusResponse(BaseModel):
