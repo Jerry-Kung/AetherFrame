@@ -13,6 +13,10 @@ from app.models.material import (
     MaterialSeedPromptTask,
 )
 from app.prompts.material.creative_direction import creation_direction_seed_prompt
+from app.services.creation_service.composition_dimensions import (
+    get_dimension_values,
+    get_home_setting_pose_hints,
+)
 from app.services.material_service import material_file_service
 from app.services.material_service.history_seed_prompts import build_history_seed_prompts
 from app.services.material_service.task_concurrency import get_global_llm_semaphore
@@ -22,6 +26,11 @@ logger = logging.getLogger(__name__)
 
 FALLBACK_DIRECTION_TEXT = (
     "用户未指定创意方向，请基于角色的原始默认世界观创作种子提示词"
+)
+
+_SEED_HOME_SETTINGS_FALLBACK = (
+    "本方向未提供 home_settings 候选列表，请自由选择自然的居家背景"
+    "（如客厅沙发、卧室大床、书房地毯等），并让所有种子分布在你选定的 1–3 个背景之间。"
 )
 
 
@@ -63,20 +72,79 @@ def _resolve_chara_profile_text(character_id: str) -> str:
     return text
 
 
+def _render_pose_family_enum() -> str:
+    return "\n".join(
+        f"  - `{v.code}` ({v.display_name}): {v.description}"
+        for v in get_dimension_values("pose_family")
+    )
+
+
+def _render_home_setting_hints() -> str:
+    lines = []
+    for setting, poses in get_home_setting_pose_hints():
+        lines.append(f"  - {setting} → {' / '.join(poses)}")
+    return "\n".join(lines)
+
+
+def _fold_home_settings_into_direction_text(
+    *, title: str, description: str, home_settings: Optional[list[str]]
+) -> str:
+    if not home_settings:
+        return f"{title}\n\n{description}"
+    hs_line = "home_settings（候选居家背景框架）: " + " / ".join(home_settings)
+    return f"{title}\n\n{description}\n\n{hs_line}"
+
+
+def _build_seed_prompt(
+    *,
+    chara_profile: str,
+    direction_text: str,
+    history_seed_prompts: str,
+    has_home_settings: bool = True,
+) -> str:
+    home_setting_source = (
+        "" if has_home_settings else _SEED_HOME_SETTINGS_FALLBACK
+    )
+    return creation_direction_seed_prompt.format(
+        chara_profile=chara_profile,
+        chara_creative_direction=direction_text,
+        history_seed_prompts=history_seed_prompts,
+        pose_family_enum=_render_pose_family_enum(),
+        home_setting_hint_table=_render_home_setting_hints(),
+        home_settings_fallback_note=home_setting_source,
+        pose_family_distribution_bias="",
+    )
+
+
 def _resolve_direction_text(
     db, character_id: str, creative_direction_id: Optional[str]
-) -> tuple[str, Optional[str]]:
-    """返回 (注入文本, 实际生效的方向 id)。方向不存在 / 跨角色时降级为兜底文案。"""
+) -> tuple[str, Optional[str], Optional[list[str]]]:
+    """返回 (注入文本, 实际生效的方向 id, home_settings 列表)。方向不存在 / 跨角色时降级为兜底文案。"""
     if not creative_direction_id:
-        return FALLBACK_DIRECTION_TEXT, None
+        return FALLBACK_DIRECTION_TEXT, None, None
     row = db.get(MaterialCreativeDirection, creative_direction_id)
     if row is None or row.character_id != character_id:
         logger.warning(
             "seed task: direction %s invalid (deleted or cross-character); falling back",
             creative_direction_id,
         )
-        return FALLBACK_DIRECTION_TEXT, None
-    return f"{row.title}\n\n{row.description}", creative_direction_id
+        return FALLBACK_DIRECTION_TEXT, None, None
+    home_list: Optional[list[str]] = None
+    if row.home_settings:
+        try:
+            parsed = json.loads(row.home_settings)
+            if isinstance(parsed, list):
+                home_list = [
+                    str(x) for x in parsed if isinstance(x, str) and x.strip()
+                ]
+                if not home_list:
+                    home_list = None
+        except json.JSONDecodeError:
+            home_list = None
+    folded = _fold_home_settings_into_direction_text(
+        title=row.title, description=row.description, home_settings=home_list
+    )
+    return folded, creative_direction_id, home_list
 
 
 def _write_seed_draft_file(
@@ -115,7 +183,7 @@ async def run_seed_prompt_task(task_id: str) -> None:
         try:
             with BackgroundSessionLocal() as db:
                 chara_profile = _resolve_chara_profile_text(character_id)
-                direction_text, effective_direction_id = _resolve_direction_text(
+                direction_text, effective_direction_id, home_list = _resolve_direction_text(
                     db, character_id, requested_direction_id
                 )
                 char_row = db.get(MaterialCharacter, character_id)
@@ -129,10 +197,11 @@ async def run_seed_prompt_task(task_id: str) -> None:
                     bio, creative_direction_id=effective_direction_id
                 )
 
-            prompt = creation_direction_seed_prompt.format(
+            prompt = _build_seed_prompt(
                 chara_profile=chara_profile,
-                chara_creative_direction=direction_text,
+                direction_text=direction_text,
                 history_seed_prompts=history_text,
+                has_home_settings=bool(home_list),
             )
 
             llm_raw = await asyncio.to_thread(
