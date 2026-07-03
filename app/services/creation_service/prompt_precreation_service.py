@@ -53,15 +53,18 @@ _ENUM_CODES: Dict[str, set] = {
 _ENUM_CODES.update({
     "shooting_angle": {v.code for v in get_dimension_values("shooting_angle")},
     "camera_height":  {v.code for v in get_dimension_values("camera_height")},
+    "gaze_direction": {v.code for v in get_dimension_values("gaze_direction")},
 })
 
 _STEP0_CAMERA_TEMPLATE = (
-    "0-cam、**镜头维度决策（先于画面脑补）**：请从以下枚举中选择本次创作的机位方位与机位高度各一个：\n"
+    "0-cam、**镜头维度决策（先于画面脑补）**：请从以下枚举中各选择一个：\n"
     "机位方位（shooting_angle）候选：\n"
     "{shooting_angle_enum}\n"
     "机位高度（camera_height）候选：\n"
     "{camera_height_enum}\n"
-    "请把选择结果一并写入下方 [COMPOSITION_DECISION] 决策块。"
+    "视线方向（gaze_direction）候选：\n"
+    "{gaze_direction_enum}\n"
+    "请把三项选择一并写入下方 [COMPOSITION_DECISION] 决策块。"
 )
 
 
@@ -85,6 +88,7 @@ def _build_step1_prompt(*, chara_profile: str, seed_prompt: str) -> str:
     step_zero_camera = _STEP0_CAMERA_TEMPLATE.format(
         shooting_angle_enum=_render_dimension_list("shooting_angle"),
         camera_height_enum=_render_dimension_list("camera_height"),
+        gaze_direction_enum=_render_dimension_list("gaze_direction"),
     )
     composition_output = (
         "\n7、请在输出的模板正文**之前**，插入一段用 `**[COMPOSITION_DECISION]**` 标记的构图决策说明，"
@@ -95,6 +99,7 @@ def _build_step1_prompt(*, chara_profile: str, seed_prompt: str) -> str:
         "subject_area_min: <code>\n"
         "shooting_angle: <code>\n"
         "camera_height: <code>\n"
+        "gaze_direction: <code>\n"
         "```\n"
         "后续「任务目标」与「构图硬约束」段中，请用你选定的长宽比替换 `{{aspect_ratio}}` 占位符、"
         "用主体占比下限的百分比值（如 65%）替换 `{{subject_area_min_pct}}` 占位符。"

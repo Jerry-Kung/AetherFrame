@@ -96,3 +96,34 @@ def test_step1_camera_bias_placeholder_empty():
     p = _build_step1_prompt(chara_profile="cp", seed_prompt="sp")
     assert "{camera_combo_distribution_bias}" not in p
     assert "{negative_prompt_risk_tags}" not in p
+
+
+def test_build_step1_prompt_renders_gaze_enum():
+    from app.services.creation_service.prompt_precreation_service import _build_step1_prompt
+    p = _build_step1_prompt(chara_profile="cp", seed_prompt="sp")
+    for name in ("看镜头", "3/4 看出画", "侧面看", "看下方", "看远处"):
+        assert name in p, f"missing gaze_direction {name}"
+
+
+def test_parse_step1_composition_includes_gaze():
+    from app.services.creation_service.prompt_precreation_service import _parse_step1_composition
+    text = """
+**[COMPOSITION_DECISION]**
+aspect_ratio: 1:1
+subject_area_min: 0.65
+shooting_angle: front
+camera_height: eye_level
+gaze_direction: to_camera
+"""
+    result = _parse_step1_composition(text)
+    assert result["gaze_direction"] == "to_camera"
+
+
+def test_parse_step1_composition_rejects_gaze_out_of_enum():
+    from app.services.creation_service.prompt_precreation_service import _parse_step1_composition
+    text = """
+**[COMPOSITION_DECISION]**
+gaze_direction: sultry_stare
+"""
+    result = _parse_step1_composition(text)
+    assert "gaze_direction" not in result
