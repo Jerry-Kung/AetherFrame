@@ -117,6 +117,32 @@ def _build_step1_prompt(*, chara_profile: str, seed_prompt: str) -> str:
     )
 
 
+_REVIEW_DIVERSITY_CRITERIA = (
+    "在质量相近的候选之间，优先挑选 `shooting_angle` / `camera_height` / `gaze_direction` / `pose_family` "
+    "维度组合差异更大的 {num_best_prompts} 条，以保证批次内构图多样性。差异度评估以候选 Prompt 显式声明的 "
+    "[COMPOSITION_DECISION] 字段为准；若候选未显式声明，请从其画面描述中推断这四个维度。"
+)
+
+
+def _build_review_prompt(
+    *,
+    input_content: str,
+    seed_prompt: str,
+    chara_profile: str,
+    num_best_prompts: int,
+) -> str:
+    return prompt_review.format(
+        input_content=input_content,
+        seed_prompt=seed_prompt,
+        chara_profile=chara_profile,
+        num_best_prompts=num_best_prompts,
+        composition_diversity_criteria=_REVIEW_DIVERSITY_CRITERIA.format(
+            num_best_prompts=num_best_prompts
+        ),
+        composition_weight_table="(本轮为空，由后续学习机制注入)",
+    )
+
+
 def _parse_step1_composition(step1_output: str) -> Dict[str, str]:
     m = _COMPOSITION_BLOCK_RE.search(step1_output)
     if not m:
@@ -273,7 +299,7 @@ def _run_review(
     n: int,
 ) -> str:
     def call_main() -> str:
-        p = prompt_review.format(
+        p = _build_review_prompt(
             input_content=input_content,
             seed_prompt=seed_prompt,
             chara_profile=chara_profile,
