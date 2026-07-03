@@ -26,7 +26,7 @@ const COUNT_OPTIONS = [2, 3, 4] as const;
 
 const POLL_INTERVAL_MS = 10000;
 
-const CHAIN_ASPECT_OPTIONS = ["16:9", "4:3", "1:1", "3:4", "9:16"] as const;
+const CHAIN_ASPECT_OPTIONS = ["auto", "16:9", "4:3", "1:1", "3:4", "9:16"] as const;
 
 function clampPromptCountFromConfig(n: number): 1 | 2 | 3 | 4 {
   const v = Math.round(Number(n));

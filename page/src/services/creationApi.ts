@@ -96,7 +96,7 @@ export interface PromptPrecreationStatusResponse {
 /** 预生成成功后由服务端链式启动一键创作时随 start 请求提交 */
 export type PromptPrecreationChainQuickCreateBody = {
   n: 1 | 2 | 3 | 4;
-  aspect_ratio: "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
+  aspect_ratio: "auto" | "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
   max_prompts: 1 | 2 | 3 | 4;
 };
 
@@ -342,7 +342,7 @@ export async function startQuickCreate(
   body: {
     selected_prompts: QuickCreatePromptInput[];
     n: 1 | 2 | 3 | 4;
-    aspect_ratio: "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
+    aspect_ratio: "auto" | "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
   }
 ): Promise<QuickCreateStartResponse> {
   assertValidCharacterId(characterId, "启动一键创作");
@@ -492,7 +492,7 @@ export async function startBatchAutomation(body: {
   iterations: number;
   prompt_count: 1 | 2 | 3 | 4;
   images_per_prompt: 1 | 2 | 3 | 4;
-  aspect_ratio: "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
+  aspect_ratio: "auto" | "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
   max_prompts: 1 | 2 | 3 | 4;
   character_ids?: string[] | null;
 }): Promise<BatchAutomationStartResponse> {

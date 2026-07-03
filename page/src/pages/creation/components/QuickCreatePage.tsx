@@ -30,6 +30,7 @@ interface ImageLightbox {
 
 const IMAGES_PER_PROMPT_OPTIONS = [1, 2, 3, 4] as const;
 const ASPECT_RATIO_OPTIONS = [
+  { label: "Auto", value: "auto" },
   { label: "16:9", value: "16:9" },
   { label: "4:3", value: "4:3" },
   { label: "1:1", value: "1:1" },

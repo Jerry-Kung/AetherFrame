@@ -204,7 +204,8 @@ export default function BatchCreationPage({
     const pc = Math.min(4, Math.max(1, Math.round(config.promptCount))) as 1 | 2 | 3 | 4;
     const ip = Math.min(4, Math.max(1, Math.round(config.imagesPerPrompt))) as 1 | 2 | 3 | 4;
     const araw = (config.aspectRatio || "1:1").trim();
-    const ar = (["16:9", "4:3", "1:1", "3:4", "9:16"].includes(araw) ? araw : "1:1") as
+    const ar = (["auto", "16:9", "4:3", "1:1", "3:4", "9:16"].includes(araw) ? araw : "1:1") as
+      | "auto"
       | "16:9"
       | "4:3"
       | "1:1"
