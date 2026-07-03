@@ -32,7 +32,7 @@ from app.services.creation_service.quick_create_service import QuickCreateServic
 
 logger = logging.getLogger(__name__)
 
-_VALID_ASPECT = frozenset({"16:9", "4:3", "1:1", "3:4", "9:16"})
+_VALID_ASPECT = frozenset({"auto", "16:9", "4:3", "1:1", "3:4", "9:16"})
 
 
 def _parse_bio_dict(bio_json: Optional[str]) -> Dict[str, Any]:
