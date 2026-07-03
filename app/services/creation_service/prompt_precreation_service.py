@@ -32,6 +32,82 @@ logger = logging.getLogger(__name__)
 PREVIEW_MAX_LEN = 160
 
 
+import re as _re
+
+from app.services.creation_service.composition_dimensions import (
+    VALID_AUTO_ASPECT_CODES,
+    get_dimension_values,
+)
+
+
+_COMPOSITION_BLOCK_RE = _re.compile(
+    r"\*\*\[COMPOSITION_DECISION\]\*\*\s*(.*?)(?=\n\s*\*\*|\Z)",
+    _re.DOTALL,
+)
+_COMPOSITION_LINE_RE = _re.compile(r"^\s*([a-z_]+)\s*:\s*(\S+)\s*$", _re.MULTILINE)
+
+_ENUM_CODES: Dict[str, set] = {
+    "aspect_ratio": set(VALID_AUTO_ASPECT_CODES),
+    "subject_area_min": {v.code for v in get_dimension_values("subject_area_min")},
+}
+
+
+def _render_dimension_list(dim: str) -> str:
+    return "\n".join(
+        f"  - `{v.code}` ({v.display_name}): {v.description}"
+        for v in get_dimension_values(dim)
+    )
+
+
+def _build_step1_prompt(*, chara_profile: str, seed_prompt: str) -> str:
+    step_zero = (
+        "0、**先做构图决策（必须在脑补画面之前完成）**：\n"
+        "   - 从下面 9 个长宽比档位中选择最契合本次场景的一个：\n"
+        f"{_render_dimension_list('aspect_ratio_auto_full')}\n"
+        "   - 优先在主流 5 档 (`9:16`, `3:4`, `1:1`, `4:3`, `16:9`) 中选择；"
+        "除非场景明显适配特殊比例（如 `5:4` 适合接近正方形的居中坐姿、`2:3` 适合竖向全身）才使用扩展 4 档。\n"
+        "   - 从下面 4 档中选择角色主体在画面中的占比下限：\n"
+        f"{_render_dimension_list('subject_area_min')}"
+    )
+    composition_output = (
+        "\n7、请在输出的模板正文**之前**，插入一段用 `**[COMPOSITION_DECISION]**` 标记的构图决策说明，"
+        "格式如下（仅两行，取上一步选定的 code 值）：\n"
+        "```\n"
+        "**[COMPOSITION_DECISION]**\n"
+        "aspect_ratio: <code>\n"
+        "subject_area_min: <code>\n"
+        "```\n"
+        "后续「任务目标」与「构图硬约束」段中，请用你选定的长宽比替换 `{{aspect_ratio}}` 占位符、"
+        "用主体占比下限的百分比值（如 65%）替换 `{{subject_area_min_pct}}` 占位符。"
+    )
+    return prompt_step1.format(
+        chara_profile=chara_profile,
+        seed_prompt=seed_prompt,
+        init_template=init_template,
+        good_template=good_template1,
+        step1_task_step_zero=step_zero,
+        step1_composition_output_requirement=composition_output,
+    )
+
+
+def _parse_step1_composition(step1_output: str) -> Dict[str, str]:
+    m = _COMPOSITION_BLOCK_RE.search(step1_output)
+    if not m:
+        return {}
+    body = m.group(1)
+    result: Dict[str, str] = {}
+    for key, value in _COMPOSITION_LINE_RE.findall(body):
+        if key not in _ENUM_CODES:
+            continue
+        if value not in _ENUM_CODES[key]:
+            logger.warning(
+                "step1 composition %s=%s out of enum, dropped", key, value
+            )
+            continue
+        result[key] = value
+    return result
+
+
 def compose_seed_prompt_with_direction(
     seed_payload: SeedPayload | str | dict,
     db: Session,
@@ -119,23 +195,23 @@ def _collect_candidates(
     seed_prompt: str,
     work_dir: str,
     n: int,
-) -> Dict[str, str]:
+) -> tuple[Dict[str, str], Dict[str, Dict[str, str]]]:
     target_success = 2 * n
     max_iters = 4 * n
     candidates: Dict[str, str] = {}
+    compositions: Dict[str, Dict[str, str]] = {}
     success_count = 0
 
     for _ in range(max_iters):
         if success_count >= target_success:
             break
         try:
-            p1 = prompt_step1.format(
+            p1 = _build_step1_prompt(
                 chara_profile=chara_profile,
                 seed_prompt=seed_prompt,
-                init_template=init_template,
-                good_template=good_template1,
             )
             step1_result = yibu_gemini_infer(p1, thinking_level="high", temperature=1.0)
+            comp = _parse_step1_composition(step1_result)
             p2 = prompt_step2.format(
                 init_template=step1_result,
                 good_template=good_template1,
@@ -146,6 +222,8 @@ def _collect_candidates(
             success_count += 1
             key = f"candidate_prompt_{success_count:03d}"
             candidates[key] = step2_result
+            if comp:
+                compositions[key] = comp
             path = os.path.join(work_dir, f"{key}.txt")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(step2_result)
@@ -157,7 +235,7 @@ def _collect_candidates(
         raise RuntimeError(
             f"备选 Prompt 仅成功生成 {success_count} 个，需要 {target_success} 个（网络或模型不稳定时可重试）"
         )
-    return candidates
+    return candidates, compositions
 
 
 def _run_review(
@@ -204,7 +282,9 @@ def _run_review(
 
 
 def _build_cards(
-    best_files: List[str], candidates: Dict[str, str]
+    best_files: List[str],
+    candidates: Dict[str, str],
+    compositions: Dict[str, Dict[str, str]],
 ) -> List[Dict[str, Any]]:
     today = date.today().isoformat()
     cards: List[Dict[str, Any]] = []
@@ -228,12 +308,13 @@ def _build_cards(
                 "fullPrompt": body,
                 "tags": [],
                 "createdAt": today,
+                "composition": compositions.get(name) or None,
             }
         )
     return cards
 
 
-_VALID_CHAIN_ASPECT = frozenset({"16:9", "4:3", "1:1", "3:4", "9:16"})
+_VALID_CHAIN_ASPECT = frozenset({"auto", "16:9", "4:3", "1:1", "3:4", "9:16"})
 
 
 def _try_chain_quick_create(precreation_task_id: str) -> None:
@@ -362,7 +443,7 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
         work_dir = task.work_dir
         directory_service.ensure_dir_exists(work_dir)
 
-        candidates = _collect_candidates(
+        candidates, compositions = _collect_candidates(
             chara_profile=chara_profile,
             seed_prompt=seed_prompt,
             work_dir=work_dir,
@@ -388,7 +469,7 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
             if name not in candidates:
                 raise ValueError(f"审阅返回了未知候选名: {name}")
 
-        cards = _build_cards(best_files, candidates)
+        cards = _build_cards(best_files, candidates, compositions)
         crepo.update(
             task_id,
             {

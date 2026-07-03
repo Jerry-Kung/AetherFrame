@@ -34,7 +34,7 @@ class PromptPrecreationChainQuickCreate(BaseModel):
     """预生成完成后自动启动一键创作（与默认配置一致）"""
 
     n: Literal[1, 2, 3, 4] = Field(..., description="每个 Prompt 生成张数")
-    aspect_ratio: Literal["16:9", "4:3", "1:1", "3:4", "9:16"] = Field(
+    aspect_ratio: Literal["auto", "16:9", "4:3", "1:1", "3:4", "9:16"] = Field(
         ..., description="输出图片长宽比"
     )
     max_prompts: Literal[1, 2, 3, 4] = Field(
@@ -72,6 +72,7 @@ class PromptCardItem(BaseModel):
     fullPrompt: str
     tags: List[str] = Field(default_factory=list)
     createdAt: str
+    composition: Optional[Dict[str, str]] = None
 
 
 class PromptPrecreationStatusResponse(BaseModel):
@@ -118,8 +119,8 @@ class QuickCreatePromptInput(BaseModel):
 class QuickCreateStartRequest(BaseModel):
     selected_prompts: List[QuickCreatePromptInput] = Field(default_factory=list)
     n: Literal[1, 2, 3, 4] = Field(..., description="每个 Prompt 生成张数")
-    aspect_ratio: Literal["16:9", "4:3", "1:1", "3:4", "9:16"] = Field(
-        "16:9", description="输出图片长宽比"
+    aspect_ratio: Literal["auto", "16:9", "4:3", "1:1", "3:4", "9:16"] = Field(
+        "16:9", description="输出图片长宽比（auto 表示按预生成阶段 step1 的 per-card 决策）"
     )
 
 
@@ -229,7 +230,7 @@ class BatchAutomationStartRequest(BaseModel):
     iterations: int = Field(..., ge=2, le=20, description="创作内容条数")
     prompt_count: Literal[1, 2, 3, 4] = Field(..., description="Prompt 预生成数量")
     images_per_prompt: Literal[1, 2, 3, 4] = Field(..., description="每个 Prompt 生成图片数")
-    aspect_ratio: Literal["16:9", "4:3", "1:1", "3:4", "9:16"] = Field(..., description="图片长宽比")
+    aspect_ratio: Literal["auto", "16:9", "4:3", "1:1", "3:4", "9:16"] = Field(..., description="图片长宽比")
     max_prompts: Literal[1, 2, 3, 4] = Field(
         ...,
         description="提交一键创作的 Prompt 条数上限（不超过 prompt_count）",

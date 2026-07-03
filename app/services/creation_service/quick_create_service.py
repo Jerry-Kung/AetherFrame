@@ -29,7 +29,7 @@ from app.utils.image_generation_timeout import (
 
 logger = logging.getLogger(__name__)
 
-VALID_ASPECT_RATIOS = {"16:9", "4:3", "1:1", "3:4", "9:16"}
+VALID_ASPECT_RATIOS = {"auto", "16:9", "4:3", "1:1", "3:4", "9:16"}
 DEFAULT_HISTORY_LIMIT = 50
 
 
@@ -207,9 +207,9 @@ def _resolve_standard_reference_paths(character_id: str) -> List[str]:
 
 def _resolve_selected_prompts(
     *,
-    selected_prompts: List[Dict[str, str]],
+    selected_prompts: List[Dict[str, Any]],
     latest_cards: List[Dict[str, Any]],
-) -> List[Dict[str, str]]:
+) -> List[Dict[str, Any]]:
     card_map: Dict[str, Dict[str, Any]] = {}
     for c in latest_cards:
         cid = str(c.get("id") or "").strip()
@@ -217,15 +217,19 @@ def _resolve_selected_prompts(
             card_map[cid] = c
 
     if not selected_prompts:
-        out: List[Dict[str, str]] = []
+        out: List[Dict[str, Any]] = []
         for c in latest_cards:
             pid = str(c.get("id") or "").strip()
             fp = str(c.get("fullPrompt") or "").strip()
             if pid and fp:
-                out.append({"id": pid, "fullPrompt": fp})
+                out.append({
+                    "id": pid,
+                    "fullPrompt": fp,
+                    "composition": (c.get("composition") if isinstance(c.get("composition"), dict) else None),
+                })
         return out
 
-    out: List[Dict[str, str]] = []
+    out: List[Dict[str, Any]] = []
     for item in selected_prompts:
         pid = str(item.get("id") or "").strip()
         passed_full = str(item.get("fullPrompt") or "").strip()
@@ -247,7 +251,15 @@ def _resolve_selected_prompts(
 
         if not resolved_full:
             continue
-        out.append({"id": pid or f"manual_{len(out) + 1}", "fullPrompt": resolved_full})
+        out.append({
+            "id": pid or f"manual_{len(out) + 1}",
+            "fullPrompt": resolved_full,
+            "composition": (
+                card_map[pid].get("composition")
+                if pid in card_map and isinstance(card_map[pid].get("composition"), dict)
+                else (item.get("composition") if isinstance(item.get("composition"), dict) else None)
+            ),
+        })
     return out
 
 
@@ -340,11 +352,20 @@ def run_quick_create_task_sync(task_id: str, session_factory=SessionLocal) -> No
             while success < task.n and attempts < max_attempts:
                 attempts += 1
                 file_name = f"image_{success + 1}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
+                effective_ar = task.aspect_ratio
+                if effective_ar == "auto":
+                    comp = item.get("composition") if isinstance(item, dict) else None
+                    if isinstance(comp, dict):
+                        candidate_ar = comp.get("aspect_ratio")
+                        if candidate_ar:
+                            effective_ar = candidate_ar
+                    if effective_ar == "auto":
+                        effective_ar = "16:9"  # fallback when card lacks composition
                 ok = generate_image_with_nano_banana_pro(
                     Content=content,
                     output_path=prompt_dir,
                     file_name=file_name,
-                    aspect_ratio=task.aspect_ratio,
+                    aspect_ratio=effective_ar,
                 )
                 if not ok:
                     continue
