@@ -101,8 +101,8 @@ def _build_step1_prompt(*, chara_profile: str, seed_prompt: str) -> str:
         "camera_height: <code>\n"
         "gaze_direction: <code>\n"
         "```\n"
-        "后续「任务目标」与「构图硬约束」段中，请用你选定的长宽比替换 `{{aspect_ratio}}` 占位符、"
-        "用主体占比下限的百分比值（如 65%）替换 `{{subject_area_min_pct}}` 占位符。"
+        "后续「任务目标」与「构图硬约束」段中，请用你选定的长宽比替换 `{aspect_ratio}` 占位符、"
+        "用主体占比下限的百分比值（如 65%）替换 `{subject_area_min_pct}` 占位符。"
     )
     return prompt_step1.format(
         chara_profile=chara_profile,
@@ -408,14 +408,18 @@ def _try_chain_quick_create(precreation_task_id: str) -> None:
             )
             return
         cap = min(len(cards), int(max_prompts))
-        selected: List[Dict[str, str]] = []
+        selected: List[Dict[str, Any]] = []
         for c in cards[:cap]:
             if not isinstance(c, dict):
                 continue
             pid = str(c.get("id") or "").strip()
             fp = str(c.get("fullPrompt") or "").strip()
             if pid and fp:
-                selected.append({"id": pid, "fullPrompt": fp})
+                item: Dict[str, Any] = {"id": pid, "fullPrompt": fp}
+                comp = c.get("composition")
+                if isinstance(comp, dict):
+                    item["composition"] = comp
+                selected.append(item)
         if not selected:
             prepo.update(
                 precreation_task_id,
