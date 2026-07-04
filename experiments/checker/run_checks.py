@@ -37,8 +37,10 @@ def check_one_image(entry: dict, anchors_by_char: dict, layout: ExpLayout,
         entry["variant"], entry["seed_id"], entry["image_index"]
     )
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as f:
+    tmp = out_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(doc, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, out_path)
     return doc
 
 

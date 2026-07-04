@@ -103,3 +103,18 @@ def test_run_experiment_records_failure(tmp_path, monkeypatch):
     stats = run_experiment(cfg_p, results_root=results_root,
                            gen_image=lambda **kw: False)
     assert stats["failed"] == 4 and stats["generated"] == 0
+
+
+def test_save_manifest_leaves_no_tmp(tmp_path, monkeypatch):
+    cfg_p, results_root = _setup(tmp_path, monkeypatch)
+
+    def fake_gen(Content, output_path, file_name, **kw):
+        os.makedirs(output_path, exist_ok=True)
+        with open(os.path.join(output_path, file_name), "wb") as f:
+            f.write(b"png")
+        return True
+
+    run_experiment(cfg_p, results_root=results_root, gen_image=fake_gen)
+    lay = ExpLayout(results_root, "exp001")
+    assert os.path.isfile(lay.manifest_path())
+    assert not os.path.exists(lay.manifest_path() + ".tmp")

@@ -81,3 +81,12 @@ def test_baseline_gen_only_filter(tmp_path, monkeypatch):
     out = run_baseline_gen(cfg_p, only=["nonexistent"],
                            infer=lambda *a, **k: "x")
     assert out == {"generated": [], "skipped": []}
+
+
+def test_baseline_gen_rejects_empty_output(tmp_path, monkeypatch):
+    import pytest
+    cfg_p, variants_root = _setup(tmp_path, monkeypatch)
+    with pytest.raises(RuntimeError, match="s1"):
+        run_baseline_gen(cfg_p, infer=lambda *a, **k: "   ")
+    target = os.path.join(variants_root, "exp001", "baseline", "s1.txt")
+    assert not os.path.exists(target)

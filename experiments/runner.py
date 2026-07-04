@@ -38,8 +38,10 @@ def _load_manifest(layout: ExpLayout) -> dict:
 
 def _save_manifest(layout: ExpLayout, manifest: dict) -> None:
     os.makedirs(os.path.dirname(layout.manifest_path()), exist_ok=True)
-    with open(layout.manifest_path(), "w", encoding="utf-8") as f:
+    tmp = layout.manifest_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, layout.manifest_path())
 
 
 def _cell_done(manifest: dict, layout: ExpLayout, variant: str,

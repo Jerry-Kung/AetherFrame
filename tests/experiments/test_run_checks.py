@@ -98,3 +98,14 @@ def test_run_all_checks_skips_existing(tmp_path, monkeypatch):
     stats3 = run_all_checks(cfg_p, results_root=results_root, force=True,
                             infer=_fake_infer)
     assert stats3["checked"] == 2
+
+
+def test_check_json_leaves_no_tmp(tmp_path, monkeypatch):
+    import experiments.checker.checks as checks_mod
+    monkeypatch.setattr(checks_mod, "_resolve_ref_slot_path",
+                        lambda cid, slot: __file__)
+    cfg_p, results_root, lay = _setup(tmp_path)
+    run_all_checks(cfg_p, results_root=results_root, infer=_fake_infer)
+    p = lay.check_path("slim", "s1", 1)
+    assert os.path.isfile(p)
+    assert not os.path.exists(p + ".tmp")

@@ -72,6 +72,8 @@ def run_baseline_gen(config_path: str, only=None, infer=yibu_gemini_infer) -> di
         text = generate_baseline_for_seed(
             seed, profiles[seed.character_id], infer=infer
         )
+        if not text.strip():
+            raise RuntimeError(f"种子 {seed.seed_id} 生成的基线 Prompt 为空，拒绝冻结")
         with open(target, "w", encoding="utf-8") as f:
             f.write(text)
         generated.append(seed.seed_id)
