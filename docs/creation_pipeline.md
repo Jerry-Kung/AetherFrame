@@ -337,3 +337,4 @@ LLM 输出的 8–10 条种子每条明确关联一个 home_setting
 - 落地实施计划:[`docs/superpowers/plans/2026-07-02-creation-composition-planning.md`](superpowers/plans/2026-07-02-creation-composition-planning.md)
 - 改动归档(commits 明细 + known issues):[`docs/superpowers/changelog/2026-07-03-creation-composition-planning.md`](superpowers/changelog/2026-07-03-creation-composition-planning.md)
 - 项目总体架构 CLAUDE.md 说明:仓库根 `CLAUDE.md`
+- 出图质量 A/B 实验体系（experiments/ 层）：[`docs/superpowers/specs/2026-07-05-creation-prompt-ab-experiment-design.md`](superpowers/specs/2026-07-05-creation-prompt-ab-experiment-design.md)，操作手册见仓库根 `experiments/README.md`
