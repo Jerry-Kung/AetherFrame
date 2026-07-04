@@ -1,0 +1,16 @@
+anchors:
+  - anchor_id: lace_choker
+    question: 对比两图：第一张图中人物颈部是否佩戴与第二张图相同的黑色蕾丝项圈（中央有红珊瑚底座托举的蓝宝石）？
+    ref_slot: face_close
+  - anchor_id: coral_crown
+    question: 对比两图：第一张图中人物发冠左侧是否有与第二张图相同的白色珊瑚状刺冠？
+    ref_slot: face_close
+  - anchor_id: hair_gradient
+    question: 对比两图：第一张图中人物是否与第二张图一样为极长黑褐直发且发尾渐变为品红色？
+    ref_slot: half_front
+  - anchor_id: hime_bangs
+    question: 对比两图：第一张图中人物是否与第二张图一样为姬发式齐刘海？
+    ref_slot: face_close
+  - anchor_id: wrist_cord
+    question: 对比两图：第一张图中人物右手腕是否与第二张图一样系有深红色编织手绳？
+    ref_slot: full_front
