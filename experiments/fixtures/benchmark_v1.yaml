@@ -12,12 +12,14 @@ seeds:
   - seed_id: cas_easy_window
     character: castorice
     difficulty: easy
-    aspect_ratio: "16:9"
+    # 起草时预填 16:9；生产 step1 实际决定 3:4，基线冻结后以基线为准（2026-07-05 对齐）
+    aspect_ratio: "3:4"
     text: 明亮的开放式影音室里，角色整个人陷在巨大的白色懒人沙发中，双腿微微蜷缩。她穿着不对称设计的浅色休闲服，裸露的右臂随意伸展，充满水光感的亮紫瞳安静地看着上方的镜头。
   - seed_id: cas_med_squat
     character: castorice
     difficulty: medium
-    aspect_ratio: "4:3"
+    # 起草时预填 4:3；生产 step1 实际决定 3:4，基线冻结后以基线为准（2026-07-05 对齐）
+    aspect_ratio: "3:4"
     text: 角色乖巧地蹲在满是阳光的玄关处，穿着简单的居家白裙，嘴角挂着若有似无的浅笑。她褪去一半左手的黑色长手套，正用指尖试探性地温柔抚摸着一只趴在鞋柜上的毛绒白猫，展现出极致的信任感。
   - seed_id: cas_hard_wsit
     character: castorice
