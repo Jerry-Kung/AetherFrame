@@ -161,6 +161,23 @@ def _parse_step1_composition(step1_output: str) -> Dict[str, str]:
     return result
 
 
+_ENUM_BACKFILL_LINE_RE = _re.compile(
+    r"^\s*`\[(?:SHOOTING_ANGLE|CAMERA_HEIGHT|GAZE_DIRECTION)\]`[^\n]*\n?",
+    _re.MULTILINE,
+)
+
+
+def strip_machine_code(prompt: str) -> str:
+    """发图前剥离流水线机器码：[COMPOSITION_DECISION] 决策块与镜头段枚举回填行。
+
+    卡片 fullPrompt 与存档保持原样，仅在发送给图像模型的最后一刻调用。
+    对不含机器码的文本幂等（原样返回）。
+    """
+    text = _COMPOSITION_BLOCK_RE.sub("", prompt)
+    text = _ENUM_BACKFILL_LINE_RE.sub("", text)
+    return text.lstrip("\n") if text != prompt else prompt
+
+
 def compose_seed_prompt_with_direction(
     seed_payload: SeedPayload | str | dict,
     db: Session,
