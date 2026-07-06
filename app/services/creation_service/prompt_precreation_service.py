@@ -103,6 +103,9 @@ def _build_step1_prompt(*, chara_profile: str, seed_prompt: str) -> str:
         "```\n"
         "后续「任务目标」与「构图硬约束」段中，请用你选定的长宽比替换 `{aspect_ratio}` 占位符、"
         "用主体占比下限的百分比值（如 65%）替换 `{subject_area_min_pct}` 占位符。"
+        "正文「镜头与构图」段**不要**出现任何枚举 code 或方括号标记，"
+        "以一句自然语言开头表述你选定的机位方位/高度/视线方向"
+        "（例：“3/4 正面视角，机位略高做轻微俯拍，视线看向镜头”）。"
     )
     return prompt_step1.format(
         chara_profile=chara_profile,

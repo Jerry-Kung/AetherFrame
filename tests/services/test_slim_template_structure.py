@@ -67,3 +67,43 @@ class TestGoodTemplateSlim:
     def test_old_ornate_exemplar_removed(self):
         assert "纯白色丝袜" not in good_template1  # 旧窗台款特征
         assert "飘窗" not in good_template1
+
+
+class TestPromptStep1Slim:
+    def _p(self):
+        from app.services.creation_service.prompt_precreation_service import _build_step1_prompt
+        return _build_step1_prompt(chara_profile="档案", seed_prompt="种子")
+
+    def test_contains_literary_translation_rule(self):
+        p = self._p()
+        assert "创意来源" in p
+        assert "禁止原样抄入" in p
+        assert "视觉事实" in p
+
+    def test_contains_expression_whitelist_rule(self):
+        p = self._p()
+        assert "单一主表情" in p
+
+    def test_contains_anchor_binding_rule(self):
+        p = self._p()
+        assert "（见参考图）" in p
+        assert "8 字" in p or "8字" in p
+
+    def test_forbids_rhetoric_and_anatomy(self):
+        p = self._p()
+        assert "抒情比喻" in p
+        assert "解剖学词汇" in p
+
+    def test_composition_block_protocol_kept(self):
+        p = self._p()
+        assert "[COMPOSITION_DECISION]" in p
+
+    def test_composition_output_requires_natural_language_not_backfill(self):
+        p = self._p()
+        assert "自然语言" in p
+        assert "`[SHOOTING_ANGLE]` <从" not in p
+
+    def test_leg_foot_design_guidance_preserved(self):
+        p = self._p()
+        assert "不要写实化或包含过度的解剖细节" in p
+        assert "自然展示腿部与脚部，但不低俗" in p
