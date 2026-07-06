@@ -13,6 +13,9 @@ from app.models.material import (
     MaterialCharacterRawImage,
     MaterialCharaProfileTask,
     MaterialCreationAdviceTask,
+    MaterialCreativeDirection,
+    MaterialCreativeDirectionTask,
+    MaterialSeedPromptTask,
     MaterialStandardPhotoTask,
 )
 
@@ -76,6 +79,14 @@ class MaterialCharacterRepository(BaseRepository[MaterialCharacter]):
     def count_all(self) -> int:
         return self.db.query(MaterialCharacter).count()
 
+    def get_by_ids(self, ids: List[str]) -> List[MaterialCharacter]:
+        """批量按 ID 获取角色，保持输入顺序。"""
+        if not ids:
+            return []
+        rows = self.db.query(MaterialCharacter).filter(MaterialCharacter.id.in_(ids)).all()
+        id_to_row = {r.id: r for r in rows}
+        return [id_to_row[i] for i in ids if i in id_to_row]
+
     def add_raw_image(
         self,
         character_id: str,
@@ -126,6 +137,28 @@ class MaterialCharacterRepository(BaseRepository[MaterialCharacter]):
             .order_by(MaterialCharacterRawImage.created_at)
             .all()
         )
+
+    def list_raw_images_by_character_ids(
+        self, character_ids: List[str]
+    ) -> Dict[str, List[MaterialCharacterRawImage]]:
+        """批量按 character_id 拉 raw_images，返回 {character_id: [rows]}。
+        各分组内部按 created_at 升序，与 list_raw_images 一致；缺角色返回空列表。
+        """
+        if not character_ids:
+            return {}
+        ids = list({cid for cid in character_ids if cid})
+        if not ids:
+            return {}
+        rows = (
+            self.db.query(MaterialCharacterRawImage)
+            .filter(MaterialCharacterRawImage.character_id.in_(ids))
+            .order_by(MaterialCharacterRawImage.created_at)
+            .all()
+        )
+        grouped: Dict[str, List[MaterialCharacterRawImage]] = {cid: [] for cid in ids}
+        for row in rows:
+            grouped.setdefault(row.character_id, []).append(row)
+        return grouped
 
     def delete_raw_image(self, character_id: str, image_id: str) -> Optional[str]:
         row = self.get_raw_image(character_id, image_id)
@@ -367,3 +400,53 @@ class MaterialCharacterRepository(BaseRepository[MaterialCharacter]):
         self.db.commit()
         self.db.refresh(task)
         return task
+
+
+class MaterialCreativeDirectionRepository(BaseRepository[MaterialCreativeDirection]):
+    def __init__(self, db: Session):
+        super().__init__(db, MaterialCreativeDirection)
+
+    def list_by_character(self, character_id: str) -> List[MaterialCreativeDirection]:
+        return (
+            self.db.query(MaterialCreativeDirection)
+            .filter_by(character_id=character_id)
+            .order_by(desc(MaterialCreativeDirection.created_at))
+            .all()
+        )
+
+    def count_by_character(self, character_id: str) -> int:
+        return (
+            self.db.query(MaterialCreativeDirection)
+            .filter_by(character_id=character_id)
+            .count()
+        )
+
+
+class MaterialCreativeDirectionTaskRepository(BaseRepository[MaterialCreativeDirectionTask]):
+    def __init__(self, db: Session):
+        super().__init__(db, MaterialCreativeDirectionTask)
+
+    def count_inflight_by_character(self, character_id: str) -> int:
+        return (
+            self.db.query(MaterialCreativeDirectionTask)
+            .filter(
+                MaterialCreativeDirectionTask.character_id == character_id,
+                MaterialCreativeDirectionTask.status.in_(["pending", "processing"]),
+            )
+            .count()
+        )
+
+
+class MaterialSeedPromptTaskRepository(BaseRepository[MaterialSeedPromptTask]):
+    def __init__(self, db: Session):
+        super().__init__(db, MaterialSeedPromptTask)
+
+    def count_inflight_by_character(self, character_id: str) -> int:
+        return (
+            self.db.query(MaterialSeedPromptTask)
+            .filter(
+                MaterialSeedPromptTask.character_id == character_id,
+                MaterialSeedPromptTask.status.in_(["pending", "processing"]),
+            )
+            .count()
+        )

@@ -8,11 +8,16 @@ export interface AiComment {
   fixSuggestions: string[];
 }
 
+export type BeautifyStatus = "pending" | "processing" | "completed" | "failed";
+
 export interface QuickCreateImage {
   id: string;
   url: string;
   promptId: string;
   aiComment?: AiComment | null;
+  beautifiedUrl?: string | null;
+  beautifyTaskId?: string | null;
+  beautifyStatus?: BeautifyStatus | null;
 }
 
 export interface QuickCreateGroup {

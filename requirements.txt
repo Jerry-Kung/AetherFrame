@@ -4,3 +4,8 @@ jinja2==3.1.2
 python-multipart==0.0.6
 sqlalchemy==2.0.35
 pytest==7.4.3
+tzdata>=2024.1
+Pillow>=10.0.0
+requests>=2.31.0
+tos>=2.6.0
+pyyaml>=6.0

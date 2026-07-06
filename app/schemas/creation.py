@@ -5,16 +5,36 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class SeedPayload(BaseModel):
+    """批量创作 / 预生成 Prompt 链路使用的种子结构。
+
+    向后兼容：当外部调用方传入纯字符串时，调 `SeedPayload.from_raw(s)` 包装。
+    """
+
+    text: str
+    creative_direction_id: Optional[str] = None
+
+    @classmethod
+    def from_raw(cls, raw: Union[str, dict, "SeedPayload"]) -> "SeedPayload":
+        if isinstance(raw, cls):
+            return raw
+        if isinstance(raw, str):
+            return cls(text=raw, creative_direction_id=None)
+        if isinstance(raw, dict):
+            return cls(**raw)
+        raise TypeError(f"Cannot build SeedPayload from {type(raw)}")
 
 
 class PromptPrecreationChainQuickCreate(BaseModel):
     """预生成完成后自动启动一键创作（与默认配置一致）"""
 
     n: Literal[1, 2, 3, 4] = Field(..., description="每个 Prompt 生成张数")
-    aspect_ratio: Literal["16:9", "4:3", "1:1", "3:4", "9:16"] = Field(
+    aspect_ratio: Literal["auto", "16:9", "4:3", "1:1", "3:4", "9:16"] = Field(
         ..., description="输出图片长宽比"
     )
     max_prompts: Literal[1, 2, 3, 4] = Field(
@@ -52,6 +72,7 @@ class PromptCardItem(BaseModel):
     fullPrompt: str
     tags: List[str] = Field(default_factory=list)
     createdAt: str
+    composition: Optional[Dict[str, str]] = None
 
 
 class PromptPrecreationStatusResponse(BaseModel):
@@ -98,8 +119,8 @@ class QuickCreatePromptInput(BaseModel):
 class QuickCreateStartRequest(BaseModel):
     selected_prompts: List[QuickCreatePromptInput] = Field(default_factory=list)
     n: Literal[1, 2, 3, 4] = Field(..., description="每个 Prompt 生成张数")
-    aspect_ratio: Literal["16:9", "4:3", "1:1", "3:4", "9:16"] = Field(
-        "16:9", description="输出图片长宽比"
+    aspect_ratio: Literal["auto", "16:9", "4:3", "1:1", "3:4", "9:16"] = Field(
+        "16:9", description="输出图片长宽比（auto 表示按预生成阶段 step1 的 per-card 决策）"
     )
 
 
@@ -123,6 +144,9 @@ class QuickCreateGeneratedImage(BaseModel):
 
     path: str
     review: Optional[QuickCreateImageReview] = None
+    beautified_path: Optional[str] = None
+    beautify_task_id: Optional[str] = None
+    beautify_status: Optional[str] = None
 
 
 class QuickCreatePromptResultItem(BaseModel):
@@ -203,10 +227,10 @@ class ApiResponse(BaseModel):
 class BatchAutomationStartRequest(BaseModel):
     """首页批量自动化创作提交"""
 
-    iterations: int = Field(..., ge=2, le=10, description="创作内容条数")
+    iterations: int = Field(..., ge=2, le=20, description="创作内容条数")
     prompt_count: Literal[1, 2, 3, 4] = Field(..., description="Prompt 预生成数量")
     images_per_prompt: Literal[1, 2, 3, 4] = Field(..., description="每个 Prompt 生成图片数")
-    aspect_ratio: Literal["16:9", "4:3", "1:1", "3:4", "9:16"] = Field(..., description="图片长宽比")
+    aspect_ratio: Literal["auto", "16:9", "4:3", "1:1", "3:4", "9:16"] = Field(..., description="图片长宽比")
     max_prompts: Literal[1, 2, 3, 4] = Field(
         ...,
         description="提交一键创作的 Prompt 条数上限（不超过 prompt_count）",
@@ -238,6 +262,7 @@ class BatchAutomationItemOut(BaseModel):
     seed_prompt_id: str
     seed_section: str
     seed_prompt_text: str
+    seed_creative_direction_id: Optional[str] = None
     prompt_precreation_task_id: Optional[str] = None
     quick_create_task_id: Optional[str] = None
     status: str

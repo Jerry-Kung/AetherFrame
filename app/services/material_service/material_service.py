@@ -2,13 +2,19 @@ import asyncio
 import json
 import logging
 import os
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import BackgroundTasks
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
-from app.models.material import MaterialCharacter
+from app.models.material import (
+    MaterialCharacter,
+    MaterialCreativeDirection,
+    MaterialCreativeDirectionTask,
+    MaterialSeedPromptTask,
+)
 from app.prompts.material.standard_photo import (
     face_close_prompt,
     full_front_prompt,
@@ -17,13 +23,36 @@ from app.prompts.material.standard_photo import (
     half_side_prompt,
 )
 from app.repositories.fixed_seed_template_repository import FixedSeedTemplateRepository
-from app.repositories.material_repository import INDEX_TO_SHOT_TYPE, MaterialCharacterRepository
+from app.repositories.material_repository import (
+    INDEX_TO_SHOT_TYPE,
+    MaterialCharacterRepository,
+    MaterialCreativeDirectionRepository,
+    MaterialCreativeDirectionTaskRepository,
+    MaterialSeedPromptTaskRepository,
+)
 from app.utils.image_generation_timeout import (
     IMAGE_GEN_TIMEOUT_ERROR_MESSAGE,
     deadline_exceeded,
 )
+from app.config import (
+    MATERIAL_CREATIVE_DIRECTION_PER_CHARACTER_LIMIT,
+    MATERIAL_SEED_PROMPT_PER_CHARACTER_LIMIT,
+    MATERIAL_SEED_PROMPT_PER_DIRECTION_LIMIT,
+)
 from app.services.material_service import chara_profile_generation_service
-from app.services.material_service import creation_advice_generation_service
+from app.services.material_service.creative_direction_generation_service import (
+    run_creative_direction_task,
+)
+from app.services.material_service.seed_prompt_generation_service import (
+    read_seed_draft_file,
+    run_seed_prompt_task,
+)
+from app.services.material_service.task_concurrency import (
+    assert_can_start_task,
+    CreativeDirectionLimitExceededError,
+    SeedPromptPerDirectionLimitExceededError,
+    SeedPromptTotalLimitExceededError,
+)
 from app.services.material_service import material_file_service
 from app.services.file_service import FileDeleteError, FileSaveError, FileValidationError
 from app.services.material_service import standard_photo_generation_service
@@ -48,6 +77,9 @@ class MaterialService:
         self.db = db
         self.repo = MaterialCharacterRepository(db)
         self.fixed_seed_repo = FixedSeedTemplateRepository(db)
+        self._direction_repo = MaterialCreativeDirectionRepository(db)
+        self._direction_task_repo = MaterialCreativeDirectionTaskRepository(db)
+        self._seed_task_repo = MaterialSeedPromptTaskRepository(db)
 
     def raw_image_url(self, character_id: str, stored_filename: str) -> str:
         return f"/api/material/characters/{character_id}/images/raw/{stored_filename}"
@@ -380,8 +412,39 @@ class MaterialService:
             .order_by(MaterialCharacterRawImage.created_at)
             .all()
         )
+        from app.services.material_service.seed_meta_enrichment import (
+            collect_direction_ids_from_bio,
+            fetch_direction_meta_map,
+        )
+
+        bio_preview = self._parse_bio_safe(char.bio_json)
+        dir_ids = collect_direction_ids_from_bio(bio_preview)
+        dir_map = fetch_direction_meta_map(self.db, dir_ids) if dir_ids else {}
+        return self._assemble_character_detail(char, rows, dir_map)
+
+    @staticmethod
+    def _parse_bio_safe(bio_json: Optional[str]) -> Dict[str, Any]:
+        try:
+            bio = json.loads(bio_json or "{}")
+            if not isinstance(bio, dict):
+                return {}
+            return bio
+        except json.JSONDecodeError:
+            return {}
+
+    def _assemble_character_detail(
+        self,
+        char: MaterialCharacter,
+        raw_rows: List[Any],
+        dir_map: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """供批量装配使用：raw_images + direction_meta 已由上层一次性查询。"""
+        from app.services.material_service.seed_meta_enrichment import (
+            enrich_seeds_with_direction_meta_from_map,
+        )
+
         raw_images = []
-        for r in rows:
+        for r in raw_rows:
             try:
                 tags = json.loads(r.tags_json or "[]")
                 if not isinstance(tags, list):
@@ -400,18 +463,13 @@ class MaterialService:
             official_photos = json.loads(char.official_photos_json or "[null,null,null]")
         except json.JSONDecodeError:
             official_photos = []
-        try:
-            bio = json.loads(char.bio_json or "{}")
-            if not isinstance(bio, dict):
-                bio = {}
-        except json.JSONDecodeError:
-            bio = {}
+        bio = self._parse_bio_safe(char.bio_json)
 
         avatar_url = ""
         if char.avatar_filename:
             avatar_url = self.avatar_url_for_character(char.id, char.avatar_filename)
 
-        return {
+        detail = {
             "id": char.id,
             "name": char.name,
             "display_name": char.display_name or char.name,
@@ -424,6 +482,37 @@ class MaterialService:
             "official_photos": self._normalize_official_photos(official_photos),
             "bio": bio,
         }
+        if isinstance(detail.get("bio"), dict):
+            enrich_seeds_with_direction_meta_from_map(detail["bio"], dir_map)
+        return detail
+
+    def get_characters_batch_details(self, character_ids: List[str]) -> List[Dict[str, Any]]:
+        """批量获取多个角色的完整详情，用于前端一次性加载。
+        3 次 SQL：chars + raw_images IN + creative_directions IN。
+        """
+        if not character_ids:
+            return []
+        chars = self.repo.get_by_ids(character_ids)
+        if not chars:
+            return []
+
+        from app.services.material_service.seed_meta_enrichment import (
+            collect_direction_ids_from_bio,
+            fetch_direction_meta_map,
+        )
+
+        ids = [c.id for c in chars]
+        raw_map = self.repo.list_raw_images_by_character_ids(ids)
+        all_dir_ids: set = set()
+        for c in chars:
+            bio = self._parse_bio_safe(c.bio_json)
+            all_dir_ids.update(collect_direction_ids_from_bio(bio))
+        dir_map = fetch_direction_meta_map(self.db, all_dir_ids) if all_dir_ids else {}
+
+        return [
+            self._assemble_character_detail(c, raw_map.get(c.id, []), dir_map)
+            for c in chars
+        ]
 
     def start_standard_photo_task(
         self,
@@ -680,132 +769,6 @@ class MaterialService:
     async def _run_chara_profile_task_async(self, character_id: str, task_id: str) -> None:
         await asyncio.to_thread(self._run_chara_profile_task_sync, character_id, task_id)
 
-    async def _run_creation_advice_task_async(self, character_id: str, task_id: str) -> None:
-        await asyncio.to_thread(self._run_creation_advice_task_sync, character_id, task_id)
-
-    def start_creation_advice_task(
-        self,
-        character_id: str,
-        background_tasks: Optional[BackgroundTasks] = None,
-    ) -> Dict[str, Any]:
-        char = self.repo.get_by_id(character_id)
-        if not char:
-            raise ValueError("角色不存在")
-        missing = material_file_service.list_missing_chara_profile_prerequisite_files(character_id)
-        if missing:
-            names = "、".join(missing)
-            raise ValueError(
-                f"生成创作建议前请先完成角色小档案并保存下列文件（缺失或为空）：{names}"
-            )
-
-        material_file_service.clear_creation_advice_artifacts(character_id)
-        task = self.repo.upsert_creation_advice_task(
-            character_id=character_id,
-            status="processing",
-            error_message=None,
-            current_step=None,
-        )
-
-        if background_tasks:
-            background_tasks.add_task(self._run_creation_advice_task_async, character_id, task.id)
-        else:
-            self._run_creation_advice_task_sync(character_id, task.id)
-
-        task = self.repo.get_creation_advice_task_by_id(task.id)
-        return {"task_id": task.id, "status": task.status}
-
-    def _run_creation_advice_task_sync(self, character_id: str, task_id: str) -> None:
-        bind = self.db.get_bind()
-        db = Session(bind=bind, autocommit=False, autoflush=False)
-        try:
-            repo = MaterialCharacterRepository(db)
-            task = repo.get_creation_advice_task_by_id(task_id)
-            if not task:
-                return
-            char = repo.get_by_id(character_id)
-            if not char:
-                repo.update_creation_advice_task(
-                    task_id,
-                    {"status": "failed", "error_message": "角色不存在", "current_step": None},
-                )
-                return
-
-            try:
-                bio = json.loads(char.bio_json or "{}")
-                if not isinstance(bio, dict):
-                    bio = {}
-            except json.JSONDecodeError:
-                bio = {}
-
-            def on_step(step: str) -> None:
-                repo.update_creation_advice_task(task_id, {"current_step": step})
-
-            try:
-                ms_inner = MaterialService(db)
-                fixed_unused = ms_inner.list_fixed_unused_seed_texts()
-                advice_md, _seed_draft = creation_advice_generation_service.run_creation_advice_pipeline(
-                    character_id=character_id,
-                    bio=bio,
-                    on_step=on_step,
-                    fixed_unused_texts=fixed_unused,
-                )
-            except Exception as e:
-                logger.error(f"生成创作建议任务执行失败: {e}", exc_info=True)
-                repo.update_creation_advice_task(
-                    task_id,
-                    {"status": "failed", "error_message": str(e), "current_step": None},
-                )
-                return
-
-            bio["creative_advice"] = advice_md
-            repo.update(character_id, {"bio_json": json.dumps(bio, ensure_ascii=False)})
-            MaterialService(db)._after_character_material_changed(character_id)
-            repo.update_creation_advice_task(
-                task_id,
-                {
-                    "status": "completed",
-                    "error_message": None,
-                    "current_step": "done",
-                },
-            )
-        finally:
-            db.close()
-
-    def get_creation_advice_task_status(self, character_id: str) -> Optional[Dict[str, Any]]:
-        task = self.repo.get_creation_advice_task_by_character_id(character_id)
-        if not task:
-            return None
-        seed_draft: Optional[Dict[str, List[str]]] = None
-        if task.status == "completed":
-            raw = material_file_service.read_creation_seed_draft_json(character_id)
-            if isinstance(raw, dict):
-                cs = raw.get("character_specific")
-                gn = raw.get("general")
-
-                def _str_list(v: Any) -> List[str]:
-                    if not isinstance(v, list):
-                        return []
-                    out: List[str] = []
-                    for x in v:
-                        if isinstance(x, str) and x.strip():
-                            out.append(x)
-                    return out
-
-                seed_draft = {
-                    "character_specific": _str_list(cs),
-                    "general": _str_list(gn),
-                }
-        return {
-            "task_id": task.id,
-            "character_id": task.character_id,
-            "status": task.status,
-            "error_message": task.error_message,
-            "current_step": task.current_step,
-            "created_at": task.created_at,
-            "updated_at": task.updated_at,
-            "seed_draft": seed_draft,
-        }
-
     def start_chara_profile_task(
         self,
         character_id: str,
@@ -985,20 +948,13 @@ class MaterialService:
         self,
         character_id: str,
         chara_profile: Optional[str] = None,
-        creative_advice: Optional[str] = None,
         official_seed_prompts: Optional[Dict[str, Any]] = None,
     ) -> MaterialCharacter:
         char = self.repo.get_by_id(character_id)
         if not char:
             raise ValueError("角色不存在")
-        if (
-            chara_profile is None
-            and creative_advice is None
-            and official_seed_prompts is None
-        ):
-            raise ValueError(
-                "至少提供 chara_profile、creative_advice、official_seed_prompts 之一"
-            )
+        if chara_profile is None and official_seed_prompts is None:
+            raise ValueError("至少提供 chara_profile、official_seed_prompts 之一")
         try:
             bio = json.loads(char.bio_json or "{}")
             if not isinstance(bio, dict):
@@ -1007,11 +963,13 @@ class MaterialService:
             bio = {}
         if chara_profile is not None:
             bio["chara_profile"] = chara_profile
-        if creative_advice is not None:
-            bio["creative_advice"] = creative_advice
         if official_seed_prompts is not None:
             cs = official_seed_prompts.get("character_specific")
             ge = official_seed_prompts.get("general")
+            if isinstance(ge, list):
+                for entry in ge:
+                    if isinstance(entry, dict):
+                        entry.pop("creative_direction_id", None)
             if (
                 isinstance(cs, list)
                 and isinstance(ge, list)
@@ -1027,6 +985,174 @@ class MaterialService:
         if not updated:
             raise ValueError("角色不存在")
         return updated
+
+    def start_creative_direction_task(
+        self,
+        character_id: str,
+        divergence: str,
+        initial_input: Optional[str],
+        background_tasks: BackgroundTasks,
+    ) -> MaterialCreativeDirectionTask:
+        char = self.repo.get_by_id(character_id)
+        if char is None:
+            raise ValueError("character not found")
+
+        n_directions = self._direction_repo.count_by_character(character_id)
+        if n_directions >= MATERIAL_CREATIVE_DIRECTION_PER_CHARACTER_LIMIT:
+            raise CreativeDirectionLimitExceededError()
+
+        assert_can_start_task(self.db, character_id)
+
+        task = MaterialCreativeDirectionTask(
+            id=str(uuid.uuid4()),
+            character_id=character_id,
+            status="pending",
+            divergence=divergence,
+            initial_input=initial_input or None,
+        )
+        self.db.add(task)
+        self.db.commit()
+        self.db.refresh(task)
+
+        background_tasks.add_task(run_creative_direction_task, task.id)
+        return task
+
+    def get_creative_direction_task_status(
+        self, character_id: str, task_id: str
+    ) -> Tuple[MaterialCreativeDirectionTask, Optional[MaterialCreativeDirection]]:
+        task = self._direction_task_repo.get_by_id(task_id)
+        if task is None or task.character_id != character_id:
+            raise ValueError("task not found")
+        direction = None
+        if task.status == "completed" and task.result_direction_id:
+            direction = self._direction_repo.get_by_id(task.result_direction_id)
+        return task, direction
+
+    def list_creative_directions(self, character_id: str) -> List[MaterialCreativeDirection]:
+        return self._direction_repo.list_by_character(character_id)
+
+    def patch_creative_direction(
+        self,
+        character_id: str,
+        direction_id: str,
+        title: Optional[str],
+        description: Optional[str],
+    ) -> MaterialCreativeDirection:
+        row = self._direction_repo.get_by_id(direction_id)
+        if row is None or row.character_id != character_id:
+            raise ValueError("direction not found")
+        if title is not None:
+            row.title = title
+        if description is not None:
+            row.description = description
+        self.db.commit()
+        self.db.refresh(row)
+        return row
+
+    def delete_creative_direction(self, character_id: str, direction_id: str) -> None:
+        row = self._direction_repo.get_by_id(direction_id)
+        if row is None or row.character_id != character_id:
+            raise ValueError("direction not found")
+        self.db.delete(row)
+        self.db.commit()
+        self._detach_seeds_from_direction(character_id, direction_id)
+        try:
+            path = os.path.join(
+                material_file_service.get_character_dir(character_id),
+                "creative_directions",
+                f"{direction_id}.json",
+            )
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception as e:
+            logger.warning("failed to delete direction json file: %s", e)
+
+    def _detach_seeds_from_direction(self, character_id: str, direction_id: str) -> None:
+        """方向被删后，把 bio_json 中绑定到该方向的种子转为「默认世界观」(creative_direction_id=None)。"""
+        char = self.repo.get_by_id(character_id)
+        if not char:
+            return
+        try:
+            bio = json.loads(char.bio_json or "{}")
+            if not isinstance(bio, dict):
+                return
+        except json.JSONDecodeError:
+            return
+        seeds = bio.get("official_seed_prompts")
+        if not isinstance(seeds, dict):
+            return
+        cs = seeds.get("character_specific")
+        if not isinstance(cs, list):
+            return
+        changed = False
+        for entry in cs:
+            if isinstance(entry, dict) and entry.get("creative_direction_id") == direction_id:
+                entry["creative_direction_id"] = None
+                changed = True
+        if not changed:
+            return
+        self.repo.update(character_id, {"bio_json": json.dumps(bio, ensure_ascii=False)})
+
+    def is_direction_owned_by_character(self, direction_id: str, character_id: str) -> bool:
+        row = self._direction_repo.get_by_id(direction_id)
+        return row is not None and row.character_id == character_id
+
+    def start_seed_prompt_task(
+        self,
+        character_id: str,
+        creative_direction_id: Optional[str],
+        background_tasks: BackgroundTasks,
+    ) -> MaterialSeedPromptTask:
+        """提交种子提示词生成任务。"""
+        char = self.repo.get_by_id(character_id)
+        if char is None:
+            raise ValueError("character not found")
+
+        if creative_direction_id is not None:
+            dir_row = self._direction_repo.get_by_id(creative_direction_id)
+            if dir_row is None or dir_row.character_id != character_id:
+                raise ValueError("creative_direction not found")
+
+        bio = json.loads(char.bio_json or "{}")
+        cs = (bio.get("official_seed_prompts") or {}).get("character_specific") or []
+        total = sum(1 for x in cs if isinstance(x, dict))
+        if total >= MATERIAL_SEED_PROMPT_PER_CHARACTER_LIMIT:
+            raise SeedPromptTotalLimitExceededError()
+
+        same_dir_count = sum(
+            1
+            for x in cs
+            if isinstance(x, dict) and x.get("creative_direction_id") == creative_direction_id
+        )
+        if same_dir_count >= MATERIAL_SEED_PROMPT_PER_DIRECTION_LIMIT:
+            raise SeedPromptPerDirectionLimitExceededError()
+
+        assert_can_start_task(self.db, character_id)
+
+        task = MaterialSeedPromptTask(
+            id=str(uuid.uuid4()),
+            character_id=character_id,
+            creative_direction_id=creative_direction_id,
+            status="pending",
+        )
+        self.db.add(task)
+        self.db.commit()
+        self.db.refresh(task)
+
+        background_tasks.add_task(run_seed_prompt_task, task.id)
+        return task
+
+    def get_seed_prompt_task_status(
+        self, character_id: str, task_id: str
+    ) -> Tuple[MaterialSeedPromptTask, Optional[dict]]:
+        """返回 (task_row, seed_draft_dict?)；draft 仅在 completed 时回填。"""
+        task = self._seed_task_repo.get_by_id(task_id)
+        if task is None or task.character_id != character_id:
+            raise ValueError("task not found")
+        draft = None
+        if task.status == "completed":
+            draft = read_seed_draft_file(character_id, task_id)
+        return task, draft
 
     # --- 固定种子模板（全角色共享） ---
 

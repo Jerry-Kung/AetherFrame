@@ -149,10 +149,8 @@ export default function CreationPage() {
       <div
         className="absolute inset-0 z-0 pointer-events-none"
         style={{
-          backgroundImage: `url("https://readdy.ai/api/search-image?query=soft%20dreamy%20anime%20aesthetic%20background%20art%20with%20delicate%20cherry%20blossom%20sakura%20petals%20floating%20in%20gentle%20breeze%2C%20warm%20pastel%20pink%20and%20creamy%20white%20watercolor%20illustration%20style%2C%20kawaii%20japanese%20aesthetic%2C%20soft%20bokeh%20circular%20lights%2C%20no%20people%20no%20characters%2C%20light%20and%20airy%20misty%20atmosphere%2C%20subtle%20floral%20pattern%20elements%2C%20beautiful%20pastel%20digital%20painting%20art%20with%20pink%20rose%20tones&width=1920&height=1080&seq=2001&orientation=landscape")`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          opacity: 0.1,
+          background:
+            "radial-gradient(ellipse at 30% 20%, rgba(253,164,175,0.08) 0%, transparent 50%), radial-gradient(ellipse at 70% 80%, rgba(251,207,232,0.06) 0%, transparent 50%)",
         }}
       />
 
@@ -346,16 +344,6 @@ export default function CreationPage() {
         onCancel={() => setShowConfigModal(false)}
       />
 
-      <style>{`
-        @keyframes creation-floatUp {
-          0%, 100% { transform: translateY(0px) scale(1); }
-          50% { transform: translateY(-18px) scale(1.04); }
-        }
-        @keyframes creation-twinkle {
-          0%, 100% { opacity: 0.3; transform: scale(1) rotate(0deg); }
-          50% { opacity: 0.7; transform: scale(1.3) rotate(20deg); }
-        }
-      `}</style>
     </div>
   );
 }

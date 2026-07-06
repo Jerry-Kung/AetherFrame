@@ -5,13 +5,15 @@ import os
 import shutil
 import time
 import uuid
-from datetime import date, datetime
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.models.database import BackgroundSessionLocal, SessionLocal
+from app.models.material import MaterialCreativeDirection
+from app.schemas.creation import SeedPayload
 from app.prompts.creation.prompt_precreation import (
     prompt_review,
     prompt_review_backup,
@@ -28,103 +30,195 @@ from app.tools.llm.yibu_llm_infer import yibu_gemini_infer
 logger = logging.getLogger(__name__)
 
 PREVIEW_MAX_LEN = 160
+
+
+import re as _re
+
+from app.services.creation_service.composition_dimensions import (
+    VALID_AUTO_ASPECT_CODES,
+    get_dimension_values,
+)
+
+
+_COMPOSITION_BLOCK_RE = _re.compile(
+    r"\*\*\[COMPOSITION_DECISION\]\*\*\s*(.*?)(?=\n\s*\*\*|\Z)",
+    _re.DOTALL,
+)
+_COMPOSITION_LINE_RE = _re.compile(r"^\s*([a-z_]+)\s*:\s*(\S+)\s*$", _re.MULTILINE)
+
+_ENUM_CODES: Dict[str, set] = {
+    "aspect_ratio": set(VALID_AUTO_ASPECT_CODES),
+    "subject_area_min": {v.code for v in get_dimension_values("subject_area_min")},
+}
+_ENUM_CODES.update({
+    "shooting_angle": {v.code for v in get_dimension_values("shooting_angle")},
+    "camera_height":  {v.code for v in get_dimension_values("camera_height")},
+    "gaze_direction": {v.code for v in get_dimension_values("gaze_direction")},
+})
+
+_STEP0_CAMERA_TEMPLATE = (
+    "0-cam、**镜头维度决策（先于画面脑补）**：请从以下枚举中各选择一个：\n"
+    "机位方位（shooting_angle）候选：\n"
+    "{shooting_angle_enum}\n"
+    "机位高度（camera_height）候选：\n"
+    "{camera_height_enum}\n"
+    "视线方向（gaze_direction）候选：\n"
+    "{gaze_direction_enum}\n"
+    "请把三项选择一并写入下方 [COMPOSITION_DECISION] 决策块。"
+)
+
+
+def _render_dimension_list(dim: str) -> str:
+    return "\n".join(
+        f"  - `{v.code}` ({v.display_name}): {v.description}"
+        for v in get_dimension_values(dim)
+    )
+
+
+def _build_step1_prompt(*, chara_profile: str, seed_prompt: str) -> str:
+    step_zero = (
+        "0、**先做构图决策（必须在脑补画面之前完成）**：\n"
+        "   - 从下面 9 个长宽比档位中选择最契合本次场景的一个：\n"
+        f"{_render_dimension_list('aspect_ratio_auto_full')}\n"
+        "   - 优先在主流 5 档 (`9:16`, `3:4`, `1:1`, `4:3`, `16:9`) 中选择；"
+        "除非场景明显适配特殊比例（如 `5:4` 适合接近正方形的居中坐姿、`2:3` 适合竖向全身）才使用扩展 4 档。\n"
+        "   - 从下面 4 档中选择角色主体在画面中的占比下限：\n"
+        f"{_render_dimension_list('subject_area_min')}"
+    )
+    step_zero_camera = _STEP0_CAMERA_TEMPLATE.format(
+        shooting_angle_enum=_render_dimension_list("shooting_angle"),
+        camera_height_enum=_render_dimension_list("camera_height"),
+        gaze_direction_enum=_render_dimension_list("gaze_direction"),
+    )
+    composition_output = (
+        "\n7、请在输出的模板正文**之前**，插入一段用 `**[COMPOSITION_DECISION]**` 标记的构图决策说明，"
+        "格式如下（每行取上一步选定的 code 值）：\n"
+        "```\n"
+        "**[COMPOSITION_DECISION]**\n"
+        "aspect_ratio: <code>\n"
+        "subject_area_min: <code>\n"
+        "shooting_angle: <code>\n"
+        "camera_height: <code>\n"
+        "gaze_direction: <code>\n"
+        "```\n"
+        "后续「任务目标」与「构图硬约束」段中，请用你选定的长宽比替换 `{aspect_ratio}` 占位符、"
+        "用主体占比下限的百分比值（如 65%）替换 `{subject_area_min_pct}` 占位符。"
+        "正文「镜头与构图」段**不要**出现任何枚举 code 或方括号标记，"
+        "以一句自然语言开头表述你选定的机位方位/高度/视线方向"
+        "（例：“3/4 正面视角，机位略高做轻微俯拍，视线看向镜头”）。"
+    )
+    return prompt_step1.format(
+        chara_profile=chara_profile,
+        seed_prompt=seed_prompt,
+        init_template=init_template,
+        good_template=good_template1,
+        step1_task_step_zero=step_zero,
+        step1_task_step_zero_camera=step_zero_camera,
+        step1_composition_output_requirement=composition_output,
+        camera_combo_distribution_bias="",
+        negative_prompt_risk_tags="",
+    )
+
+
+_REVIEW_DIVERSITY_CRITERIA = (
+    "在质量相近的候选之间，优先挑选 `shooting_angle` / `camera_height` / `gaze_direction` / `pose_family` "
+    "维度组合差异更大的 {num_best_prompts} 条，以保证批次内构图多样性。差异度评估以候选 Prompt 显式声明的 "
+    "[COMPOSITION_DECISION] 字段为准；若候选未显式声明，请从其画面描述中推断这四个维度。"
+)
+
+
+def _build_review_prompt(
+    *,
+    input_content: str,
+    seed_prompt: str,
+    chara_profile: str,
+    num_best_prompts: int,
+) -> str:
+    return prompt_review.format(
+        input_content=input_content,
+        seed_prompt=seed_prompt,
+        chara_profile=chara_profile,
+        num_best_prompts=num_best_prompts,
+        composition_diversity_criteria=_REVIEW_DIVERSITY_CRITERIA.format(
+            num_best_prompts=num_best_prompts
+        ),
+        composition_weight_table="(本轮为空，由后续学习机制注入)",
+    )
+
+
+def _parse_step1_composition(step1_output: str) -> Dict[str, str]:
+    m = _COMPOSITION_BLOCK_RE.search(step1_output)
+    if not m:
+        return {}
+    body = m.group(1)
+    result: Dict[str, str] = {}
+    for key, value in _COMPOSITION_LINE_RE.findall(body):
+        if key not in _ENUM_CODES:
+            continue
+        if value not in _ENUM_CODES[key]:
+            logger.warning(
+                "step1 composition %s=%s out of enum, dropped", key, value
+            )
+            continue
+        result[key] = value
+    return result
+
+
+_ENUM_BACKFILL_LINE_RE = _re.compile(
+    r"^\s*`\[(?:SHOOTING_ANGLE|CAMERA_HEIGHT|GAZE_DIRECTION)\]`[^\n]*\n?",
+    _re.MULTILINE,
+)
+
+
+def strip_machine_code(prompt: str) -> str:
+    """发图前剥离流水线机器码：[COMPOSITION_DECISION] 决策块与镜头段枚举回填行。
+
+    卡片 fullPrompt 与存档保持原样，仅在发送给图像模型的最后一刻调用。
+    对不含机器码的文本幂等（原样返回）。
+    """
+    text = _COMPOSITION_BLOCK_RE.sub("", prompt)
+    text = _ENUM_BACKFILL_LINE_RE.sub("", text)
+    return text.lstrip("\n") if text != prompt else prompt
+
+
+def compose_seed_prompt_with_direction(
+    seed_payload: SeedPayload | str | dict,
+    db: Session,
+) -> str:
+    """把方向折叠进 seed text，返回最终用于填入 prompt_precreation 模板 {seed_prompt} 槽的字符串。
+
+    数据来源以 DB 为准（不接受外部传入的方向正文）。
+    方向不存在时降级为无方向分支 + warn log。
+    """
+    payload = SeedPayload.from_raw(seed_payload)
+
+    if not payload.creative_direction_id:
+        return payload.text
+
+    dir_row = db.get(MaterialCreativeDirection, payload.creative_direction_id)
+    if dir_row is None:
+        logger.warning(
+            "compose: direction %s not found (deleted?), fallback to plain seed",
+            payload.creative_direction_id,
+        )
+        return payload.text
+
+    return (
+        f"### 创作创意方向\n"
+        f"{dir_row.title}\n"
+        f"\n"
+        f"{dir_row.description}\n"
+        f"\n"
+        f"### 初始创作种子\n"
+        f"{payload.text}"
+    )
 DEFAULT_HISTORY_LIMIT = 50
 
 
-def _to_iso(dt: Optional[datetime]) -> str:
+def _to_iso(dt: Any) -> str:
     if dt is None:
         return ""
     return dt.isoformat()
-
-
-def _safe_load_json(path: str, default: Any) -> Any:
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return default
-    except json.JSONDecodeError:
-        return default
-
-
-def _dump_json_atomic(path: str, payload: Any) -> None:
-    directory_service.ensure_dir_exists(os.path.dirname(path))
-    tmp = f"{path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
-
-
-def _task_cards(task: Any) -> List[Dict[str, Any]]:
-    if not task or not task.result_json:
-        return []
-    try:
-        cards = json.loads(task.result_json)
-        if isinstance(cards, list):
-            return cards
-    except json.JSONDecodeError:
-        return []
-    return []
-
-
-def _sync_history_files_for_task_id(db: Session, task_id: str) -> None:
-    crepo = CreationPromptPrecreationRepository(db)
-    mrepo = MaterialCharacterRepository(db)
-    task = crepo.get_by_id(task_id)
-    if not task:
-        return
-
-    history_dir = directory_service.get_prompt_precreation_history_dir()
-    records_dir = directory_service.get_prompt_precreation_history_records_dir()
-    directory_service.ensure_dir_exists(history_dir)
-    directory_service.ensure_dir_exists(records_dir)
-
-    character = mrepo.get_by_id(task.character_id)
-    chara_name = character.name if character else "未知角色"
-    cards = _task_cards(task)
-    record_payload = {
-        "id": task.id,
-        "task_id": task.id,
-        "character_id": task.character_id,
-        "chara_name": chara_name,
-        "chara_avatar": "",
-        "seed_prompt": task.seed_prompt,
-        "prompt_count": len(cards),
-        "status": task.status,
-        "error_message": task.error_message,
-        "created_at": _to_iso(task.created_at),
-        "updated_at": _to_iso(task.updated_at),
-        "cards": cards,
-    }
-    _dump_json_atomic(
-        directory_service.get_prompt_precreation_history_record_path(task.id),
-        record_payload,
-    )
-
-    tasks = crepo.list_history(limit=2000, offset=0)
-    items: List[Dict[str, Any]] = []
-    for t in tasks:
-        c = mrepo.get_by_id(t.character_id)
-        cards = _task_cards(t)
-        items.append(
-            {
-                "id": t.id,
-                "task_id": t.id,
-                "character_id": t.character_id,
-                "chara_name": c.name if c else "未知角色",
-                "chara_avatar": "",
-                "seed_prompt": t.seed_prompt,
-                "prompt_count": len(cards),
-                "status": t.status,
-                "error_message": t.error_message,
-                "created_at": _to_iso(t.created_at),
-                "updated_at": _to_iso(t.updated_at),
-            }
-        )
-    _dump_json_atomic(
-        directory_service.get_prompt_precreation_history_index_path(),
-        {"updated_at": datetime.now().isoformat(), "total": len(items), "items": items},
-    )
 
 
 def resolve_chara_profile_text(
@@ -174,23 +268,23 @@ def _collect_candidates(
     seed_prompt: str,
     work_dir: str,
     n: int,
-) -> Dict[str, str]:
+) -> tuple[Dict[str, str], Dict[str, Dict[str, str]]]:
     target_success = 2 * n
     max_iters = 4 * n
     candidates: Dict[str, str] = {}
+    compositions: Dict[str, Dict[str, str]] = {}
     success_count = 0
 
     for _ in range(max_iters):
         if success_count >= target_success:
             break
         try:
-            p1 = prompt_step1.format(
+            p1 = _build_step1_prompt(
                 chara_profile=chara_profile,
                 seed_prompt=seed_prompt,
-                init_template=init_template,
-                good_template=good_template1,
             )
             step1_result = yibu_gemini_infer(p1, thinking_level="high", temperature=1.0)
+            comp = _parse_step1_composition(step1_result)
             p2 = prompt_step2.format(
                 init_template=step1_result,
                 good_template=good_template1,
@@ -201,6 +295,8 @@ def _collect_candidates(
             success_count += 1
             key = f"candidate_prompt_{success_count:03d}"
             candidates[key] = step2_result
+            if comp:
+                compositions[key] = comp
             path = os.path.join(work_dir, f"{key}.txt")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(step2_result)
@@ -212,7 +308,7 @@ def _collect_candidates(
         raise RuntimeError(
             f"备选 Prompt 仅成功生成 {success_count} 个，需要 {target_success} 个（网络或模型不稳定时可重试）"
         )
-    return candidates
+    return candidates, compositions
 
 
 def _run_review(
@@ -223,7 +319,7 @@ def _run_review(
     n: int,
 ) -> str:
     def call_main() -> str:
-        p = prompt_review.format(
+        p = _build_review_prompt(
             input_content=input_content,
             seed_prompt=seed_prompt,
             chara_profile=chara_profile,
@@ -259,7 +355,9 @@ def _run_review(
 
 
 def _build_cards(
-    best_files: List[str], candidates: Dict[str, str]
+    best_files: List[str],
+    candidates: Dict[str, str],
+    compositions: Dict[str, Dict[str, str]],
 ) -> List[Dict[str, Any]]:
     today = date.today().isoformat()
     cards: List[Dict[str, Any]] = []
@@ -283,12 +381,13 @@ def _build_cards(
                 "fullPrompt": body,
                 "tags": [],
                 "createdAt": today,
+                "composition": compositions.get(name) or None,
             }
         )
     return cards
 
 
-_VALID_CHAIN_ASPECT = frozenset({"16:9", "4:3", "1:1", "3:4", "9:16"})
+_VALID_CHAIN_ASPECT = frozenset({"auto", "16:9", "4:3", "1:1", "3:4", "9:16"})
 
 
 def _try_chain_quick_create(precreation_task_id: str) -> None:
@@ -317,7 +416,6 @@ def _try_chain_quick_create(precreation_task_id: str) -> None:
                 precreation_task_id,
                 {"chain_error": "链式一键创作参数无效，已跳过"},
             )
-            _sync_history_files_for_task_id(db, precreation_task_id)
             return
         try:
             cards = json.loads(task.result_json or "[]")
@@ -328,23 +426,25 @@ def _try_chain_quick_create(precreation_task_id: str) -> None:
                 precreation_task_id,
                 {"chain_error": "无可用 Prompt 卡片，已跳过链式一键创作"},
             )
-            _sync_history_files_for_task_id(db, precreation_task_id)
             return
         cap = min(len(cards), int(max_prompts))
-        selected: List[Dict[str, str]] = []
+        selected: List[Dict[str, Any]] = []
         for c in cards[:cap]:
             if not isinstance(c, dict):
                 continue
             pid = str(c.get("id") or "").strip()
             fp = str(c.get("fullPrompt") or "").strip()
             if pid and fp:
-                selected.append({"id": pid, "fullPrompt": fp})
+                item: Dict[str, Any] = {"id": pid, "fullPrompt": fp}
+                comp = c.get("composition")
+                if isinstance(comp, dict):
+                    item["composition"] = comp
+                selected.append(item)
         if not selected:
             prepo.update(
                 precreation_task_id,
                 {"chain_error": "切片后无有效 Prompt，已跳过链式一键创作"},
             )
-            _sync_history_files_for_task_id(db, precreation_task_id)
             return
         qc = QuickCreateService(db)
         try:
@@ -367,7 +467,6 @@ def _try_chain_quick_create(precreation_task_id: str) -> None:
                 precreation_task_id,
                 {"chain_error": msg[:2000]},
             )
-            _sync_history_files_for_task_id(db, precreation_task_id)
             return
         tid = (out or {}).get("task_id")
         if tid:
@@ -375,7 +474,6 @@ def _try_chain_quick_create(precreation_task_id: str) -> None:
                 precreation_task_id,
                 {"chained_quick_create_task_id": str(tid), "chain_error": None},
             )
-        _sync_history_files_for_task_id(db, precreation_task_id)
     finally:
         db.close()
 
@@ -399,7 +497,6 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
                     "current_step": None,
                 },
             )
-            _sync_history_files_for_task_id(db, task_id)
             return
 
         chara_profile = resolve_chara_profile_text(task.character_id, char.bio_json)
@@ -412,20 +509,18 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
                     "current_step": None,
                 },
             )
-            _sync_history_files_for_task_id(db, task_id)
             return
 
         crepo.update(
             task_id,
             {"status": "running", "current_step": "collecting", "error_message": None},
         )
-        _sync_history_files_for_task_id(db, task_id)
         n = task.n
         seed_prompt = task.seed_prompt
         work_dir = task.work_dir
         directory_service.ensure_dir_exists(work_dir)
 
-        candidates = _collect_candidates(
+        candidates, compositions = _collect_candidates(
             chara_profile=chara_profile,
             seed_prompt=seed_prompt,
             work_dir=work_dir,
@@ -433,7 +528,6 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
         )
 
         crepo.update(task_id, {"current_step": "reviewing"})
-        _sync_history_files_for_task_id(db, task_id)
         input_content = _build_input_content(candidates)
         raw = _run_review(
             input_content=input_content,
@@ -452,7 +546,7 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
             if name not in candidates:
                 raise ValueError(f"审阅返回了未知候选名: {name}")
 
-        cards = _build_cards(best_files, candidates)
+        cards = _build_cards(best_files, candidates, compositions)
         crepo.update(
             task_id,
             {
@@ -462,7 +556,6 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
                 "result_json": cards,
             },
         )
-        _sync_history_files_for_task_id(db, task_id)
         precreation_completed = True
     except Exception as e:
         logger.error("Prompt 预生成任务失败 task_id=%s: %s", task_id, e, exc_info=True)
@@ -474,7 +567,6 @@ def run_prompt_precreation_task_sync(task_id: str) -> None:
                     task_id,
                     {"status": "failed", "error_message": msg, "current_step": None},
                 )
-                _sync_history_files_for_task_id(db, task_id)
         except Exception:
             logger.exception("写入任务失败状态时出错")
     finally:
@@ -505,6 +597,14 @@ class PromptPrecreationService:
         if not task:
             return None
         character = self.material_repo.get_by_id(task.character_id)
+        return self._build_history_detail_from_parts(task, character)
+
+    def _build_history_detail_from_parts(
+        self, task: Any, character: Any
+    ) -> Optional[Dict[str, Any]]:
+        """供批量装配使用：character 已由上层一次性查询。"""
+        if not task:
+            return None
         chara_name = character.name if character else "未知角色"
         cards = self._parse_cards(task)
         return {
@@ -536,46 +636,6 @@ class PromptPrecreationService:
             "created_at": _to_iso(detail.get("created_at")),
             "updated_at": _to_iso(detail.get("updated_at")),
         }
-
-    def _sync_history_record_file(self, task: Any) -> None:
-        detail = self._build_history_detail(task)
-        if not detail:
-            return
-        record_path = directory_service.get_prompt_precreation_history_record_path(
-            task.id
-        )
-        record_payload = {
-            **self._build_history_index_item(detail),
-            "cards": detail.get("cards") or [],
-        }
-        _dump_json_atomic(record_path, record_payload)
-
-    def _sync_history_index_file(self) -> None:
-        tasks = self.repo.list_history(limit=2000, offset=0)
-        items: List[Dict[str, Any]] = []
-        for task in tasks:
-            detail = self._build_history_detail(task)
-            if not detail:
-                continue
-            items.append(self._build_history_index_item(detail))
-        payload = {
-            "updated_at": datetime.now().isoformat(),
-            "total": len(items),
-            "items": items,
-        }
-        index_path = directory_service.get_prompt_precreation_history_index_path()
-        _dump_json_atomic(index_path, payload)
-
-    def _sync_history_files_for_task(self, task_id: str) -> None:
-        task = self.repo.get_by_id(task_id)
-        if not task:
-            return
-        history_dir = directory_service.get_prompt_precreation_history_dir()
-        records_dir = directory_service.get_prompt_precreation_history_records_dir()
-        directory_service.ensure_dir_exists(history_dir)
-        directory_service.ensure_dir_exists(records_dir)
-        self._sync_history_record_file(task)
-        self._sync_history_index_file()
 
     def list_history(
         self,
@@ -631,13 +691,6 @@ class PromptPrecreationService:
         if not deleted:
             raise ValueError("历史记录不存在")
 
-        record_path = directory_service.get_prompt_precreation_history_record_path(hid)
-        try:
-            if os.path.isfile(record_path):
-                os.remove(record_path)
-        except Exception:
-            logger.warning("删除历史记录文件失败: %s", record_path, exc_info=True)
-
         if work_dir:
             try:
                 if os.path.isdir(work_dir):
@@ -645,7 +698,6 @@ class PromptPrecreationService:
             except Exception:
                 logger.warning("删除历史工作目录失败: %s", work_dir, exc_info=True)
 
-        self._sync_history_index_file()
         latest = self.get_latest_history()
         return {"deleted_id": hid, "latest": latest}
 
@@ -694,7 +746,6 @@ class PromptPrecreationService:
             chain_qc_max_prompts=cm,
         )
         directory_service.ensure_dir_exists(task.work_dir)
-        self._sync_history_files_for_task(task.id)
 
         if background_tasks:
             background_tasks.add_task(self._run_task_async, task.id)

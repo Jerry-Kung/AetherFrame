@@ -6,6 +6,7 @@ import type {
   ApiCharacterSummary,
   OfficialSeedPromptsApiPatch,
 } from "@/types/material";
+import type { MaterialErrorCode } from "@/types/material";
 import { ApiError, parseResponseBodyAsJson } from "@/services/api";
 
 const API_BASE = "/api/material";
@@ -336,25 +337,62 @@ export interface CharaProfileStatusResult {
   updated_at: string;
 }
 
-export interface CreationAdviceStartResult {
+export interface SeedPromptDraftApi {
+  character_specific: string[];
+}
+
+export interface SeedPromptTaskStartResult {
   task_id: string;
   status: string;
 }
 
-export interface CreationAdviceSeedDraft {
-  character_specific: string[];
-  general: string[];
-}
-
-export interface CreationAdviceStatusResult {
+export interface SeedPromptTaskStatus {
   task_id: string;
   character_id: string;
+  creative_direction_id: string | null;
   status: "pending" | "processing" | "completed" | "failed";
-  error_message: string | null;
   current_step: string | null;
+  seed_draft: SeedPromptDraftApi | null;
+  error_message: string | null;
   created_at: string;
   updated_at: string;
-  seed_draft: CreationAdviceSeedDraft | null;
+}
+
+export async function startSeedPromptTask(
+  characterId: string,
+  body: { creative_direction_id?: string | null }
+): Promise<SeedPromptTaskStartResult> {
+  assertValidCharacterId(characterId, "启动种子提示词任务");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/seed-prompts/start`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      timeout: 60000,
+    });
+    const data = await parseJson<SeedPromptTaskStartResult>(response);
+    throwIfError(response, data);
+    return data.data as SeedPromptTaskStartResult;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function getSeedPromptTaskStatus(
+  characterId: string,
+  taskId: string
+): Promise<SeedPromptTaskStatus> {
+  assertValidCharacterId(characterId, "查询种子提示词任务状态");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/seed-prompts/tasks/${encodeURIComponent(taskId)}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET", timeout: 20000 });
+    const data = await parseJson<SeedPromptTaskStatus>(response);
+    throwIfError(response, data);
+    return data.data as SeedPromptTaskStatus;
+  } catch (e) {
+    rethrow(e);
+  }
 }
 
 export async function startCharaProfileTask(
@@ -391,44 +429,6 @@ export async function getCharaProfileStatus(
     const data = await parseJson<CharaProfileStatusResult>(response);
     throwIfError(response, data);
     return data.data as CharaProfileStatusResult;
-  } catch (e) {
-    rethrow(e);
-  }
-}
-
-export async function startCreationAdviceTask(
-  characterId: string
-): Promise<CreationAdviceStartResult> {
-  assertValidCharacterId(characterId, "启动生成创作建议任务");
-  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creation-advice/start`;
-  try {
-    const response = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-      timeout: 120000,
-    });
-    const data = await parseJson<CreationAdviceStartResult>(response);
-    throwIfError(response, data);
-    return data.data as CreationAdviceStartResult;
-  } catch (e) {
-    rethrow(e);
-  }
-}
-
-export async function getCreationAdviceStatus(
-  characterId: string
-): Promise<CreationAdviceStatusResult> {
-  assertValidCharacterId(characterId, "查询生成创作建议任务状态");
-  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creation-advice/status`;
-  try {
-    const response = await fetchWithTimeout(url, {
-      method: "GET",
-      timeout: 20000,
-    });
-    const data = await parseJson<CreationAdviceStatusResult>(response);
-    throwIfError(response, data);
-    return data.data as CreationAdviceStatusResult;
   } catch (e) {
     rethrow(e);
   }
@@ -527,11 +527,10 @@ export async function deleteOfficialPhotoSlot(
 
 export type PatchCharacterBioBody = {
   chara_profile?: string;
-  creative_advice?: string;
   official_seed_prompts?: OfficialSeedPromptsApiPatch;
 };
 
-/** 合并更新角色 bio（chara_profile / creative_advice / official_seed_prompts 至少一项） */
+/** 合并更新角色 bio（chara_profile / official_seed_prompts 至少一项） */
 export async function patchCharacterBio(
   characterId: string,
   body: PatchCharacterBioBody
@@ -539,7 +538,6 @@ export async function patchCharacterBio(
   assertValidCharacterId(characterId, "更新角色档案");
   const payload: Record<string, unknown> = {};
   if (body.chara_profile !== undefined) payload.chara_profile = body.chara_profile;
-  if (body.creative_advice !== undefined) payload.creative_advice = body.creative_advice;
   if (body.official_seed_prompts !== undefined) {
     payload.official_seed_prompts = body.official_seed_prompts;
   }
@@ -567,14 +565,6 @@ export async function saveCharaProfile(
   charaProfile: string
 ): Promise<ApiCharacterDetail> {
   return patchCharacterBio(characterId, { chara_profile: charaProfile });
-}
-
-/** 保存角色创作建议 */
-export async function saveCreativeAdvice(
-  characterId: string,
-  creativeAdvice: string
-): Promise<ApiCharacterDetail> {
-  return patchCharacterBio(characterId, { creative_advice: creativeAdvice });
 }
 
 /** GET /api/material/fixed-seed-templates — 全角色共享固定模板 */
@@ -658,4 +648,150 @@ export async function clearFixedSeedTemplatesApi(): Promise<number> {
   } catch (e) {
     rethrow(e);
   }
+}
+
+/**
+ * 批量获取角色详情（最多 20 个）。
+ * 用于首页一次性加载所有已完成角色的完整数据。
+ */
+export async function getCharactersBatch(ids: string[]): Promise<ApiCharacterDetail[]> {
+  if (ids.length === 0) return [];
+  const url = `${API_BASE}/characters/batch?ids=${ids.map(encodeURIComponent).join(",")}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<ApiCharacterDetail[]>(response);
+    throwIfError(response, data);
+    return (data.data ?? []) as ApiCharacterDetail[];
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export type DivergenceApi = "low" | "mid" | "high";
+
+export interface CreativeDirectionApi {
+  id: string;
+  character_id: string;
+  title: string;
+  description: string;
+  divergence: DivergenceApi;
+  initial_input: string | null;
+  source_task_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreativeDirectionTaskStartResult {
+  task_id: string;
+  status: string;
+}
+
+export interface CreativeDirectionTaskStatus {
+  task_id: string;
+  character_id: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  current_step: string | null;
+  divergence: DivergenceApi;
+  initial_input: string | null;
+  result_direction: CreativeDirectionApi | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function startCreativeDirectionTask(
+  characterId: string,
+  body: { divergence: DivergenceApi; initial_input?: string | null }
+): Promise<CreativeDirectionTaskStartResult> {
+  assertValidCharacterId(characterId, "启动创意方向任务");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creative-directions/start`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      timeout: 60000,
+    });
+    const data = await parseJson<CreativeDirectionTaskStartResult>(response);
+    throwIfError(response, data);
+    return data.data as CreativeDirectionTaskStartResult;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function getCreativeDirectionTaskStatus(
+  characterId: string,
+  taskId: string
+): Promise<CreativeDirectionTaskStatus> {
+  assertValidCharacterId(characterId, "查询创意方向任务状态");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creative-directions/tasks/${encodeURIComponent(taskId)}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET", timeout: 20000 });
+    const data = await parseJson<CreativeDirectionTaskStatus>(response);
+    throwIfError(response, data);
+    return data.data as CreativeDirectionTaskStatus;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function listCreativeDirections(
+  characterId: string
+): Promise<CreativeDirectionApi[]> {
+  assertValidCharacterId(characterId, "查询创意方向列表");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creative-directions`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<CreativeDirectionApi[]>(response);
+    throwIfError(response, data);
+    return (data.data ?? []) as CreativeDirectionApi[];
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function patchCreativeDirection(
+  characterId: string,
+  directionId: string,
+  body: { title?: string; description?: string }
+): Promise<CreativeDirectionApi> {
+  assertValidCharacterId(characterId, "更新创意方向");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creative-directions/${encodeURIComponent(directionId)}`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await parseJson<CreativeDirectionApi>(response);
+    throwIfError(response, data);
+    return data.data as CreativeDirectionApi;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export async function deleteCreativeDirection(
+  characterId: string,
+  directionId: string
+): Promise<void> {
+  assertValidCharacterId(characterId, "删除创意方向");
+  const url = `${API_BASE}/characters/${encodeURIComponent(characterId)}/creative-directions/${encodeURIComponent(directionId)}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "DELETE" });
+    const data = await parseJson(response);
+    throwIfError(response, data);
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+/** 从 ApiError 中安全提取后端 code 字段；非 ApiError 返回 null */
+export function readApiErrorCode(e: unknown): MaterialErrorCode | string | null {
+  if (e instanceof ApiError && e.details && typeof e.details === "object") {
+    const code = (e.details as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+  }
+  return null;
 }

@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { CharaBio, OfficialSeedPrompts, SeedPrompt } from "@/types/material";
 import { emptyOfficialSeedPrompts } from "@/types/material";
 import type { SeedPromptSection } from "@/mocks/materialChara";
-import SeedPromptSection from "./SeedPromptSection";
+import SeedPromptSectionPanel from "./SeedPromptSection";
 
 interface OfficialContentTabProps {
   officialPhotos: [string | null, string | null, string | null, string | null, string | null];
@@ -90,6 +90,7 @@ const OfficialContentTab = ({
   const charaProfileText = (bio.charaProfile ?? "").trim();
   const officialSeeds = bio.officialSeedPrompts ?? null;
   const effectiveSeeds = officialSeeds ?? emptyOfficialSeedPrompts();
+
   const bioSeedRowCount =
     (officialSeeds?.characterSpecific.length ?? 0) + (officialSeeds?.general.length ?? 0);
   const hasAnySeedContent = bioSeedRowCount > 0 || fixedTemplates.length > 0;
@@ -205,7 +206,7 @@ const OfficialContentTab = ({
                       className="absolute inset-0 z-0 cursor-zoom-in text-left"
                       aria-label={`${PHOTO_LABELS[i]}，点击预览`}
                     >
-                      <img src={url} alt="" className="w-full h-full object-cover pointer-events-none" draggable={false} />
+                      <img loading="lazy" src={url} alt="" className="w-full h-full object-cover pointer-events-none" draggable={false} />
                       <div className="absolute inset-x-0 bottom-0 py-1.5 px-2 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                         <span className="text-[10px] text-white/90">{PHOTO_LABELS[i]} · 点击预览</span>
                       </div>
@@ -397,7 +398,7 @@ const OfficialContentTab = ({
               boxShadow: seedSubTab === "general" ? "0 2px 8px rgba(244,114,182,0.3)" : "none",
             }}
           >
-            通用种子
+            通用种子（遗留）
             <span className="ml-1 opacity-80">({effectiveSeeds.general.length})</span>
           </button>
           <button
@@ -420,7 +421,7 @@ const OfficialContentTab = ({
         </div>
 
         {seedSubTab === "characterSpecific" && (
-          <SeedPromptSection
+          <SeedPromptSectionPanel
             title="角色专属"
             icon="ri-user-star-line"
             accentColor="#f472b6"
@@ -436,8 +437,12 @@ const OfficialContentTab = ({
           />
         )}
         {seedSubTab === "general" && (
-          <SeedPromptSection
-            title="通用种子"
+          <>
+            <p className="text-[11px] text-rose-400/60 leading-snug mb-3 px-0.5">
+              此区块为旧版生成的历史数据，新任务不再产出。可手工编辑/删除
+            </p>
+            <SeedPromptSectionPanel
+            title="通用种子（遗留）"
             icon="ri-global-line"
             accentColor="#fb923c"
             prompts={effectiveSeeds.general}
@@ -450,9 +455,10 @@ const OfficialContentTab = ({
             onAdd={(text) => void onAddSeed("general", text)}
             onEdit={(id, text) => void onEditSeed("general", id, text)}
           />
+          </>
         )}
         {seedSubTab === "fixed" && (
-          <SeedPromptSection
+          <SeedPromptSectionPanel
             title="固定模板"
             icon="ri-shield-star-line"
             accentColor="#e11d48"

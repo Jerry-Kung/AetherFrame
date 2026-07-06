@@ -1,4 +1,5 @@
 import type { PromptCard } from "@/types/creation";
+import type { Divergence } from "@/types/material";
 import type { QuickCreateGroup, QuickCreateImage } from "@/types/quickCreate";
 
 /** 任务配置弹窗与提交 API 共用 */
@@ -12,9 +13,9 @@ export interface BatchTaskConfig {
 
 export const DEFAULT_BATCH_CONFIG: BatchTaskConfig = {
   batchCount: 5,
-  promptCount: 2,
-  imagesPerPrompt: 2,
-  aspectRatio: "1:1",
+  promptCount: 3,
+  imagesPerPrompt: 3,
+  aspectRatio: "16:9",
 };
 
 /** 与素材模块 `SeedPromptSection` 一致，用于标记「已使用」 */
@@ -38,6 +39,8 @@ export interface BatchTask {
   seedPromptId: string;
   seedPromptSection: BatchSeedSection;
   seedPromptText: string;
+  creativeDirectionId: string | null;
+  creativeDirectionMeta: { title: string; divergence: Divergence } | null;
   promptRecordId: string;
   quickCreateRecordId: string;
   config: BatchTaskConfig;

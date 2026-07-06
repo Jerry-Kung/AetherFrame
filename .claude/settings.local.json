@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(python -c \"from app.main import app; print\\('OK'\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(python *)",
+      "Bash(git stash *)",
+      "Bash(git checkout *)",
+      "Bash(git check-ignore *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(bash D:/KLH/DevTools/ClaudeCode/ClaudeCodeData/plugins/cache/claude-plugins-official/superpowers/6.1.0/skills/subagent-driven-development/scripts/review-package 951f5df 143a0c9)",
+      "Bash(bash D:/KLH/DevTools/ClaudeCode/ClaudeCodeData/plugins/cache/claude-plugins-official/superpowers/6.1.0/skills/subagent-driven-development/scripts/review-package 143a0c9 598c721)",
+      "Bash(bash D:/KLH/DevTools/ClaudeCode/ClaudeCodeData/plugins/cache/claude-plugins-official/superpowers/6.1.0/skills/subagent-driven-development/scripts/review-package 598c721 a26c89e)",
+      "Bash(bash D:/KLH/DevTools/ClaudeCode/ClaudeCodeData/plugins/cache/claude-plugins-official/superpowers/6.1.0/skills/subagent-driven-development/scripts/review-package a26c89e 09d9322)",
+      "Bash(bash D:/KLH/DevTools/ClaudeCode/ClaudeCodeData/plugins/cache/claude-plugins-official/superpowers/6.1.0/skills/subagent-driven-development/scripts/review-package 7248298 a0e89d5)",
+      "Bash(bash D:/KLH/DevTools/ClaudeCode/ClaudeCodeData/plugins/cache/claude-plugins-official/superpowers/6.1.0/skills/subagent-driven-development/scripts/review-package a0e89d5 199ecda)",
+      "Bash(bash D:/KLH/DevTools/ClaudeCode/ClaudeCodeData/plugins/cache/claude-plugins-official/superpowers/6.1.0/skills/subagent-driven-development/scripts/review-package 7450124 HEAD)"
+    ]
+  }
+}

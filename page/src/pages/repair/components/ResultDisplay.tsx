@@ -1,14 +1,24 @@
 import { useState } from "react";
+import type { RepairResultImage } from "@/types/repair";
 import ImagePreviewModal from "./ImagePreviewModal";
 
 interface ResultDisplayProps {
-  results: string[];
+  results: RepairResultImage[];
+  taskId: string;
   outputCount: 1 | 2 | 4;
   isProcessing: boolean;
   onContinueRepair: (imageUrl: string) => void;
+  onBeautifyChanged?: (filename: string, patch: Partial<RepairResultImage>) => void;
 }
 
-const ResultDisplay = ({ results, outputCount, isProcessing, onContinueRepair }: ResultDisplayProps) => {
+const ResultDisplay = ({
+  results,
+  taskId,
+  outputCount,
+  isProcessing,
+  onContinueRepair,
+  onBeautifyChanged,
+}: ResultDisplayProps) => {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
   const gridClass = "grid-cols-1";
@@ -108,15 +118,15 @@ const ResultDisplay = ({ results, outputCount, isProcessing, onContinueRepair }:
 
         {/* Image grid */}
         <div className={`grid ${gridClass} gap-2.5 flex-1 min-h-0 overflow-y-auto`}>
-          {results.map((url, idx) => (
+          {results.map((img, idx) => (
             <div
-              key={idx}
+              key={img.filename || String(idx)}
               className="group relative rounded-2xl overflow-hidden border border-rose-100/60 cursor-pointer"
               style={{ aspectRatio: "1 / 1" }}
               onClick={() => setPreviewIndex(idx)}
             >
               <img
-                src={url}
+                src={img.url}
                 alt={`修补结果 ${idx + 1}`}
                 className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
               />
@@ -128,7 +138,7 @@ const ResultDisplay = ({ results, outputCount, isProcessing, onContinueRepair }:
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/90 text-rose-500 text-xs font-medium cursor-pointer hover:bg-white transition-all whitespace-nowrap"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleDownload(url, idx);
+                    handleDownload(img.url, idx);
                   }}
                 >
                   <i className="ri-download-2-line text-xs"></i>
@@ -140,7 +150,7 @@ const ResultDisplay = ({ results, outputCount, isProcessing, onContinueRepair }:
                   style={{ background: "linear-gradient(135deg, rgba(244,114,182,0.85), rgba(236,72,153,0.85))" }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onContinueRepair(url);
+                    onContinueRepair(img.url);
                   }}
                 >
                   <i className="ri-eraser-line text-xs"></i>
@@ -178,16 +188,18 @@ const ResultDisplay = ({ results, outputCount, isProcessing, onContinueRepair }:
       </div>
 
       {/* ── Preview modal ─── */}
-      {previewIndex !== null && (
+      {previewIndex !== null && taskId ? (
         <ImagePreviewModal
           images={results}
           currentIndex={previewIndex}
+          taskId={taskId}
           onClose={() => setPreviewIndex(null)}
           onIndexChange={setPreviewIndex}
           onDownload={handleDownload}
           onContinueRepair={onContinueRepair}
+          onBeautifyChanged={onBeautifyChanged}
         />
-      )}
+      ) : null}
     </>
   );
 };

@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from app.routes import pages, api, repair, material, creation
+from app.routes import pages, api, repair, material, creation, beautify
 
 # 配置日志
 logging.basicConfig(
@@ -38,6 +38,8 @@ class _SuppressPollAccessLog(logging.Filter):
             return False
         # 创作 · 首页批量自动化 run / 条目列表轮询
         if "/batch-automation/runs/" in msg or "/batch-automation/items" in msg:
+            return False
+        if "/api/beautify/tasks/" in msg and "/status HTTP" in msg:
             return False
         return True
 
@@ -86,6 +88,15 @@ async def lifespan(app: FastAPI):
         logger.info("开始初始化 Prompt 模板...")
         init_prompt_templates()
         logger.info("Prompt 模板初始化完成")
+
+        from app.models.database import SessionLocal
+        from app.services.material_service.cleanup import cleanup_old_material_tasks
+
+        try:
+            with SessionLocal() as db:
+                cleanup_old_material_tasks(db)
+        except Exception as e:
+            logger.warning(f"启动期清理素材任务失败（不阻塞启动）: {e}", exc_info=True)
 
     except Exception as e:
         logger.error(f"数据库初始化失败: {e}", exc_info=True)
@@ -140,4 +151,5 @@ app.include_router(api.router)
 app.include_router(repair.router)
 app.include_router(material.router)
 app.include_router(creation.router)
+app.include_router(beautify.router, prefix="/api/beautify")
 app.include_router(pages.router)

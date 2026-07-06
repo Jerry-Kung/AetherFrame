@@ -1,6 +1,7 @@
-import { useState, useCallback } from "react";
+import { memo, useState, useCallback } from "react";
 import CreationResultLightbox from "@/components/CreationResultLightbox";
 import AiCommentModal from "@/pages/creation/components/AiCommentModal";
+import DirectionChip from "@/pages/material/components/direction/DirectionChip";
 import type { BatchTask } from "@/types/batchAutomation";
 import type { AiComment, QuickCreateImage } from "@/types/quickCreate";
 
@@ -30,7 +31,7 @@ function promptTitleForBatchImage(task: BatchTask, img: QuickCreateImage): strin
   return "Prompt";
 }
 
-export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: BatchTaskCardProps) {
+export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed }: BatchTaskCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [lightbox, setLightbox] = useState<ImageLightboxState | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -78,6 +79,17 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
 
   const closeComment = useCallback(() => setViewingComment(null), []);
 
+  const patchImage = useCallback((imageId: string, patch: Partial<QuickCreateImage>) => {
+    setLightbox((prev) =>
+      prev
+        ? {
+            ...prev,
+            images: prev.images.map((im) => (im.id === imageId ? { ...im, ...patch } : im)),
+          }
+        : null
+    );
+  }, []);
+
   return (
     <div
       className="rounded-2xl overflow-hidden transition-all duration-300"
@@ -99,7 +111,7 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
             {index + 1}
           </div>
           <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-rose-100">
-            <img src={task.charaAvatar} alt="" className="w-full h-full object-cover object-top" />
+            <img loading="lazy" src={task.charaAvatar} alt="" className="w-full h-full object-cover object-top" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 min-w-0">
@@ -123,6 +135,11 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
                 </span>
               )}
             </div>
+            {task.creativeDirectionMeta && (
+              <div className="mb-1">
+                <DirectionChip meta={task.creativeDirectionMeta} compact />
+              </div>
+            )}
             <p className="text-xs text-rose-400/50 truncate">{seedPreview(task.seedPromptText)}</p>
           </div>
         </div>
@@ -173,7 +190,7 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
                 style={{ border: "1px solid rgba(253,164,175,0.2)" }}
                 aria-label="查看大图"
               >
-                <img src={img.url} alt="" className="w-full h-full object-cover object-top" draggable={false} />
+                <img loading="lazy" src={img.url} alt="" className="w-full h-full object-cover object-top" draggable={false} />
               </button>
             ))}
             {totalImages > 3 && (
@@ -281,6 +298,7 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
                   >
                     <div className="w-full aspect-square">
                       <img
+                        loading="lazy"
                         src={img.url}
                         alt=""
                         className="w-full h-full object-cover object-top"
@@ -356,15 +374,17 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
         </div>
       )}
 
-      {lightbox && (
+      {lightbox && task.quickCreateRecordId ? (
         <CreationResultLightbox
           images={lightbox.images}
           index={lightbox.index}
           onClose={closeLightbox}
           onPrev={prevImage}
           onNext={nextImage}
+          source={{ kind: "quick_create", taskId: task.quickCreateRecordId }}
+          onBeautifyChanged={patchImage}
         />
-      )}
+      ) : null}
 
       {viewingComment && (
         <AiCommentModal
@@ -503,4 +523,4 @@ export default function BatchTaskCard({ task, index, onDelete, onMarkUsed }: Bat
       )}
     </div>
   );
-}
+});

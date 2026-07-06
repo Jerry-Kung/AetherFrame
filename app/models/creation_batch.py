@@ -54,6 +54,7 @@ class CreationBatchRunItem(Base):
     seed_prompt_id = Column(String(128), nullable=False)
     seed_section = Column(String(32), nullable=False)
     seed_prompt_text = Column(Text, nullable=False)
+    seed_creative_direction_id = Column(String, nullable=True)
     prompt_precreation_task_id = Column(String(64), nullable=True, index=True)
     quick_create_task_id = Column(String(64), nullable=True, index=True)
     status = Column(String(20), nullable=False, index=True, default="pending")

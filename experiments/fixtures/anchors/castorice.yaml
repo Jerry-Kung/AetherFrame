@@ -1,0 +1,17 @@
+# 锚点=可判定视觉事实（spec §5.2）。用户审定后冻结；ref_slot 指向最能看清该锚点的参考图。
+anchors:
+  - anchor_id: thorn_crown
+    question: 对比两图：第一张图中人物是否佩戴与第二张图相同的、由黑色荆棘与粉白小花交织的花冠？
+    ref_slot: face_close
+  - anchor_id: forehead_gem
+    question: 对比两图：第一张图中人物额前是否垂有与第二张图相同的水滴形深紫色宝石？
+    ref_slot: face_close
+  - anchor_id: elf_ears
+    question: 对比两图：第一张图中人物是否具有与第二张图相同的尖长精灵耳？
+    ref_slot: face_close
+  - anchor_id: hair_color
+    question: 对比两图：第一张图中人物的发色是否与第二张图相同（银紫/丁香紫色长发）？
+    ref_slot: half_front
+  - anchor_id: left_glove
+    question: 对比两图：第一张图中人物的左臂是否与第二张图一样戴着深黑色织物长手套？
+    ref_slot: full_front

@@ -30,6 +30,7 @@ interface ImageLightbox {
 
 const IMAGES_PER_PROMPT_OPTIONS = [1, 2, 3, 4] as const;
 const ASPECT_RATIO_OPTIONS = [
+  { label: "Auto", value: "auto" },
   { label: "16:9", value: "16:9" },
   { label: "4:3", value: "4:3" },
   { label: "1:1", value: "1:1" },
@@ -167,6 +168,7 @@ function LinkedTaskSelector({
               style={{ border: "1.5px solid rgba(244,114,182,0.3)" }}
             >
               <img
+                loading="lazy"
                 src={value.charaAvatar}
                 alt=""
                 className="w-full h-full object-cover object-top"
@@ -311,6 +313,7 @@ function LinkedTaskSelector({
                       style={{ border: "1.5px solid rgba(244,114,182,0.25)" }}
                     >
                       <img
+                        loading="lazy"
                         src={avatar}
                         alt=""
                         className="w-full h-full object-cover object-top"
@@ -461,6 +464,7 @@ function ResultImage({
       >
         <div className="w-full aspect-square">
           <img
+            loading="lazy"
             src={img.url}
             alt=""
             className="w-full h-full object-cover object-top"
@@ -583,6 +587,7 @@ function HistoryItem({
       <div className="flex items-start gap-2">
         <div className="w-8 h-8 rounded-xl overflow-hidden shrink-0 border border-rose-100/50">
           <img
+            loading="lazy"
             src={record.charaAvatar}
             alt=""
             className="w-full h-full object-cover object-top"
@@ -1315,6 +1320,26 @@ export default function QuickCreatePage({
     );
   }, []);
 
+  const patchQuickCreateImage = useCallback((imageId: string, patch: Partial<QuickCreateImage>) => {
+    const applyGroups = (groups: QuickCreateGroup[]) =>
+      groups.map((g) => ({
+        ...g,
+        images: g.images.map((im) => (im.id === imageId ? { ...im, ...patch } : im)),
+      }));
+    setResultGroups((prev) => applyGroups(prev));
+    setViewingRecord((prev) => (prev ? { ...prev, groups: applyGroups(prev.groups) } : prev));
+    setLightbox((prev) =>
+      prev
+        ? {
+            ...prev,
+            images: prev.images.map((im) => (im.id === imageId ? { ...im, ...patch } : im)),
+          }
+        : null
+    );
+  }, []);
+
+  const lightboxTaskId = viewingRecord?.taskId ?? "";
+
   const displayGroups = viewingRecord ? viewingRecord.groups : resultGroups;
   const gridColsForGroup = (n: number) => Math.min(Math.max(n, 1), 4);
 
@@ -1385,6 +1410,7 @@ export default function QuickCreatePage({
               style={{ border: "2px solid rgba(244,114,182,0.3)" }}
             >
               <img
+                loading="lazy"
                 src={displayAvatar}
                 alt=""
                 className="w-full h-full object-cover object-top"
@@ -1807,15 +1833,17 @@ export default function QuickCreatePage({
         </div>
       </div>
 
-      {lightbox && (
+      {lightbox && lightboxTaskId ? (
         <CreationResultLightbox
           images={lightbox.images}
           index={lightbox.index}
           onClose={closeLightbox}
           onPrev={prevImage}
           onNext={nextImage}
+          source={{ kind: "quick_create", taskId: lightboxTaskId }}
+          onBeautifyChanged={patchQuickCreateImage}
         />
-      )}
+      ) : null}
 
       {viewingComment && (
         <AiCommentModal

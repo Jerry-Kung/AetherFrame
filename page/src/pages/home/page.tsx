@@ -26,8 +26,6 @@ const sparkles = [
   { top: "80%", right: "12%", size: 12, delay: "2.1s" },
 ];
 
-const DETAIL_CHUNK = 4;
-
 function profilesFromSummaries(characters: ApiCharacterSummary[]): CharaProfile[] {
   return characters.map((s) => {
     const base = summaryToListProfile(s);
@@ -52,22 +50,15 @@ export default function Home() {
     try {
       const { characters } = await materialApi.listCharacters(0, 100);
       const list = profilesFromSummaries(characters);
-      const byId = new Map(list.map((c) => [c.id, c] as const));
       const doneIds = list.filter((c) => c.status === "done").map((c) => c.id);
 
-      for (let i = 0; i < doneIds.length; i += DETAIL_CHUNK) {
-        const chunk = doneIds.slice(i, i + DETAIL_CHUNK);
-        const results = await Promise.allSettled(chunk.map((id) => materialApi.getCharacter(id)));
-        results.forEach((res, j) => {
-          const id = chunk[j];
-          if (!id) return;
-          if (res.status === "fulfilled") {
-            byId.set(id, toCharaProfile(res.value));
-          }
-        });
+      if (doneIds.length > 0) {
+        const details = await materialApi.getCharactersBatch(doneIds);
+        const byId = new Map(details.map((d) => [d.id, toCharaProfile(d)] as const));
+        setCharas(list.map((c) => byId.get(c.id) ?? c));
+      } else {
+        setCharas(list);
       }
-
-      setCharas(list.map((c) => byId.get(c.id)!));
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : "加载角色列表失败";
       setListError(msg);
@@ -130,10 +121,8 @@ export default function Home() {
       <div
         className="absolute inset-0 z-0 pointer-events-none"
         style={{
-          backgroundImage: `url("https://readdy.ai/api/search-image?query=soft%20dreamy%20anime%20aesthetic%20background%20art%20with%20delicate%20cherry%20blossom%20sakura%20petals%20floating%20in%20gentle%20breeze%2C%20warm%20pastel%20pink%20and%20creamy%20white%20watercolor%20illustration%20style%2C%20kawaii%20japanese%20aesthetic%2C%20soft%20bokeh%20circular%20lights%2C%20no%20people%20no%20characters%2C%20light%20and%20airy%20misty%20atmosphere%2C%20subtle%20floral%20pattern%20elements%2C%20beautiful%20pastel%20digital%20painting%20art%20with%20pink%20rose%20tones&width=1920&height=1080&seq=2001&orientation=landscape")`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          opacity: 0.13,
+          background:
+            "radial-gradient(ellipse at 30% 20%, rgba(253,164,175,0.08) 0%, transparent 50%), radial-gradient(ellipse at 70% 80%, rgba(251,207,232,0.06) 0%, transparent 50%)",
         }}
       />
 
@@ -203,17 +192,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-
-      <style>{`
-        @keyframes floatUp {
-          0%, 100% { transform: translateY(0px) scale(1); }
-          50% { transform: translateY(-18px) scale(1.04); }
-        }
-        @keyframes twinkle {
-          0%, 100% { opacity: 0.3; transform: scale(1) rotate(0deg); }
-          50% { opacity: 0.7; transform: scale(1.3) rotate(20deg); }
-        }
-      `}</style>
     </div>
   );
 }

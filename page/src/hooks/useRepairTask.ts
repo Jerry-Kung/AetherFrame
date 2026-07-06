@@ -4,7 +4,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import repairApi from "@/services/repairApi";
-import type { AspectRatio, RepairTask, TaskStatus } from "@/types/repair";
+import type { AspectRatio, RepairResultImage, RepairTask, TaskStatus } from "@/types/repair";
 import { backendToFrontendTask, frontendToBackendUpdate } from "@/types/repair";
 import {
   IMAGE_GEN_TIMEOUT_USER_MESSAGE,
@@ -271,6 +271,18 @@ export function useRepairTask(taskId: string | null) {
     };
   }, [taskId, fetchTask, clearPolling]);
 
+  const patchResultImage = useCallback((filename: string, patch: Partial<RepairResultImage>) => {
+    setTask((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        results: prev.results.map((img) =>
+          img.filename === filename ? { ...img, ...patch } : img
+        ),
+      };
+    });
+  }, []);
+
   return {
     task,
     loading,
@@ -279,6 +291,7 @@ export function useRepairTask(taskId: string | null) {
     uploadProgress,
     fetchTask,
     updateTask,
+    patchResultImage,
     uploadMainImage,
     uploadReferenceImages,
     deleteMainImage,

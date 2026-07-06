@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, memo, type RefObject } from "react";
 import type { CharaRawImage, RawImageType } from "@/types/material";
 
 interface RawMaterialTabProps {
@@ -54,7 +54,7 @@ const RAW_TYPE_CONFIG: Record<
   },
 };
 
-const RawMaterialTab = ({
+const RawMaterialTab = memo(function RawMaterialTab({
   characterId,
   settingText,
   settingFileName,
@@ -65,7 +65,7 @@ const RawMaterialTab = ({
   onRemoveRawImage,
   onUpdateRawImageTags: _onUpdateRawImageTags,
   onRawImageClick,
-}: RawMaterialTabProps) => {
+}: RawMaterialTabProps) {
   const txtInputRef = useRef<HTMLInputElement>(null);
   const officialInputRef = useRef<HTMLInputElement>(null);
   const fanartInputRef = useRef<HTMLInputElement>(null);
@@ -239,7 +239,7 @@ const RawMaterialTab = ({
                   onMouseLeave={() => setHoverPreview(null)}
                   onClick={() => onRawImageClick(im.id)}
                 >
-                  <img src={im.url} alt="" className="w-full h-full object-cover" draggable={false} />
+                  <img loading="lazy" src={im.url} alt="" className="w-full h-full object-cover" draggable={false} />
                 </button>
                 <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none ${cfg.hoverOverlay}`} />
                 <button
@@ -378,11 +378,11 @@ const RawMaterialTab = ({
             height: 240,
           }}
         >
-          <img src={hoverPreview.url} alt="" className="w-full h-full object-cover" draggable={false} />
+          <img loading="lazy" src={hoverPreview.url} alt="" className="w-full h-full object-cover" draggable={false} />
         </div>
       )}
     </div>
   );
-};
+});
 
 export default RawMaterialTab;

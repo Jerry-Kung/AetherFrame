@@ -26,7 +26,7 @@ const COUNT_OPTIONS = [2, 3, 4] as const;
 
 const POLL_INTERVAL_MS = 10000;
 
-const CHAIN_ASPECT_OPTIONS = ["16:9", "4:3", "1:1", "3:4", "9:16"] as const;
+const CHAIN_ASPECT_OPTIONS = ["auto", "16:9", "4:3", "1:1", "3:4", "9:16"] as const;
 
 function clampPromptCountFromConfig(n: number): 1 | 2 | 3 | 4 {
   const v = Math.round(Number(n));
@@ -271,6 +271,7 @@ const HistorySidebar = ({ records, activeId, onSelect, onDelete }: HistorySideba
                   <div className="w-7 h-7 rounded-xl overflow-hidden shrink-0 border border-rose-100">
                     {record.charaAvatar ? (
                       <img
+                        loading="lazy"
                         src={record.charaAvatar}
                         alt={record.charaName}
                         className="w-full h-full object-cover object-top"
@@ -1150,6 +1151,7 @@ const PromptGenPage = ({
                   <div className="w-7 h-7 rounded-lg overflow-hidden shrink-0 border border-rose-100">
                     {selectedChara.avatarUrl ? (
                       <img
+                        loading="lazy"
                         src={selectedChara.avatarUrl}
                         alt={selectedChara.name}
                         className="w-full h-full object-cover object-top"

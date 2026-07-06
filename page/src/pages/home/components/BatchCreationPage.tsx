@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef, memo } from "react";
 import type { CharaProfile } from "@/types/material";
 import * as creationApi from "@/services/creationApi";
 import { listFixedSeedTemplates } from "@/services/materialApi";
@@ -6,13 +6,10 @@ import { ApiError } from "@/services/api";
 import type { BatchTask, BatchTaskConfig } from "@/types/batchAutomation";
 import { DEFAULT_BATCH_CONFIG } from "@/types/batchAutomation";
 import type { SeedPromptSection } from "@/mocks/materialChara";
-import {
-  buildSkeletonBatchTask,
-  hydrateBatchTask,
-  type BatchAutomationListItemApi,
-} from "@/utils/batchAutomationDisplay";
+import { buildBatchTaskFromHydrated } from "@/utils/batchAutomationDisplay";
 import BatchConfigModal from "./BatchConfigModal";
 import BatchTaskCard from "./BatchTaskCard";
+import CuteConfirmModal from "@/pages/repair/components/CuteConfirmModal";
 
 interface BatchCreationPageProps {
   charas: CharaProfile[];
@@ -46,40 +43,20 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function listRowToApiRow(row: creationApi.BatchAutomationListItemRow): BatchAutomationListItemApi {
-  return {
-    id: row.id,
-    run_id: row.run_id,
-    run_status: row.run_status,
-    step_index: row.step_index,
-    character_id: row.character_id,
-    chara_name: row.chara_name,
-    chara_avatar: row.chara_avatar,
-    seed_prompt_id: row.seed_prompt_id,
-    seed_section: row.seed_section,
-    seed_prompt_text: row.seed_prompt_text,
-    prompt_precreation_task_id: row.prompt_precreation_task_id,
-    quick_create_task_id: row.quick_create_task_id,
-    status: row.status,
-    error_message: row.error_message,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  };
-}
-
-function CharaSelectChip({
+const CharaSelectChip = memo(function CharaSelectChip({
   chara,
   selected,
   onToggle,
 }: {
   chara: CharaProfile;
   selected: boolean;
-  onToggle: () => void;
+  onToggle: (id: string) => void;
 }) {
+  const handleClick = useCallback(() => onToggle(chara.id), [onToggle, chara.id]);
   return (
     <button
       type="button"
-      onClick={onToggle}
+      onClick={handleClick}
       className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all duration-200 whitespace-nowrap"
       style={{
         background: selected
@@ -105,7 +82,7 @@ function CharaSelectChip({
       )}
     </button>
   );
-}
+});
 
 const GEN_HINTS = [
   "正在清点角色与种子提示词，为产线备料…",
@@ -125,6 +102,7 @@ export default function BatchCreationPage({
   const [genState, setGenState] = useState<GenState>("idle");
   const [config, setConfig] = useState<BatchTaskConfig>(DEFAULT_BATCH_CONFIG);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [showStartConfirm, setShowStartConfirm] = useState(false);
   const [tasks, setTasks] = useState<BatchTask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState<string | null>(null);
@@ -155,16 +133,9 @@ export default function BatchCreationPage({
     setTasksLoading(true);
     setTasksError(null);
     try {
-      const { items } = await creationApi.listBatchAutomationItems({ limit: 80, offset: 0 });
-      const skeletons = items.map((row) =>
-        buildSkeletonBatchTask(listRowToApiRow(row), charas, config)
-      );
-      const hydrated = await Promise.all(
-        skeletons.map(async (t) =>
-          t.itemStatus === "completed" && t.promptRecordId && t.quickCreateRecordId ? hydrateBatchTask(t) : t
-        )
-      );
-      setTasks(hydrated);
+      const { items } = await creationApi.listBatchAutomationItemsHydrated({ limit: 80, offset: 0 });
+      const tasks = items.map((row) => buildBatchTaskFromHydrated(row, charas, config));
+      setTasks(tasks);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : "加载产线记录失败";
       setTasksError(msg);
@@ -233,14 +204,15 @@ export default function BatchCreationPage({
     const pc = Math.min(4, Math.max(1, Math.round(config.promptCount))) as 1 | 2 | 3 | 4;
     const ip = Math.min(4, Math.max(1, Math.round(config.imagesPerPrompt))) as 1 | 2 | 3 | 4;
     const araw = (config.aspectRatio || "1:1").trim();
-    const ar = (["16:9", "4:3", "1:1", "3:4", "9:16"].includes(araw) ? araw : "1:1") as
+    const ar = (["auto", "16:9", "4:3", "1:1", "3:4", "9:16"].includes(araw) ? araw : "1:1") as
+      | "auto"
       | "16:9"
       | "4:3"
       | "1:1"
       | "3:4"
       | "9:16";
     const maxPrompts = pc;
-    const iterations = Math.min(10, Math.max(2, Math.round(config.batchCount)));
+    const iterations = Math.min(20, Math.max(2, Math.round(config.batchCount)));
 
     pollCancelRef.current = false;
     setGenState("generating");
@@ -285,7 +257,7 @@ export default function BatchCreationPage({
             );
             break;
           }
-          await sleep(2500);
+          await sleep(10000);
         }
       } finally {
         if (hintTimer !== null) window.clearInterval(hintTimer);
@@ -308,8 +280,19 @@ export default function BatchCreationPage({
 
   const canStart = eligibleCharas.length > 0;
   const allSelected = selectedCharaIds.size === eligibleCharas.length && eligibleCharas.length > 0;
-  const bc = Math.min(10, Math.max(2, Math.round(config.batchCount)));
+  const bc = Math.min(20, Math.max(2, Math.round(config.batchCount)));
   const expectedImages = bc * config.promptCount * config.imagesPerPrompt;
+
+  const requestStartBatch = useCallback(() => {
+    const pickCharas =
+      selectedCharaIds.size === 0 ? eligibleCharas : eligibleCharas.filter((c) => selectedCharaIds.has(c.id));
+    if (pickCharas.length === 0) return;
+    if (!hasAnyAvailableSeed(pickCharas, fixedUnusedCount)) {
+      setGenHint("没有可用的未使用种子提示词，请先在素材加工里备好正式种子，产线才能开工～");
+      return;
+    }
+    setShowStartConfirm(true);
+  }, [eligibleCharas, fixedUnusedCount, selectedCharaIds]);
 
   if (listLoading) {
     return (
@@ -415,7 +398,7 @@ export default function BatchCreationPage({
                   key={chara.id}
                   chara={chara}
                   selected={selectedCharaIds.size === 0 ? true : selectedCharaIds.has(chara.id)}
-                  onToggle={() => toggleChara(chara.id)}
+                  onToggle={toggleChara}
                 />
               ))}
               {selectedCharaIds.size === 0 && eligibleCharas.length > 0 && (
@@ -434,7 +417,7 @@ export default function BatchCreationPage({
 
         <button
           type="button"
-          onClick={() => void startBatch()}
+          onClick={requestStartBatch}
           disabled={!canStart || genState === "generating"}
           className="flex items-center gap-2 px-6 py-2.5 rounded-2xl text-sm font-semibold text-white transition-all duration-200 whitespace-nowrap"
           style={{
@@ -553,11 +536,20 @@ export default function BatchCreationPage({
         onCancel={() => setShowConfigModal(false)}
       />
 
-      <style>{`
-        @keyframes batchSpin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
+      <CuteConfirmModal
+        isOpen={showStartConfirm}
+        icon="warning"
+        title="启动灵感产线？"
+        message={`即将启动 ${bc} 批次，预计共 ${expectedImages} 张图，启动后将顺序调用云端 Prompt 预生成与美图创作。是否继续？`}
+        confirmText="启动"
+        cancelText="再想想"
+        titleId="batch-start-confirm-title"
+        onConfirm={() => {
+          setShowStartConfirm(false);
+          void startBatch();
+        }}
+        onCancel={() => setShowStartConfirm(false)}
+      />
     </div>
   );
 }

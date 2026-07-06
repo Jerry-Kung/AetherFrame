@@ -1,0 +1,7 @@
+exp_id: exp001b
+benchmark: experiments/fixtures/benchmark_v1.yaml
+# regression 变体 = 改造后生产链路自动生成；slim 变体 = 复用 exp001 人工改写冻结件（对照）
+variants: [slim, regression]
+images_per_cell: 3
+concurrency: 10
+review_shuffle_seed: 20260706

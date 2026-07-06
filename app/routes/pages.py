@@ -33,7 +33,7 @@ index_path = os.path.join(static_dir, "index.html")
 
 
 @router.get("/")
-async def index():
+def index():
     # 如果构建后的 index.html 存在，返回它；否则返回简单页面
     if os.path.exists(index_path):
         return FileResponse(index_path)
@@ -42,7 +42,7 @@ async def index():
 
 # 为 React 路由提供 fallback - 确保所有路由都返回 index.html
 @router.get("/{path:path}")
-async def catch_all(path: str):
+def catch_all(path: str):
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"message": "React app not built yet. Please run 'npm run build' first."}

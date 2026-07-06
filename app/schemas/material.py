@@ -3,9 +3,12 @@
 """
 from __future__ import annotations
 
+import json
+
+from enum import Enum
 from typing import Any, Dict, List, Optional, Literal
 
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.serialization import ApiDateTime
 
@@ -212,6 +215,7 @@ class OfficialSeedPromptRowIn(BaseModel):
     id: str = Field(..., min_length=1, max_length=256)
     text: str = Field(default="", max_length=100_000)
     used: bool = False
+    creative_direction_id: Optional[str] = None
 
 
 class OfficialSeedPromptsPatch(BaseModel):
@@ -232,7 +236,6 @@ class OfficialSeedPromptsPatch(BaseModel):
 
 class BioPatchRequest(BaseModel):
     chara_profile: Optional[str] = Field(None, description="角色小档案全文（Markdown）")
-    creative_advice: Optional[str] = Field(None, description="创作建议全文")
     official_seed_prompts: Optional[OfficialSeedPromptsPatch] = Field(
         None,
         description="正式种子提示词；character_specific 与 general 均为空时服务端从 bio 中移除该字段",
@@ -240,12 +243,8 @@ class BioPatchRequest(BaseModel):
 
     @model_validator(mode="after")
     def at_least_one_field(self):
-        if (
-            self.chara_profile is None
-            and self.creative_advice is None
-            and self.official_seed_prompts is None
-        ):
-            raise ValueError("至少提供 chara_profile、creative_advice、official_seed_prompts 之一")
+        if self.chara_profile is None and self.official_seed_prompts is None:
+            raise ValueError("至少提供 chara_profile、official_seed_prompts 之一")
         return self
 
 
@@ -274,3 +273,92 @@ class FixedSeedTemplatePatch(BaseModel):
         if self.text is None and self.used is None:
             raise ValueError("至少提供 text 或 used 之一")
         return self
+
+
+class Divergence(str, Enum):
+    low = "low"
+    mid = "mid"
+    high = "high"
+
+
+class MaterialErrorCode(str, Enum):
+    TASK_CONCURRENCY_EXCEEDED = "MATERIAL_TASK_CONCURRENCY_EXCEEDED"
+    DIRECTION_LIMIT_EXCEEDED = "CREATIVE_DIRECTION_LIMIT_EXCEEDED"
+    SEED_PER_DIRECTION_EXCEEDED = "SEED_PROMPT_PER_DIRECTION_LIMIT_EXCEEDED"
+    SEED_TOTAL_EXCEEDED = "SEED_PROMPT_TOTAL_LIMIT_EXCEEDED"
+
+
+class SeedPromptStartRequest(BaseModel):
+    creative_direction_id: Optional[str] = None
+
+
+class SeedPromptDraft(BaseModel):
+    """LLM 输出落盘形态——只有 character_specific，无 general。"""
+
+    character_specific: List[str]
+
+
+class SeedPromptTaskStatusResponse(BaseModel):
+    task_id: str
+    character_id: str
+    creative_direction_id: Optional[str]
+    status: str
+    current_step: Optional[str]
+    seed_draft: Optional[SeedPromptDraft]
+    error_message: Optional[str]
+    created_at: ApiDateTime
+    updated_at: ApiDateTime
+
+
+class CreativeDirectionStartRequest(BaseModel):
+    divergence: Divergence
+    initial_input: Optional[str] = Field(None, max_length=500)
+
+
+class CreativeDirectionResponse(BaseModel):
+    id: str
+    character_id: str
+    title: str
+    description: str
+    home_settings: Optional[List[str]] = None
+    divergence: Divergence
+    initial_input: Optional[str]
+    source_task_id: Optional[str]
+    created_at: ApiDateTime
+    updated_at: ApiDateTime
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("home_settings", mode="before")
+    @classmethod
+    def _coerce_home_settings(cls, v):
+        if v is None or isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return None
+            try:
+                parsed = json.loads(s)
+                return parsed if isinstance(parsed, list) else None
+            except json.JSONDecodeError:
+                return None
+        return None
+
+
+class CreativeDirectionTaskStatusResponse(BaseModel):
+    task_id: str
+    character_id: str
+    status: str
+    current_step: Optional[str]
+    divergence: Divergence
+    initial_input: Optional[str]
+    result_direction: Optional[CreativeDirectionResponse] = None
+    error_message: Optional[str]
+    created_at: ApiDateTime
+    updated_at: ApiDateTime
+
+
+class CreativeDirectionPatchRequest(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    description: Optional[str] = Field(None, min_length=1)

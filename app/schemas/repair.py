@@ -99,6 +99,9 @@ class ImageInfo(BaseModel):
 
     filename: str
     url: str
+    beautified_filename: Optional[str] = None
+    beautify_task_id: Optional[str] = None
+    beautify_status: Optional[str] = None
 
 
 class TaskSimple(BaseModel):

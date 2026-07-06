@@ -21,27 +21,76 @@ def _extract_texts_from_seed_rows(rows: Any) -> List[str]:
     return out
 
 
+def _extract_text_one(entry) -> str:
+    if isinstance(entry, str):
+        return entry.strip()
+    if isinstance(entry, dict):
+        raw = entry.get("text")
+        return raw.strip() if isinstance(raw, str) else ""
+    return ""
+
+
 def build_history_seed_prompts(
-    bio: Dict[str, Any], fixed_unused_texts: Optional[List[str]] = None
+    bio: Dict[str, Any],
+    creative_direction_id: Optional[str] = None,
+    fixed_unused_texts: Optional[List[str]] = None,
 ) -> str:
     """
-    合并角色专属、通用正式种子及（可选）未使用的全局固定模板 text，每行一条；
-    若皆无则返回固定占位。
+    构建喂给 LLM 的「历史种子提示词黑名单」文本。
+
+    作用域规则（design.md §4.4）：
+    - creative_direction_id is None（默认世界观）:
+        包含 character_specific 中 creative_direction_id ∈ {None, 缺失字段} 的条目
+        + 全部 general[] 条目（遗留兼容）
+    - creative_direction_id == "<id>":
+        仅包含 character_specific 中 creative_direction_id == <id> 的条目
+        （不含 general[]、不含其他方向）
+
+    fixed_unused_texts 参数保留用于向后兼容（旧 creation_advice service）；
+    新 seed_prompt_generation_service **不传**该参数。
+
+    空集时返回字面文案「（暂无历史种子提示词）」。
     """
-    lines: List[str] = []
+    # 向后兼容：旧调用方把 fixed_unused_texts 作为第 2 个位置参数传入
+    if isinstance(creative_direction_id, list):
+        fixed_unused_texts = creative_direction_id
+        creative_direction_id = None
     raw = bio.get("official_seed_prompts") if isinstance(bio, dict) else None
-    if isinstance(raw, dict):
-        spec = raw.get("character_specific")
-        if spec is None:
-            spec = raw.get("characterSpecific")
-        general = raw.get("general")
-        for t in _extract_texts_from_seed_rows(spec) + _extract_texts_from_seed_rows(general):
-            lines.append(f"- {t}")
+    if not isinstance(raw, dict):
+        char_spec_rows = []
+        general_rows = []
+    else:
+        cs_raw = raw.get("character_specific") or raw.get("characterSpecific") or []
+        char_spec_rows = cs_raw if isinstance(cs_raw, list) else []
+        general_raw = raw.get("general") or []
+        general_rows = general_raw if isinstance(general_raw, list) else []
+
+    lines: list[str] = []
+
+    if creative_direction_id is None:
+        for entry in char_spec_rows:
+            if isinstance(entry, dict):
+                dir_id = entry.get("creative_direction_id")
+                if dir_id is None:
+                    t = (entry.get("text") or "").strip()
+                    if t:
+                        lines.append(f"- {t}")
+        for entry in general_rows:
+            t = _extract_text_one(entry)
+            if t:
+                lines.append(f"- {t}")
+    else:
+        for entry in char_spec_rows:
+            if isinstance(entry, dict) and entry.get("creative_direction_id") == creative_direction_id:
+                t = (entry.get("text") or "").strip()
+                if t:
+                    lines.append(f"- {t}")
+
     if fixed_unused_texts:
         for t in fixed_unused_texts:
-            st = (t or "").strip()
-            if st:
-                lines.append(f"- [固定模板] {st}")
+            if isinstance(t, str) and t.strip():
+                lines.append(f"- [固定模板] {t.strip()}")
+
     if not lines:
-        return "（暂无历史正式种子提示词）"
+        return "（暂无历史种子提示词）"
     return "\n".join(lines)

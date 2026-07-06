@@ -7,24 +7,32 @@ from __future__ import annotations
 import json
 import logging
 import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from app.config import CREATION_BATCH_PARALLEL_WORKERS
 from app.models.material import MaterialCharacter
+from app.repositories.beautify_repository import BeautifyRepository
 from app.repositories.creation_batch_repository import CreationBatchRepository
-from app.repositories.creation_repository import CreationQuickCreateRepository
+from app.repositories.creation_repository import (
+    CreationPromptPrecreationRepository,
+    CreationQuickCreateRepository,
+)
 from app.repositories.fixed_seed_template_repository import FixedSeedTemplateRepository
 from app.repositories.material_repository import MaterialCharacterRepository
+from app.schemas.creation import SeedPayload
 from app.services.creation_service.prompt_precreation_service import (
     PromptPrecreationService,
+    compose_seed_prompt_with_direction,
     resolve_chara_profile_text,
 )
 from app.services.creation_service.quick_create_service import QuickCreateService
 
 logger = logging.getLogger(__name__)
 
-_VALID_ASPECT = frozenset({"16:9", "4:3", "1:1", "3:4", "9:16"})
+_VALID_ASPECT = frozenset({"auto", "16:9", "4:3", "1:1", "3:4", "9:16"})
 
 
 def _parse_bio_dict(bio_json: Optional[str]) -> Dict[str, Any]:
@@ -53,12 +61,18 @@ def _collect_unused_seed_pairs(character_id: str, bio_json: Optional[str]) -> Li
             text = str(row.get("text") or "").strip()
             if not text or row.get("used") is True:
                 continue
+            dir_id = row.get("creative_direction_id")
+            if dir_id is not None and not isinstance(dir_id, str):
+                dir_id = str(dir_id) if dir_id else None
+            elif isinstance(dir_id, str) and not dir_id.strip():
+                dir_id = None
             out.append(
                 {
                     "character_id": character_id,
                     "seed_prompt_id": sid,
                     "seed_section": section_api,
                     "seed_prompt_text": text,
+                    "seed_creative_direction_id": dir_id,
                 }
             )
 
@@ -122,6 +136,7 @@ class BatchAutomationService:
                         "seed_prompt_id": tmpl.id,
                         "seed_section": "fixed",
                         "seed_prompt_text": txt,
+                        "seed_creative_direction_id": None,
                     }
                 )
         return pool
@@ -136,8 +151,8 @@ class BatchAutomationService:
         iterations: int,
         character_ids: Optional[List[str]],
     ) -> Tuple[List[MaterialCharacter], List[Dict[str, Any]]]:
-        if iterations < 2 or iterations > 10:
-            raise ValueError("创作内容条数必须在 2 到 10 之间")
+        if iterations < 2 or iterations > 20:
+            raise ValueError("创作内容条数必须在 2 到 20 之间")
         requested = (
             [str(x).strip() for x in character_ids if str(x).strip()] if character_ids else None
         )
@@ -215,12 +230,17 @@ class BatchAutomationService:
                 seed_prompt_id=pair["seed_prompt_id"],
                 seed_section=_normalize_section(pair["seed_section"]),
                 seed_prompt_text=pair["seed_prompt_text"],
+                seed_creative_direction_id=pair.get("seed_creative_direction_id"),
                 status="pending",
             )
         return {"run_id": run.id, "status": run.status}
 
     def execute_run(self, run_id: str) -> None:
-        """后台任务入口：顺序执行每一轮（同步链式预生成 + 美图）。"""
+        """后台任务入口：并行执行所有 item（每个 item 链式预生成 + 美图）。
+
+        worker 池容量由 CREATION_BATCH_PARALLEL_WORKERS 控制（默认 4）。
+        item 之间相互独立，整批 run 终态在所有 item 完成后写入 completed。
+        """
         run = self.batch_repo.get_run(run_id)
         if not run:
             logger.warning("批量创作 run 不存在: %s", run_id)
@@ -240,77 +260,37 @@ class BatchAutomationService:
             return
 
         items = self.batch_repo.list_items_for_run(run_id)
-        ppc = PromptPrecreationService(self.db)
-        qc_repo = CreationQuickCreateRepository(self.db)
+        item_ids = [it.id for it in items]
+        chain_payload = {
+            "n": images_per_prompt,
+            "aspect_ratio": aspect_ratio,
+            "max_prompts": max_prompts,
+        }
+
+        max_workers = max(1, int(CREATION_BATCH_PARALLEL_WORKERS))
+        logger.info(
+            "批量创作 run=%s 启动并行执行: items=%d workers=%d",
+            run_id,
+            len(item_ids),
+            max_workers,
+        )
         done = 0
         try:
-            for item in items:
-                self.batch_repo.update_item(
-                    item.id,
-                    {"status": "running", "error_message": None},
-                )
-                chain_payload = {
-                    "n": images_per_prompt,
-                    "aspect_ratio": aspect_ratio,
-                    "max_prompts": max_prompts,
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        _execute_single_item, item_id, prompt_count, chain_payload
+                    ): item_id
+                    for item_id in item_ids
                 }
-                err: Optional[str] = None
-                ppc_tid: Optional[str] = None
-                qc_tid: Optional[str] = None
-                item_status = "failed"
-                try:
-                    out = ppc.start_prompt_precreation(
-                        character_id=item.character_id,
-                        seed_prompt=item.seed_prompt_text,
-                        count=prompt_count,
-                        background_tasks=None,
-                        chain_quick_create=chain_payload,
-                    )
-                    ppc_tid = str((out or {}).get("task_id") or "")
-                    if not ppc_tid:
-                        err = "未返回预生成任务 ID"
-                    else:
-                        self.db.expire_all()
-                        task_row = ppc.repo.get_by_id(ppc_tid)
-                        if not task_row:
-                            err = "预生成任务记录丢失"
-                        elif task_row.status != "completed":
-                            err = (task_row.error_message or "").strip() or "Prompt 预生成未成功完成"
-                        else:
-                            qc_tid = (
-                                getattr(task_row, "chained_quick_create_task_id", None) or ""
-                            ).strip() or None
-                            ce = getattr(task_row, "chain_error", None)
-                            if ce:
-                                err = str(ce).strip()[:2000]
-                            elif not qc_tid:
-                                err = "链式一键创作未启动"
-                            else:
-                                qc_row = qc_repo.get_by_id(qc_tid)
-                                if not qc_row:
-                                    err = "一键创作任务记录丢失"
-                                elif qc_row.status != "completed":
-                                    err = (qc_row.error_message or "").strip() or "美图创作未成功完成"
-                                else:
-                                    item_status = "completed"
-                                    err = None
-                except ValueError as e:
-                    err = str(e)
-                except Exception as e:
-                    logger.exception("批量创作单轮失败 item=%s", item.id)
-                    err = str(e) if str(e) else type(e).__name__
-
-                self.batch_repo.update_item(
-                    item.id,
-                    {
-                        "status": "failed" if err else item_status,
-                        "error_message": err,
-                        "prompt_precreation_task_id": ppc_tid,
-                        "quick_create_task_id": qc_tid,
-                    },
-                )
-                done += 1
-                self.batch_repo.update_run(run_id, {"iterations_done": done})
+                for fut in as_completed(futures):
+                    item_id = futures[fut]
+                    try:
+                        fut.result()
+                    except Exception:
+                        logger.exception("批量创作 worker 异常 item=%s", item_id)
+                    done += 1
+                    self.batch_repo.update_run(run_id, {"iterations_done": done})
 
             self.batch_repo.update_run(run_id, {"status": "completed"})
         except Exception as e:
@@ -343,6 +323,7 @@ class BatchAutomationService:
                     "seed_prompt_id": it.seed_prompt_id,
                     "seed_section": it.seed_section,
                     "seed_prompt_text": it.seed_prompt_text,
+                    "seed_creative_direction_id": it.seed_creative_direction_id,
                     "prompt_precreation_task_id": it.prompt_precreation_task_id,
                     "quick_create_task_id": it.quick_create_task_id,
                     "status": it.status,
@@ -384,6 +365,7 @@ class BatchAutomationService:
                     "seed_prompt_id": it.seed_prompt_id,
                     "seed_section": it.seed_section,
                     "seed_prompt_text": it.seed_prompt_text,
+                    "seed_creative_direction_id": it.seed_creative_direction_id,
                     "prompt_precreation_task_id": it.prompt_precreation_task_id,
                     "quick_create_task_id": it.quick_create_task_id,
                     "status": it.status,
@@ -393,6 +375,143 @@ class BatchAutomationService:
                 }
             )
         return {"items": items_payload, "total": total}
+
+    def list_items_hydrated(self, *, limit: int, offset: int) -> Dict[str, Any]:
+        """返回 batch items 列表，已完成的条目内联 prompt cards 和 quick create results。
+
+        批量装配：一次性把 runs / characters / prompt_precreation / quick_create / beautify
+        全部按 IN 查询拉好，再在 Python 里拼装，避免逐条 N+1。
+        """
+        rows = self.batch_repo.list_all_items(limit=limit, offset=offset)
+        total = self.batch_repo.count_all_items()
+        if not rows:
+            return {"items": [], "total": total}
+
+        run_ids = [it.run_id for it in rows]
+        char_ids = [it.character_id for it in rows]
+        ppc_ids = [
+            (it.prompt_precreation_task_id or "").strip()
+            for it in rows
+            if it.status == "completed" and (it.prompt_precreation_task_id or "").strip()
+        ]
+        qc_ids = [
+            (it.quick_create_task_id or "").strip()
+            for it in rows
+            if it.status == "completed" and (it.quick_create_task_id or "").strip()
+        ]
+
+        runs_map = self.batch_repo.get_runs_by_ids(run_ids)
+        char_map = {ch.id: ch for ch in self.material_repo.get_by_ids(char_ids)}
+
+        ppc_repo = CreationPromptPrecreationRepository(self.db)
+        qc_repo = CreationQuickCreateRepository(self.db)
+        ppc_map = ppc_repo.get_by_ids(ppc_ids) if ppc_ids else {}
+        qc_map = qc_repo.get_by_ids(qc_ids) if qc_ids else {}
+
+        # PPC / QC 详情里要拿 character.name；把它们涉及的 character_id 一并补齐到 char_map
+        extra_char_ids = {
+            t.character_id
+            for t in list(ppc_map.values()) + list(qc_map.values())
+            if t.character_id and t.character_id not in char_map
+        }
+        if extra_char_ids:
+            for ch in self.material_repo.get_by_ids(list(extra_char_ids)):
+                char_map[ch.id] = ch
+
+        # beautify rows 一次 IN 查询，按 quick_create task id 分组
+        beautify_groups = (
+            BeautifyRepository(self.db).list_by_sources("quick_create", list(qc_map.keys()))
+            if qc_map
+            else {}
+        )
+
+        ppc_service = PromptPrecreationService(self.db) if ppc_map else None
+        qc_service = QuickCreateService(self.db) if qc_map else None
+
+        ms = self._material_service()
+        items_payload: List[Dict[str, Any]] = []
+
+        for it in rows:
+            run = runs_map.get(it.run_id)
+            if not run:
+                continue
+            ch = char_map.get(it.character_id)
+
+            item_data: Dict[str, Any] = {
+                "id": it.id,
+                "run_id": it.run_id,
+                "run_status": run.status,
+                "step_index": it.step_index,
+                "character_id": it.character_id,
+                "chara_name": ch.name if ch else "未知角色",
+                "chara_avatar": ms.avatar_url_for_character(ch.id, ch.avatar_filename)
+                if ch
+                else "",
+                "seed_prompt_id": it.seed_prompt_id,
+                "seed_section": it.seed_section,
+                "seed_prompt_text": it.seed_prompt_text,
+                "seed_creative_direction_id": it.seed_creative_direction_id,
+                "prompt_precreation_task_id": it.prompt_precreation_task_id,
+                "quick_create_task_id": it.quick_create_task_id,
+                "status": it.status,
+                "error_message": it.error_message,
+                "created_at": it.created_at,
+                "updated_at": it.updated_at,
+                "prompt_cards": None,
+                "quick_create_results": None,
+            }
+
+            if it.status == "completed":
+                ppc_id = (it.prompt_precreation_task_id or "").strip()
+                qc_id = (it.quick_create_task_id or "").strip()
+
+                if ppc_id and ppc_service is not None:
+                    try:
+                        ppc_task = ppc_map.get(ppc_id)
+                        if ppc_task is not None:
+                            ppc_detail = ppc_service._build_history_detail_from_parts(
+                                ppc_task, char_map.get(ppc_task.character_id)
+                            )
+                            if ppc_detail:
+                                item_data["prompt_cards"] = ppc_detail.get("cards", [])
+                    except Exception:
+                        logger.exception(
+                            "批量装配 prompt_precreation 详情失败 ppc_id=%s", ppc_id
+                        )
+
+                if qc_id and qc_service is not None:
+                    try:
+                        qc_task = qc_map.get(qc_id)
+                        if qc_task is not None:
+                            qc_detail = qc_service._build_history_detail_from_parts(
+                                qc_task,
+                                char_map.get(qc_task.character_id),
+                                beautify_groups.get(qc_id, []),
+                            )
+                            if qc_detail:
+                                item_data["quick_create_results"] = qc_detail.get(
+                                    "results", []
+                                )
+                                item_data["quick_create_selected_prompts"] = (
+                                    qc_detail.get("selected_prompts", [])
+                                )
+                    except Exception:
+                        logger.exception(
+                            "批量装配 quick_create 详情失败 qc_id=%s", qc_id
+                        )
+
+            items_payload.append(item_data)
+
+        return {"items": items_payload, "total": total}
+
+    def _material_service(self):
+        from app.services.material_service.material_service import MaterialService
+
+        return MaterialService(self.db)
+
+    def _get_chara_avatar_url(self, ch: MaterialCharacter) -> str:
+        """获取角色头像 URL（保留为单条入口；批量路径使用 _material_service()）。"""
+        return self._material_service().avatar_url_for_character(ch.id, ch.avatar_filename)
 
     def delete_batch_item(self, item_id: str) -> Dict[str, Any]:
         item = self.batch_repo.get_item(item_id)
@@ -406,6 +525,98 @@ class BatchAutomationService:
             PromptPrecreationService(self.db).delete_history(ppc_id)
         self.batch_repo.delete_item_row(item_id)
         return {"deleted_id": item_id}
+
+
+def _execute_single_item(
+    item_id: str,
+    prompt_count: int,
+    chain_payload: Dict[str, Any],
+) -> None:
+    """单条 batch item 的 worker：独立 DB 会话（NullPool），线程安全。
+
+    完整链路：composed_seed → start_prompt_precreation（含链式一键创作）→ 解析终态 → 写 item。
+    """
+    from app.models.database import BackgroundSessionLocal
+
+    db = BackgroundSessionLocal()
+    try:
+        batch_repo = CreationBatchRepository(db)
+        qc_repo = CreationQuickCreateRepository(db)
+        item = batch_repo.get_item(item_id)
+        if not item:
+            logger.warning("批量创作 item 不存在: %s", item_id)
+            return
+
+        batch_repo.update_item(
+            item_id,
+            {"status": "running", "error_message": None},
+        )
+
+        err: Optional[str] = None
+        ppc_tid: Optional[str] = None
+        qc_tid: Optional[str] = None
+        item_status = "failed"
+        try:
+            composed_seed = compose_seed_prompt_with_direction(
+                SeedPayload(
+                    text=item.seed_prompt_text,
+                    creative_direction_id=item.seed_creative_direction_id,
+                ),
+                db,
+            )
+            ppc = PromptPrecreationService(db)
+            out = ppc.start_prompt_precreation(
+                character_id=item.character_id,
+                seed_prompt=composed_seed,
+                count=prompt_count,
+                background_tasks=None,
+                chain_quick_create=chain_payload,
+            )
+            ppc_tid = str((out or {}).get("task_id") or "")
+            if not ppc_tid:
+                err = "未返回预生成任务 ID"
+            else:
+                db.expire_all()
+                task_row = ppc.repo.get_by_id(ppc_tid)
+                if not task_row:
+                    err = "预生成任务记录丢失"
+                elif task_row.status != "completed":
+                    err = (task_row.error_message or "").strip() or "Prompt 预生成未成功完成"
+                else:
+                    qc_tid = (
+                        getattr(task_row, "chained_quick_create_task_id", None) or ""
+                    ).strip() or None
+                    ce = getattr(task_row, "chain_error", None)
+                    if ce:
+                        err = str(ce).strip()[:2000]
+                    elif not qc_tid:
+                        err = "链式一键创作未启动"
+                    else:
+                        qc_row = qc_repo.get_by_id(qc_tid)
+                        if not qc_row:
+                            err = "一键创作任务记录丢失"
+                        elif qc_row.status != "completed":
+                            err = (qc_row.error_message or "").strip() or "美图创作未成功完成"
+                        else:
+                            item_status = "completed"
+                            err = None
+        except ValueError as e:
+            err = str(e)
+        except Exception as e:
+            logger.exception("批量创作单轮失败 item=%s", item_id)
+            err = str(e) if str(e) else type(e).__name__
+
+        batch_repo.update_item(
+            item_id,
+            {
+                "status": "failed" if err else item_status,
+                "error_message": err,
+                "prompt_precreation_task_id": ppc_tid,
+                "quick_create_task_id": qc_tid,
+            },
+        )
+    finally:
+        db.close()
 
 
 def run_batch_automation_job(run_id: str) -> None:

@@ -5,7 +5,7 @@ router = APIRouter(prefix="/api")
 
 
 @router.get("/hello")
-async def get_hello():
+def get_hello():
     success, result = read_hello_file()
     if success:
         return {"success": True, "content": result}

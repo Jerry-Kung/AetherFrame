@@ -56,6 +56,17 @@ class CreationBatchRepository:
     def get_run(self, run_id: str) -> Optional[CreationBatchRun]:
         return self.db.query(CreationBatchRun).filter(CreationBatchRun.id == run_id).first()
 
+    def get_runs_by_ids(self, ids: List[str]) -> Dict[str, CreationBatchRun]:
+        """批量按 ID 获取 run，返回 {run_id: run}。"""
+        if not ids:
+            return {}
+        rows = (
+            self.db.query(CreationBatchRun)
+            .filter(CreationBatchRun.id.in_(list(set(ids))))
+            .all()
+        )
+        return {r.id: r for r in rows}
+
     def create_item(
         self,
         *,
@@ -65,6 +76,7 @@ class CreationBatchRepository:
         seed_prompt_id: str,
         seed_section: str,
         seed_prompt_text: str,
+        seed_creative_direction_id: Optional[str] = None,
         status: str = "pending",
     ) -> CreationBatchRunItem:
         item = CreationBatchRunItem(
@@ -75,6 +87,7 @@ class CreationBatchRepository:
             seed_prompt_id=seed_prompt_id,
             seed_section=seed_section,
             seed_prompt_text=seed_prompt_text,
+            seed_creative_direction_id=seed_creative_direction_id,
             prompt_precreation_task_id=None,
             quick_create_task_id=None,
             status=status,

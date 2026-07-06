@@ -4,7 +4,7 @@
 import json
 import logging
 import os
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import (
     APIRouter,
@@ -17,10 +17,15 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.models.database import get_db
+from app.utils.cache_response import (
+    build_immutable_file_response,
+    build_revalidate_file_response,
+    guess_media_type,
+)
+from fastapi.responses import FileResponse, JSONResponse
 from app.schemas.material import (
     ApiResponse,
     BioPatchRequest,
@@ -35,9 +40,15 @@ from app.schemas.material import (
     CharaProfileStartRequest,
     CharaProfileStartResponse,
     CharaProfileStatusResponse,
-    CreationAdviceStartResponse,
-    CreationAdviceStatusResponse,
-    CreationAdviceSeedDraftData,
+    CreativeDirectionPatchRequest,
+    CreativeDirectionResponse,
+    CreativeDirectionStartRequest,
+    CreativeDirectionTaskStatusResponse,
+    Divergence,
+    MaterialErrorCode,
+    SeedPromptDraft,
+    SeedPromptStartRequest,
+    SeedPromptTaskStatusResponse,
     StandardPhotoSelectRequest,
     StandardPhotoStartRequest,
     StandardPhotoStartResponse,
@@ -50,6 +61,12 @@ from app.schemas.material import (
 )
 from app.repositories.material_repository import SHOT_TYPE_TO_INDEX
 from app.services.material_service import MaterialService
+from app.services.material_service.task_concurrency import (
+    CharacterConcurrencyError,
+    CreativeDirectionLimitExceededError,
+    SeedPromptPerDirectionLimitExceededError,
+    SeedPromptTotalLimitExceededError,
+)
 from app.services.file_service import FileSaveError, FileValidationError
 
 logger = logging.getLogger(__name__)
@@ -68,9 +85,36 @@ def ensure_valid_character_id(character_id: str) -> str:
     return cid
 
 
+def _translate_material_409(exc: Exception) -> JSONResponse:
+    """把 service 层错误翻译为 409 + code 字段。"""
+    if isinstance(exc, CharacterConcurrencyError):
+        code = MaterialErrorCode.TASK_CONCURRENCY_EXCEEDED
+        msg = "该角色已有 2 个任务在跑，请等一个完成再来"
+    elif isinstance(exc, CreativeDirectionLimitExceededError):
+        code = MaterialErrorCode.DIRECTION_LIMIT_EXCEEDED
+        msg = "方向已达上限 20 条，请先删除部分再生成新方向"
+    elif isinstance(exc, SeedPromptPerDirectionLimitExceededError):
+        code = MaterialErrorCode.SEED_PER_DIRECTION_EXCEEDED
+        msg = "该方向种子已达 20 条上限"
+    elif isinstance(exc, SeedPromptTotalLimitExceededError):
+        code = MaterialErrorCode.SEED_TOTAL_EXCEEDED
+        msg = "角色种子总数已达 100 条上限"
+    else:
+        raise exc
+    return JSONResponse(
+        status_code=409,
+        content={
+            "success": False,
+            "data": None,
+            "message": msg,
+            "code": code.value,
+        },
+    )
+
+
 @router.get("/characters", response_model=ApiResponse)
 @router.get("/characters/", response_model=ApiResponse)
-async def list_characters(
+def list_characters(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     service: MaterialService = Depends(get_material_service),
@@ -90,9 +134,29 @@ async def list_characters(
         raise HTTPException(status_code=500, detail="获取角色列表失败")
 
 
+@router.get("/characters/batch", response_model=ApiResponse)
+def get_characters_batch(
+    ids: str = Query(..., description="逗号分隔的角色ID列表"),
+    service: MaterialService = Depends(get_material_service),
+):
+    """批量获取角色详情，最多 20 个。"""
+    id_list = [i.strip() for i in ids.split(",") if i.strip()]
+    if not id_list:
+        return ApiResponse(success=True, data=[], message="无有效ID")
+    if len(id_list) > 20:
+        raise HTTPException(status_code=400, detail="单次最多查询 20 个角色")
+    try:
+        details = service.get_characters_batch_details(id_list)
+        data = [CharacterDetail(**d).model_dump(mode="json") for d in details]
+        return ApiResponse(success=True, data=data, message="批量获取角色详情成功")
+    except Exception as e:
+        logger.error(f"API 错误 - 批量获取角色详情失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="批量获取角色详情失败")
+
+
 @router.post("/characters", response_model=ApiResponse)
 @router.post("/characters/", response_model=ApiResponse)
-async def create_character(
+def create_character(
     body: CharacterCreate,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -111,7 +175,7 @@ async def create_character(
 
 
 @router.patch("/characters/{character_id}", response_model=ApiResponse)
-async def patch_character(
+def patch_character(
     character_id: str,
     body: CharacterUpdate,
     service: MaterialService = Depends(get_material_service),
@@ -139,7 +203,7 @@ async def patch_character(
 
 
 @router.post("/characters/{character_id}/avatar", response_model=ApiResponse)
-async def upload_character_avatar(
+def upload_character_avatar(
     character_id: str,
     file: UploadFile = File(...),
     service: MaterialService = Depends(get_material_service),
@@ -169,7 +233,7 @@ async def upload_character_avatar(
 
 
 @router.get("/characters/{character_id}", response_model=ApiResponse)
-async def get_character(
+def get_character(
     character_id: str,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -186,21 +250,57 @@ async def get_character(
 
 
 @router.patch("/characters/{character_id}/bio", response_model=ApiResponse)
-async def patch_character_bio(
+def patch_character_bio(
     character_id: str,
-    body: BioPatchRequest,
+    body: Dict[str, Any],
     service: MaterialService = Depends(get_material_service),
 ):
     character_id = ensure_valid_character_id(character_id)
     logger.info(f"API 请求 - 更新角色 bio: {character_id}")
+
+    if "creative_advice" in body:
+        raise HTTPException(
+            status_code=400,
+            detail="creative_advice is no longer writable; use creative-directions endpoints",
+        )
+
+    seeds = body.get("official_seed_prompts") or {}
+    cs = seeds.get("character_specific") or []
+    for entry in cs:
+        if not isinstance(entry, dict):
+            continue
+        dir_id = entry.get("creative_direction_id")
+        if dir_id is None:
+            continue
+        if not service.is_direction_owned_by_character(dir_id, character_id):
+            logger.warning(
+                "PATCH /bio: dropping stale creative_direction_id=%s on character=%s (direction missing); coercing to null",
+                dir_id,
+                character_id,
+            )
+            entry["creative_direction_id"] = None
+
+    gen = seeds.get("general") or []
+    for entry in gen:
+        if isinstance(entry, dict) and "creative_direction_id" in entry:
+            logger.warning(
+                "PATCH /bio: ignoring creative_direction_id on general[] entry (character=%s)",
+                character_id,
+            )
+            entry.pop("creative_direction_id", None)
+
+    try:
+        patch = BioPatchRequest.model_validate(body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     try:
         char = service.patch_character_bio(
             character_id,
-            chara_profile=body.chara_profile,
-            creative_advice=body.creative_advice,
+            chara_profile=patch.chara_profile,
             official_seed_prompts=(
-                body.official_seed_prompts.model_dump(mode="json")
-                if body.official_seed_prompts is not None
+                patch.official_seed_prompts.model_dump(mode="json")
+                if patch.official_seed_prompts is not None
                 else None
             ),
         )
@@ -208,7 +308,7 @@ async def patch_character_bio(
         return ApiResponse(
             success=True,
             data=CharacterDetail(**detail).model_dump(mode="json"),
-            message="角色档案已更新",
+            message="已保存",
         )
     except ValueError as e:
         msg = str(e)
@@ -221,7 +321,7 @@ async def patch_character_bio(
 
 
 @router.get("/fixed-seed-templates", response_model=ApiResponse)
-async def list_fixed_seed_templates(
+def list_fixed_seed_templates(
     service: MaterialService = Depends(get_material_service),
 ):
     rows = service.list_fixed_seed_templates()
@@ -230,7 +330,7 @@ async def list_fixed_seed_templates(
 
 
 @router.post("/fixed-seed-templates", response_model=ApiResponse)
-async def create_fixed_seed_template(
+def create_fixed_seed_template(
     body: FixedSeedTemplateCreate,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -249,7 +349,7 @@ async def create_fixed_seed_template(
 
 
 @router.patch("/fixed-seed-templates/{template_id}", response_model=ApiResponse)
-async def patch_fixed_seed_template(
+def patch_fixed_seed_template(
     template_id: str,
     body: FixedSeedTemplatePatch,
     service: MaterialService = Depends(get_material_service),
@@ -279,7 +379,7 @@ async def patch_fixed_seed_template(
 
 
 @router.delete("/fixed-seed-templates/{template_id}", response_model=ApiResponse)
-async def delete_fixed_seed_template(
+def delete_fixed_seed_template(
     template_id: str,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -297,7 +397,7 @@ async def delete_fixed_seed_template(
 
 
 @router.delete("/fixed-seed-templates", response_model=ApiResponse)
-async def clear_fixed_seed_templates(
+def clear_fixed_seed_templates(
     service: MaterialService = Depends(get_material_service),
 ):
     try:
@@ -309,7 +409,7 @@ async def clear_fixed_seed_templates(
 
 
 @router.delete("/characters/{character_id}", response_model=ApiResponse)
-async def delete_character(
+def delete_character(
     character_id: str,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -371,7 +471,7 @@ async def update_setting(
 
 
 @router.post("/characters/{character_id}/raw-images", response_model=ApiResponse)
-async def upload_raw_images(
+def upload_raw_images(
     character_id: str,
     files: List[UploadFile] = File(...),
     tags: Optional[str] = Form(None),
@@ -445,7 +545,7 @@ async def upload_raw_images(
 @router.delete(
     "/characters/{character_id}/raw-images/{image_id}", response_model=ApiResponse
 )
-async def delete_raw_image(
+def delete_raw_image(
     character_id: str,
     image_id: str,
     service: MaterialService = Depends(get_material_service),
@@ -468,7 +568,7 @@ async def delete_raw_image(
 @router.patch(
     "/characters/{character_id}/raw-images/{image_id}", response_model=ApiResponse
 )
-async def patch_raw_image_tags(
+def patch_raw_image_tags(
     character_id: str,
     image_id: str,
     body: RawImageTagsUpdate,
@@ -496,7 +596,7 @@ async def patch_raw_image_tags(
 
 
 @router.get("/characters/{character_id}/images/raw/{filename}")
-async def get_raw_image(
+def get_raw_image(
     character_id: str,
     filename: str,
     service: MaterialService = Depends(get_material_service),
@@ -505,40 +605,25 @@ async def get_raw_image(
     path = service.get_raw_image_path(character_id, filename)
     if not path:
         raise HTTPException(status_code=404, detail="文件不存在")
-    ext = os.path.splitext(filename)[1].lower()
-    media_type_map = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".webp": "image/webp",
-    }
-    media_type = media_type_map.get(ext, "application/octet-stream")
-    return FileResponse(path=path, media_type=media_type, filename=filename)
+    return build_immutable_file_response(path=path, filename=filename)
 
 
 @router.get("/characters/{character_id}/images/avatar/{filename}")
-async def get_avatar_image(
+def get_avatar_image(
     character_id: str,
     filename: str,
+    request: Request,
     service: MaterialService = Depends(get_material_service),
 ):
     logger.debug(f"API 请求 - 读取角色头像: {character_id}/{filename}")
     path = service.get_avatar_image_path(character_id, filename)
     if not path:
         raise HTTPException(status_code=404, detail="文件不存在")
-    ext = os.path.splitext(filename)[1].lower()
-    media_type_map = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".webp": "image/webp",
-    }
-    media_type = media_type_map.get(ext, "application/octet-stream")
-    return FileResponse(path=path, media_type=media_type, filename=filename)
+    return build_revalidate_file_response(request=request, path=path, filename=filename)
 
 
 @router.post("/characters/{character_id}/standard-photo/start", response_model=ApiResponse)
-async def start_standard_photo(
+def start_standard_photo(
     character_id: str,
     body: StandardPhotoStartRequest,
     background_tasks: BackgroundTasks,
@@ -570,7 +655,7 @@ async def start_standard_photo(
 
 
 @router.post("/characters/{character_id}/standard-photo/retry", response_model=ApiResponse)
-async def retry_standard_photo(
+def retry_standard_photo(
     character_id: str,
     background_tasks: BackgroundTasks,
     service: MaterialService = Depends(get_material_service),
@@ -601,7 +686,7 @@ async def retry_standard_photo(
 
 
 @router.get("/characters/{character_id}/standard-photo/status", response_model=ApiResponse)
-async def get_standard_photo_status(
+def get_standard_photo_status(
     character_id: str,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -620,7 +705,7 @@ async def get_standard_photo_status(
 
 
 @router.post("/characters/{character_id}/chara-profile/start", response_model=ApiResponse)
-async def start_chara_profile(
+def start_chara_profile(
     character_id: str,
     body: CharaProfileStartRequest,
     background_tasks: BackgroundTasks,
@@ -652,7 +737,7 @@ async def start_chara_profile(
 
 
 @router.get("/characters/{character_id}/chara-profile/status", response_model=ApiResponse)
-async def get_chara_profile_status(
+def get_chara_profile_status(
     character_id: str,
     service: MaterialService = Depends(get_material_service),
 ):
@@ -667,56 +752,201 @@ async def get_chara_profile_status(
     )
 
 
-@router.post("/characters/{character_id}/creation-advice/start", response_model=ApiResponse)
-async def start_creation_advice(
+@router.post("/characters/{character_id}/creative-directions/start", response_model=ApiResponse)
+def start_creative_direction(
     character_id: str,
+    body: CreativeDirectionStartRequest,
     background_tasks: BackgroundTasks,
     service: MaterialService = Depends(get_material_service),
 ):
     character_id = ensure_valid_character_id(character_id)
-    logger.info(f"API 请求 - 启动生成创作建议任务: {character_id}")
     try:
-        data = service.start_creation_advice_task(
+        task = service.start_creative_direction_task(
             character_id=character_id,
+            divergence=body.divergence.value,
+            initial_input=body.initial_input,
             background_tasks=background_tasks,
         )
-        return ApiResponse(
-            success=True,
-            data=CreationAdviceStartResponse(**data).model_dump(mode="json"),
-            message="生成创作建议任务已启动",
-        )
+    except (CharacterConcurrencyError, CreativeDirectionLimitExceededError) as e:
+        return _translate_material_409(e)
     except ValueError as e:
         msg = str(e)
-        if msg == "角色不存在":
+        if msg == "character not found":
             raise HTTPException(status_code=404, detail=msg) from e
         raise HTTPException(status_code=400, detail=msg) from e
-    except Exception as e:
-        logger.error(f"API 错误 - 启动生成创作建议任务失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="启动生成创作建议任务失败")
+    return ApiResponse(
+        success=True,
+        data={"task_id": task.id, "status": task.status},
+        message="任务已提交",
+    )
 
 
-@router.get("/characters/{character_id}/creation-advice/status", response_model=ApiResponse)
-async def get_creation_advice_status(
+@router.get(
+    "/characters/{character_id}/creative-directions/tasks/{task_id}",
+    response_model=ApiResponse,
+)
+def get_creative_direction_task_status(
+    character_id: str,
+    task_id: str,
+    service: MaterialService = Depends(get_material_service),
+):
+    character_id = ensure_valid_character_id(character_id)
+    try:
+        task, direction = service.get_creative_direction_task_status(character_id, task_id)
+    except ValueError as e:
+        if str(e) == "task not found":
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    char = service.repo.get_by_id(character_id)
+    if not char:
+        raise HTTPException(status_code=404, detail="character not found")
+    payload = CreativeDirectionTaskStatusResponse(
+        task_id=task.id,
+        character_id=task.character_id,
+        status=task.status,
+        current_step=task.current_step,
+        divergence=Divergence(task.divergence),
+        initial_input=task.initial_input,
+        result_direction=(
+            CreativeDirectionResponse.model_validate(direction) if direction else None
+        ),
+        error_message=task.error_message,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+    )
+    return ApiResponse(success=True, data=payload.model_dump(mode="json"), message="ok")
+
+
+@router.get("/characters/{character_id}/creative-directions", response_model=ApiResponse)
+def list_creative_directions(
     character_id: str,
     service: MaterialService = Depends(get_material_service),
 ):
     character_id = ensure_valid_character_id(character_id)
-    task = service.get_creation_advice_task_status(character_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="生成创作建议任务不存在")
-    seed = task.get("seed_draft")
-    seed_model = CreationAdviceSeedDraftData(**seed) if seed else None
-    payload = {k: v for k, v in task.items() if k != "seed_draft"}
-    payload["seed_draft"] = seed_model
+    if not service.repo.get_by_id(character_id):
+        raise HTTPException(status_code=404, detail="character not found")
+    rows = service.list_creative_directions(character_id)
+    data = [CreativeDirectionResponse.model_validate(r).model_dump(mode="json") for r in rows]
+    return ApiResponse(success=True, data=data, message="ok")
+
+
+@router.patch(
+    "/characters/{character_id}/creative-directions/{direction_id}",
+    response_model=ApiResponse,
+)
+def patch_creative_direction(
+    character_id: str,
+    direction_id: str,
+    body: CreativeDirectionPatchRequest,
+    service: MaterialService = Depends(get_material_service),
+):
+    character_id = ensure_valid_character_id(character_id)
+    if body.title is None and body.description is None:
+        raise HTTPException(status_code=400, detail="至少需要一项更新字段")
+    try:
+        updated = service.patch_creative_direction(
+            character_id=character_id,
+            direction_id=direction_id,
+            title=body.title,
+            description=body.description,
+        )
+    except ValueError as e:
+        if str(e) == "direction not found":
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return ApiResponse(
         success=True,
-        data=CreationAdviceStatusResponse(**payload).model_dump(mode="json"),
-        message="获取生成创作建议任务状态成功",
+        data=CreativeDirectionResponse.model_validate(updated).model_dump(mode="json"),
+        message="已保存",
     )
 
 
+@router.delete(
+    "/characters/{character_id}/creative-directions/{direction_id}",
+    response_model=ApiResponse,
+)
+def delete_creative_direction(
+    character_id: str,
+    direction_id: str,
+    service: MaterialService = Depends(get_material_service),
+):
+    character_id = ensure_valid_character_id(character_id)
+    try:
+        service.delete_creative_direction(character_id, direction_id)
+    except ValueError as e:
+        if str(e) == "direction not found":
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return ApiResponse(success=True, data={"deleted": True}, message="已删除")
+
+
+@router.post(
+    "/characters/{character_id}/seed-prompts/start",
+    response_model=ApiResponse,
+)
+def start_seed_prompt(
+    character_id: str,
+    body: SeedPromptStartRequest,
+    background_tasks: BackgroundTasks,
+    service: MaterialService = Depends(get_material_service),
+):
+    character_id = ensure_valid_character_id(character_id)
+    try:
+        task = service.start_seed_prompt_task(
+            character_id=character_id,
+            creative_direction_id=body.creative_direction_id,
+            background_tasks=background_tasks,
+        )
+    except (
+        CharacterConcurrencyError,
+        SeedPromptPerDirectionLimitExceededError,
+        SeedPromptTotalLimitExceededError,
+    ) as e:
+        return _translate_material_409(e)
+    except ValueError as e:
+        msg = str(e)
+        if msg in {"character not found", "creative_direction not found"}:
+            raise HTTPException(status_code=404, detail=msg) from e
+        raise HTTPException(status_code=400, detail=msg) from e
+    return ApiResponse(
+        success=True,
+        data={"task_id": task.id, "status": task.status},
+        message="任务已提交",
+    )
+
+
+@router.get(
+    "/characters/{character_id}/seed-prompts/tasks/{task_id}",
+    response_model=ApiResponse,
+)
+def get_seed_prompt_task_status(
+    character_id: str,
+    task_id: str,
+    service: MaterialService = Depends(get_material_service),
+):
+    character_id = ensure_valid_character_id(character_id)
+    try:
+        task, draft = service.get_seed_prompt_task_status(character_id, task_id)
+    except ValueError as e:
+        if str(e) == "task not found":
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    payload = SeedPromptTaskStatusResponse(
+        task_id=task.id,
+        character_id=task.character_id,
+        creative_direction_id=task.creative_direction_id,
+        status=task.status,
+        current_step=task.current_step,
+        seed_draft=SeedPromptDraft(**draft) if draft else None,
+        error_message=task.error_message,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+    )
+    return ApiResponse(success=True, data=payload.model_dump(mode="json"), message="ok")
+
+
 @router.get("/characters/{character_id}/standard-photo/result-images/{filename}")
-async def get_standard_photo_result_image(
+def get_standard_photo_result_image(
     character_id: str,
     filename: str,
     service: MaterialService = Depends(get_material_service),
@@ -724,26 +954,19 @@ async def get_standard_photo_result_image(
     path = service.get_standard_photo_result_image_path(character_id, filename)
     if not path:
         raise HTTPException(status_code=404, detail="文件不存在")
-    ext = os.path.splitext(filename)[1].lower()
-    media_type_map = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".webp": "image/webp",
-    }
-    media_type = media_type_map.get(ext, "application/octet-stream")
     return FileResponse(
         path=path,
-        media_type=media_type,
+        media_type=guess_media_type(filename),
         filename=filename,
         headers={"Cache-Control": "no-store, max-age=0"},
     )
 
 
 @router.get("/characters/{character_id}/standard-photo/slot-images/{shot_type}")
-async def get_standard_slot_image(
+def get_standard_slot_image(
     character_id: str,
     shot_type: str,
+    request: Request,
     service: MaterialService = Depends(get_material_service),
 ):
     """已保存的正式标准参考图（按类型槽位存储，与当前生成任务目录无关）。"""
@@ -752,11 +975,16 @@ async def get_standard_slot_image(
     path = service.get_standard_slot_image_path(character_id, shot_type)
     if not path:
         raise HTTPException(status_code=404, detail="文件不存在")
-    return FileResponse(path=path, media_type="image/png", filename=f"{shot_type}.png")
+    return build_revalidate_file_response(
+        request=request,
+        path=path,
+        filename=f"{shot_type}.png",
+        media_type="image/png",
+    )
 
 
 @router.post("/characters/{character_id}/standard-photo/select", response_model=ApiResponse)
-async def select_standard_photo_result(
+def select_standard_photo_result(
     character_id: str,
     body: StandardPhotoSelectRequest,
     service: MaterialService = Depends(get_material_service),
@@ -785,7 +1013,7 @@ async def select_standard_photo_result(
 
 
 @router.delete("/characters/{character_id}/standard-photo/slot/{slot_index}", response_model=ApiResponse)
-async def delete_official_photo_slot(
+def delete_official_photo_slot(
     character_id: str,
     slot_index: int,
     service: MaterialService = Depends(get_material_service),

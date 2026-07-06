@@ -1,0 +1,6 @@
+exp_id: exp001
+benchmark: experiments/fixtures/benchmark_v1.yaml
+variants: [baseline, slim]
+images_per_cell: 3
+concurrency: 10
+review_shuffle_seed: 20260705

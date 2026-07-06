@@ -96,7 +96,7 @@ export interface PromptPrecreationStatusResponse {
 /** 预生成成功后由服务端链式启动一键创作时随 start 请求提交 */
 export type PromptPrecreationChainQuickCreateBody = {
   n: 1 | 2 | 3 | 4;
-  aspect_ratio: "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
+  aspect_ratio: "auto" | "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
   max_prompts: 1 | 2 | 3 | 4;
 };
 
@@ -145,6 +145,9 @@ export interface QuickCreateImageReview {
 export interface QuickCreateGeneratedImage {
   path: string;
   review?: QuickCreateImageReview | null;
+  beautified_path?: string | null;
+  beautify_task_id?: string | null;
+  beautify_status?: string | null;
 }
 
 export interface QuickCreatePromptResultItem {
@@ -339,7 +342,7 @@ export async function startQuickCreate(
   body: {
     selected_prompts: QuickCreatePromptInput[];
     n: 1 | 2 | 3 | 4;
-    aspect_ratio: "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
+    aspect_ratio: "auto" | "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
   }
 ): Promise<QuickCreateStartResponse> {
   assertValidCharacterId(characterId, "启动一键创作");
@@ -455,6 +458,7 @@ export interface BatchAutomationRunItemRow {
   seed_prompt_id: string;
   seed_section: string;
   seed_prompt_text: string;
+  seed_creative_direction_id?: string | null;
   prompt_precreation_task_id?: string | null;
   quick_create_task_id?: string | null;
   status: string;
@@ -488,7 +492,7 @@ export async function startBatchAutomation(body: {
   iterations: number;
   prompt_count: 1 | 2 | 3 | 4;
   images_per_prompt: 1 | 2 | 3 | 4;
-  aspect_ratio: "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
+  aspect_ratio: "auto" | "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
   max_prompts: 1 | 2 | 3 | 4;
   character_ids?: string[] | null;
 }): Promise<BatchAutomationStartResponse> {
@@ -540,6 +544,47 @@ export async function listBatchAutomationItems(params?: {
   }
 }
 
+export interface HydratedBatchItem extends BatchAutomationListItemRow {
+  prompt_cards: PromptCard[] | null;
+  quick_create_results: Array<{
+    prompt_id: string;
+    full_prompt: string;
+    generated_images: Array<{
+      filename: string;
+      path: string;
+      ai_comment?: { score: number; comment: string; tags: string[] } | null;
+    }>;
+  }> | null;
+  quick_create_selected_prompts?: Array<{
+    id: string;
+    fullPrompt: string;
+  }> | null;
+}
+
+export interface HydratedBatchItemListResponse {
+  items: HydratedBatchItem[];
+  total: number;
+}
+
+export async function listBatchAutomationItemsHydrated(params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<HydratedBatchItemListResponse> {
+  const query = new URLSearchParams();
+  if (typeof params?.limit === "number") query.set("limit", String(params.limit));
+  if (typeof params?.offset === "number") query.set("offset", String(params.offset));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  const url = `${API_BASE}/batch-automation/items-hydrated${suffix}`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<HydratedBatchItemListResponse>(response);
+    throwIfError(response, data);
+    return data.data as HydratedBatchItemListResponse;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
 export async function deleteBatchAutomationItem(itemId: string): Promise<{ deleted_id: string }> {
   const iid = String(itemId ?? "").trim();
   if (!iid) throw new ApiError("条目ID无效", 400);
@@ -561,4 +606,33 @@ export function buildQuickCreateResultImageUrl(taskId: string, imagePath: string
     .filter(Boolean)
     .map((x) => encodeURIComponent(x));
   return `${API_BASE}/quick-create/tasks/${tid}/images/${segs.join("/")}`;
+}
+
+/** 从结果图 URL 反推 API 相对路径（用于美化 source_image_path） */
+export function parseQuickCreateResultImagePath(imageUrl: string, taskId: string): string | null {
+  const tid = String(taskId ?? "").trim();
+  if (!tid) return null;
+  const raw = String(imageUrl ?? "").split("?")[0];
+  const encodedMarker = `/quick-create/tasks/${encodeURIComponent(tid)}/images/`;
+  let idx = raw.indexOf(encodedMarker);
+  let markerLen = encodedMarker.length;
+  if (idx < 0) {
+    const plainMarker = `/quick-create/tasks/${tid}/images/`;
+    idx = raw.indexOf(plainMarker);
+    markerLen = plainMarker.length;
+  }
+  if (idx < 0) return null;
+  const tail = raw.slice(idx + markerLen);
+  if (!tail) return null;
+  return tail
+    .split("/")
+    .filter(Boolean)
+    .map((seg) => {
+      try {
+        return decodeURIComponent(seg);
+      } catch {
+        return seg;
+      }
+    })
+    .join("/");
 }
