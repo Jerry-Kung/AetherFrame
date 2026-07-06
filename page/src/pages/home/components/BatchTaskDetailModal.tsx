@@ -3,6 +3,7 @@ import DivergenceBadge from "@/pages/material/components/direction/DivergenceBad
 import * as materialApi from "@/services/materialApi";
 import type { CreativeDirectionApi } from "@/services/materialApi";
 import type { BatchTask } from "@/types/batchAutomation";
+import { copyTextToClipboard } from "@/utils/clipboard";
 
 interface BatchTaskDetailModalProps {
   task: BatchTask;
@@ -27,10 +28,12 @@ function CopyButton({ text, label = "复制" }: { text: string; label?: string }
   }, []);
 
   const handleCopy = () => {
-    void navigator.clipboard.writeText(text);
-    setCopied(true);
-    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => setCopied(false), 2000);
+    void copyTextToClipboard(text).then((ok) => {
+      if (!ok) return;
+      setCopied(true);
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      timerRef.current = window.setTimeout(() => setCopied(false), 2000);
+    });
   };
 
   return (
