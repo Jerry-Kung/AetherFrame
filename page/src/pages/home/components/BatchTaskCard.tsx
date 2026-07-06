@@ -1,6 +1,7 @@
 import { memo, useState, useCallback } from "react";
 import CreationResultLightbox from "@/components/CreationResultLightbox";
 import AiCommentModal from "@/pages/creation/components/AiCommentModal";
+import BatchTaskDetailModal from "./BatchTaskDetailModal";
 import DirectionChip from "@/pages/material/components/direction/DirectionChip";
 import type { BatchTask } from "@/types/batchAutomation";
 import type { AiComment, QuickCreateImage } from "@/types/quickCreate";
@@ -36,6 +37,7 @@ export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed }
   const [lightbox, setLightbox] = useState<ImageLightboxState | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUsedConfirm, setShowUsedConfirm] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
   const [viewingComment, setViewingComment] = useState<{
     comment: AiComment;
     imageUrl: string;
@@ -166,6 +168,19 @@ export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed }
           >
             {totalImages} 张
           </span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowDetail(true);
+            }}
+            className="w-6 h-6 flex items-center justify-center rounded-lg cursor-pointer transition-all duration-200 hover:opacity-80"
+            style={{ background: "rgba(253,164,175,0.12)", border: "1px solid rgba(253,164,175,0.25)" }}
+            title="查看任务详情（创意方向 / 种子提示词 / 预生成 Prompt）"
+            aria-label="查看任务详情"
+          >
+            <i className="ri-file-text-line text-rose-400 text-xs"></i>
+          </button>
           <div className="w-5 h-5 flex items-center justify-center">
             <i
               className="ri-arrow-down-s-line text-rose-400 text-sm transition-transform duration-200"
@@ -394,6 +409,8 @@ export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed }
           onClose={closeComment}
         />
       )}
+
+      {showDetail && <BatchTaskDetailModal task={task} onClose={() => setShowDetail(false)} />}
 
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center">
