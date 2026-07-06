@@ -68,6 +68,11 @@ class TestGoodTemplateSlim:
         assert "纯白色丝袜" not in good_template1  # 旧窗台款特征
         assert "飘窗" not in good_template1
 
+    def test_expression_line_obeys_whitelist(self):
+        gaze_line = [l for l in good_template1.splitlines() if l.startswith("**角色神态**")][0]
+        assert "柔和微笑" in gaze_line
+        assert "浅笑" not in gaze_line
+
 
 class TestPromptStep1Slim:
     def _p(self):

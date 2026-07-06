@@ -9,6 +9,8 @@ app/tools/beautify/config.py
 *.png
 *example.py
 test*
+!tests/
+!tests/**
 .claude/
 
 # Byte-compiled / optimized / DLL files
