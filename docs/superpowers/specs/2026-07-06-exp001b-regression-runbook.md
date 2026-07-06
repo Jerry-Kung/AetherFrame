@@ -37,11 +37,13 @@
 
     python -m experiments.runner --config experiments/configs/exp001b.yaml
 
-注意：runner 直接发送变体文件全文，regression 变体头部的 [COMPOSITION_DECISION] 块
-不会经过 quick_create 的剥离路径。出图前先手工删除各 regression .txt 头部的决策块段落，
-保证与 slim 对照组同条件（slim 冻结件本来就无机器码）。
+runner 发送前自动剥离 [COMPOSITION_DECISION] 决策块（`strip_machine_code`），画幅优先
+跟随变体决策块的 aspect_ratio、无决策块时取 benchmark（`resolve_send_inputs`，镜像
+生产语义）。无需手工处理变体文件。
+（注：exp001b 首轮执行时 runner 尚无此能力，regression 组曾带机器码出图且 3/6 种子
+画幅与正文声明错位——两者均不利于 regression，判定结论因此更稳，详见结论归档。）
 
-取回 `experiments/results/exp001b/` 后，参照 `experiments/results/exp001/_reveal.py`
+取回 `experiments/results/exp001b/` 后，参照 `experiments/results/exp001b/exp001b/_reveal.py`
 生成并排对照页（slim 列 = exp001 人工改写版出图，regression 列 = 新链路出图）。
 
 ## 5. 判定

@@ -10,6 +10,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from app.services.material_service.material_file_service import (
     standard_reference_paths_for_multimodal_prompt,
 )
+from app.services.creation_service.prompt_precreation_service import (
+    _parse_step1_composition,
+    strip_machine_code,
+)
 from app.tools.llm.nano_banana_pro import generate_image_with_nano_banana_pro
 
 from experiments.baseline_gen import VARIANTS_ROOT
@@ -54,6 +58,18 @@ def _cell_done(manifest: dict, layout: ExpLayout, variant: str,
     return False
 
 
+def resolve_send_inputs(prompt_text: str, benchmark_ratio: str,
+                        variant: str = "?", seed_id: str = "?") -> tuple:
+    """镜像生产 quick_create 语义：发送文本剥离机器码；变体 Prompt 含决策块时
+    画幅跟随其 aspect_ratio（画布由 step1 决策驱动），否则取 benchmark。"""
+    send_text = strip_machine_code(prompt_text)
+    declared = _parse_step1_composition(prompt_text).get("aspect_ratio")
+    if declared and declared != benchmark_ratio:
+        logger.warning("画幅跟随决策块 %s/%s: %s（benchmark=%s）",
+                       variant, seed_id, declared, benchmark_ratio)
+    return send_text, declared or benchmark_ratio
+
+
 def _generate_one(job: dict, layout: ExpLayout, gen_image) -> dict:
     content = [{"text": job["prompt_text"]}, {"text": _REF_GUIDE_TEXT}]
     for p in job["refs"]:
@@ -90,11 +106,14 @@ def run_experiment(config_path: str, results_root: str = "experiments/results",
                                f"{seed.seed_id}.txt")
             with open(src, "r", encoding="utf-8") as f:
                 prompt_text = f.read()
-            # 发送全文存档
+            # 变体原文存档（含机器码）；发送文本与画幅经 resolve_send_inputs 镜像生产语义
             os.makedirs(layout.prompts_dir(variant), exist_ok=True)
             with open(layout.prompt_path(variant, seed.seed_id), "w",
                       encoding="utf-8") as f:
                 f.write(prompt_text)
+            send_text, effective_ratio = resolve_send_inputs(
+                prompt_text, seed.aspect_ratio, variant, seed.seed_id
+            )
             refs = _resolve_refs(seed.character_id)
             for k in range(1, cfg.images_per_cell + 1):
                 if _cell_done(manifest, layout, variant, seed.seed_id, k):
@@ -103,8 +122,8 @@ def run_experiment(config_path: str, results_root: str = "experiments/results",
                 jobs.append({
                     "variant": variant, "seed_id": seed.seed_id, "k": k,
                     "character_id": seed.character_id,
-                    "aspect_ratio": seed.aspect_ratio,
-                    "prompt_text": prompt_text, "refs": refs,
+                    "aspect_ratio": effective_ratio,
+                    "prompt_text": send_text, "refs": refs,
                 })
 
     generated = failed = 0

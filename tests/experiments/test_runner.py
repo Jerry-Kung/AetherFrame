@@ -81,6 +81,62 @@ def test_run_experiment_generates_all_cells(tmp_path, monkeypatch):
         assert f.read() == "slim 的 Prompt 全文"
 
 
+PROMPT_WITH_BLOCK = (
+    "**[COMPOSITION_DECISION]**\n"
+    "aspect_ratio: 16:9\n"
+    "subject_area_min: 0.65\n"
+    "shooting_angle: three_quarter\n"
+    "camera_height: slight_down\n"
+    "gaze_direction: to_camera\n"
+    "\n"
+    "**【固定】任务目标**：正文第一段。\n"
+)
+
+
+def test_run_experiment_strips_machine_code_and_follows_decision_block(
+        tmp_path, monkeypatch):
+    cfg_p, results_root = _setup(tmp_path, monkeypatch)
+    slim_txt = os.path.join(rn.VARIANTS_ROOT, "exp001", "slim", "s1.txt")
+    with open(slim_txt, "w", encoding="utf-8") as f:
+        f.write(PROMPT_WITH_BLOCK)
+    calls = []
+
+    def fake_gen(Content, output_path, file_name, aspect_ratio="16:9", **kw):
+        calls.append((Content[0]["text"], aspect_ratio))
+        os.makedirs(output_path, exist_ok=True)
+        with open(os.path.join(output_path, file_name), "wb") as f:
+            f.write(b"png")
+        return True
+
+    run_experiment(cfg_p, results_root=results_root, gen_image=fake_gen)
+
+    slim_calls = [(t, ar) for t, ar in calls if "正文第一段" in t]
+    baseline_calls = [(t, ar) for t, ar in calls if t.startswith("baseline")]
+    assert len(slim_calls) == 2 and len(baseline_calls) == 2
+    # 发送文本已剥离机器码，正文保留
+    assert all("[COMPOSITION_DECISION]" not in t for t, _ in slim_calls)
+    assert all(t.startswith("**【固定】任务目标**") for t, _ in slim_calls)
+    # 画幅跟随决策块；无决策块的变体回退 benchmark
+    assert all(ar == "16:9" for _, ar in slim_calls)
+    assert all(ar == "4:3" for _, ar in baseline_calls)
+    # 存档保持原样（含机器码），仅发送时剥离
+    lay = ExpLayout(results_root, "exp001")
+    with open(lay.prompt_path("slim", "s1"), encoding="utf-8") as f:
+        assert "[COMPOSITION_DECISION]" in f.read()
+    # manifest 记录实际出图画幅
+    with open(lay.manifest_path(), encoding="utf-8") as f:
+        entries = json.load(f)["entries"]
+    assert {e["aspect_ratio"] for e in entries if e["variant"] == "slim"} == {"16:9"}
+    assert {e["aspect_ratio"] for e in entries if e["variant"] == "baseline"} == {"4:3"}
+
+
+def test_resolve_send_inputs_without_block_is_passthrough():
+    text = "**【固定】任务目标**：无机器码正文。"
+    send_text, ratio = rn.resolve_send_inputs(text, "4:3")
+    assert send_text == text
+    assert ratio == "4:3"
+
+
 def test_run_experiment_resumes(tmp_path, monkeypatch):
     cfg_p, results_root = _setup(tmp_path, monkeypatch)
     n_calls = {"n": 0}
