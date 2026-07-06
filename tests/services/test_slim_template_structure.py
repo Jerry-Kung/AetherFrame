@@ -107,3 +107,29 @@ class TestPromptStep1Slim:
         p = self._p()
         assert "不要写实化或包含过度的解剖细节" in p
         assert "自然展示腿部与脚部，但不低俗" in p
+
+
+class TestPromptStep2AndReviewSlim:
+    def test_step2_negative_contradiction_rule(self):
+        from app.prompts.creation.prompt_precreation import prompt_step2
+        assert "正向声明" in prompt_step2
+        assert "3-5" in prompt_step2
+        assert "权重语法" in prompt_step2
+
+    def test_step2_forbids_rhetoric_and_anatomy(self):
+        from app.prompts.creation.prompt_precreation import prompt_step2
+        assert "抒情比喻" in prompt_step2
+        assert "解剖学词汇" in prompt_step2
+
+    def test_step2_literary_translation_brief(self):
+        from app.prompts.creation.prompt_precreation import prompt_step2
+        assert "视觉事实" in prompt_step2
+
+    def test_review_prefers_concise_candidates(self):
+        from app.prompts.creation.prompt_precreation import prompt_review
+        assert "简洁凝练" in prompt_review
+        assert "华丽文风本身不是加分项" in prompt_review
+
+    def test_review_backup_untouched(self):
+        from app.prompts.creation.prompt_precreation import prompt_review_backup
+        assert "简洁凝练" not in prompt_review_backup
