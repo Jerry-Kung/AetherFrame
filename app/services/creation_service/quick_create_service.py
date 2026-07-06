@@ -16,6 +16,7 @@ from app.repositories.creation_repository import (
 )
 from app.repositories.material_repository import MaterialCharacterRepository
 from app.services import directory_service
+from app.services.creation_service.prompt_precreation_service import strip_machine_code
 from app.services.material_service.material_file_service import (
     standard_reference_paths_for_multimodal_prompt,
 )
@@ -339,7 +340,7 @@ def run_quick_create_task_sync(task_id: str, session_factory=SessionLocal) -> No
             directory_service.ensure_dir_exists(prompt_dir)
 
             content = [
-                {"text": full_prompt},
+                {"text": strip_machine_code(full_prompt)},
                 {"text": "以下是角色参考图，作为你修补任务的重要参考"},
             ]
             for p in refs:

@@ -114,6 +114,70 @@ class TestQuickCreateService:
             assert img["review"]["status"] == "usable"
             assert img["review"]["overall_quality"] == 88
 
+    @patch("app.services.creation_service.quick_create_service.yibu_gemini_infer")
+    @patch("app.services.creation_service.quick_create_service.generate_image_with_nano_banana_pro")
+    def test_quick_create_strips_machine_code_before_send(
+        self, mock_generate, mock_review_infer, db_session, temp_data_dir
+    ):
+        from app.repositories.creation_repository import CreationPromptPrecreationRepository
+        from app.repositories.material_repository import MaterialCharacterRepository
+        from app.services.creation_service.quick_create_service import QuickCreateService
+
+        character_id = "mchar_qc_strip"
+        MaterialCharacterRepository(db_session).create(
+            {"id": character_id, "name": "测试角色"}
+        )
+        prepo = CreationPromptPrecreationRepository(db_session)
+        task = prepo.create(
+            character_id=character_id, seed_prompt="seed", n=1, status="completed"
+        )
+        full_prompt_with_code = (
+            "**[COMPOSITION_DECISION]**\n"
+            "aspect_ratio: 3:4\n"
+            "shooting_angle: three_quarter\n"
+            "\n"
+            "**【固定】任务目标**：生成插画。\n"
+        )
+        prepo.update(task.id, {"status": "completed", "result_json": [{
+            "id": "p1", "title": "t1", "preview": "pv1",
+            "fullPrompt": full_prompt_with_code,
+            "tags": [], "createdAt": "2026-01-01",
+        }]})
+        _create_five_standard_refs(character_id)
+        mock_review_infer.return_value = MOCK_REVIEW_USABLE_JSON
+
+        sent_texts = []
+
+        def _ok(**kwargs):
+            sent_texts.append(kwargs["Content"][0]["text"])
+            os.makedirs(kwargs["output_path"], exist_ok=True)
+            with open(os.path.join(kwargs["output_path"], kwargs["file_name"]), "wb") as f:
+                f.write(b"img")
+            return True
+
+        mock_generate.side_effect = _ok
+
+        service = QuickCreateService(db_session)
+        start = service.start_quick_create(
+            character_id=character_id,
+            selected_prompts=[{"id": "p1", "fullPrompt": full_prompt_with_code}],
+            n=1,
+            aspect_ratio="1:1",
+            background_tasks=None,
+        )
+        status = service.get_task_status(start["task_id"])
+        assert status["status"] == "completed"
+        assert sent_texts, "图像模型未收到任何文本"
+        for text in sent_texts:
+            assert "[COMPOSITION_DECISION]" not in text
+            assert "aspect_ratio:" not in text
+            assert "**【固定】任务目标**" in text
+        # 存档保持原样（含机器码）
+        qtask = service.quick_repo.get_by_id(start["task_id"])
+        with open(os.path.join(qtask.work_dir, "task_meta.json"), encoding="utf-8") as f:
+            meta = json.load(f)
+        assert "[COMPOSITION_DECISION]" in meta["selected_prompts"][0]["fullPrompt"]
+
     @patch("app.services.creation_service.quick_create_service.generate_image_with_nano_banana_pro")
     def test_quick_create_retry_limited_by_3n(self, mock_generate, db_session, temp_data_dir):
         from app.services.creation_service.quick_create_service import QuickCreateService
