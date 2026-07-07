@@ -1,6 +1,6 @@
 # exp002：腿脚规则包 A/B（control=现生产链路，rulepack=规则包链路）。
 # 每格 5 张、12 种子（12 角色，benchmark_v3 广覆盖）、2 变体 = 120 张/轮。
-# 角色数据经 MATERIAL_CHARACTERS_DIR 指向生产拷贝（runbook §0）。
+# 角色数据：生产环境默认目录 data/material/characters（本地调试才需 MATERIAL_CHARACTERS_DIR，见 runbook §0）。
 # concurrency 受 config MAX_CONCURRENCY=10 约束。
 exp_id: exp002
 benchmark: experiments/fixtures/benchmark_v3.yaml

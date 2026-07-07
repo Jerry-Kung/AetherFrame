@@ -1,6 +1,6 @@
 # 基准集 v3（exp002 腿脚高危侧重 + 广角色覆盖）。种子 Claude 起草，用户已于 2026-07-07 审定冻结——本文件不得再改动。
-# 12 角色 × 各 1 种子 = 12 格。角色取自生产环境拷贝（data/material/characters_production/characters，
-# 通过 MATERIAL_CHARACTERS_DIR 环境变量接入，见 exp002 runbook §0）。
+# 12 角色 × 各 1 种子 = 12 格。角色数据：生产环境默认目录 data/material/characters；
+# 本地调试用生产拷贝时经 MATERIAL_CHARACTERS_DIR 接入（见 exp002 runbook §0）。
 # 选择依据：保留 castorice/hysilens 与 exp001/exp001b 数据连续性；新增 10 位按外观特征
 # 分层挑选（兽耳/护目镜/人偶关节/花冠/双马尾/精灵耳等锚点类型互异），扩大规则包压力面。
 # 种子场景沿用 v2 的腿脚高危谱系（跪坐/鸭子坐/抱膝/盘腿/斜倚/蹲姿/站姿），袜型多样化。
