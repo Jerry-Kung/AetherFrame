@@ -52,3 +52,12 @@ def test_parse_tolerates_feedback_with_brackets_free_text():
     c.feedback = "问题：脚部[轻微]崩坏"
     out = parse_cases(serialize_cases([c]))
     assert out[0].feedback == c.feedback
+
+
+def test_round_trip_preserves_trailing_newline_in_fields():
+    c = _sample()
+    c.final_prompt = "line1\n\nline2\n"   # 值以换行结尾
+    c.feedback = "问题描述\n\n"           # 值以空行结尾
+    out = parse_cases(serialize_cases([c]))
+    assert out[0].final_prompt == c.final_prompt
+    assert out[0].feedback == c.feedback

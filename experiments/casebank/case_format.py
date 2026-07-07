@@ -1,5 +1,6 @@
-"""Case 文本格式（设计文档 §2.1）解析/序列化。一批多 Case 存一个文件，与
-experiments/cases 现行手工样例结构兼容，另加 [meta] 结构化头部与 tags。"""
+"""Case 文本格式（设计文档 §2.1）解析/序列化。一批多 Case 存一个文件，
+格式沿用现行手工样例的三段式结构；历史无 [meta] 头的旧文件不在解析范围，
+另加 [meta] 结构化头部与 tags。"""
 from dataclasses import dataclass, field
 
 _META_INT = ("images", "bad")
@@ -100,18 +101,24 @@ def _section_map(body_lines: list) -> dict:
 
 
 def parse_cases(text: str) -> list:
+    chunks = _split_case_chunks(text)
     cases = []
-    for case_id, body in _split_case_chunks(text):
+    for idx, (case_id, body) in enumerate(chunks):
         sec = _section_map(body)
         meta = {}
         for line in sec.get("[meta]", []):
             if ":" in line:
                 k, v = line.split(":", 1)
                 meta[k.strip()] = v.strip()
-        # 正文段末尾会多一个 serialize 时补的换行，rstrip 一个尾随空行
-        def _text(name):
+        # serialize_cases 用 "\n".join(blocks) 拼接多个 Case，会在除最后一个
+        # Case 外的每个 Case 末尾（即其 [feed_back] 段）多插入一个空行；
+        # 该空行不是字段值的一部分，需剥掉——且至多剥这一个，其余尾随空行
+        # 一律视为字段值本身的内容原样保留。
+        is_last_case = idx == len(chunks) - 1
+
+        def _text(name, strip_join_artifact=False):
             seg = sec.get(name, [])
-            while seg and seg[-1] == "":
+            if strip_join_artifact and not is_last_case and seg and seg[-1] == "":
                 seg = seg[:-1]
             return "\n".join(seg)
         cases.append(Case(
@@ -128,6 +135,6 @@ def parse_cases(text: str) -> list:
             taxonomy_version=meta.get("taxonomy_version", "v1"),
             seed_prompt=_text("[seed_prompt]"),
             final_prompt=_text("[final_prompt]"),
-            feedback=_text("[feed_back]"),
+            feedback=_text("[feed_back]", strip_join_artifact=True),
         ))
     return cases
