@@ -50,6 +50,14 @@ def test_tag_freq_normalized_child_and_parent():
     assert out["tag_freq_parent"]["control"]["袜子"] == 3   # 2+1 cell 计次
 
 
+def test_duplicate_tags_in_one_case_counted_once():
+    cases = [_case("control", "s1", "hard", 5, 3,
+                   ["袜子/上色感", "袜子/上色感", "丝袜/涂色感"])]  # 后者归一后同前
+    out = analyze(cases, _tx())
+    assert out["tag_freq"]["control"]["袜子/上色感"] == 1
+    assert out["tag_freq_parent"]["control"]["袜子"] == 1
+
+
 def test_unknown_tag_recorded_not_counted():
     cases = [_case("control", "s1", "hard", 5, 3, ["袜子/查无此项"])]
     out = analyze(cases, _tx())

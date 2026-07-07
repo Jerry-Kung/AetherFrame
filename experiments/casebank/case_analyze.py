@@ -4,6 +4,7 @@ import argparse
 import glob
 import json
 import os
+import sys
 
 from experiments.casebank.case_format import parse_cases
 from experiments.casebank.taxonomy import load_taxonomy
@@ -37,12 +38,16 @@ def analyze(cases, taxonomy):
 
     tag_freq, tag_freq_parent, unknown = {}, {}, []
     for c in cases:
+        seen_norm = set()  # 归一化去重：同一 Case 内重复/别名同指的 tag 只计一次
         for tag in c.tags:
             try:
                 norm = taxonomy.normalize(tag)
             except ValueError:
                 unknown.append(tag)
                 continue
+            if norm in seen_norm:
+                continue
+            seen_norm.add(norm)
             parent = norm.split("/")[0]
             tag_freq.setdefault(c.variant, {})
             tag_freq[c.variant][norm] = tag_freq[c.variant].get(norm, 0) + 1
@@ -50,11 +55,17 @@ def analyze(cases, taxonomy):
             tag_freq_parent[c.variant][parent] = \
                 tag_freq_parent[c.variant].get(parent, 0) + 1
 
+    seen_unknown, unknown_deduped = set(), []
+    for tag in unknown:
+        if tag not in seen_unknown:
+            seen_unknown.add(tag)
+            unknown_deduped.append(tag)
+
     return {"by_variant": by_variant,
             "by_difficulty_variant": by_difficulty_variant,
             "by_source": by_source,
             "tag_freq": tag_freq, "tag_freq_parent": tag_freq_parent,
-            "unknown_tags": unknown}
+            "unknown_tags": unknown_deduped}
 
 
 def load_cases_dir(dir_path):
@@ -71,6 +82,9 @@ def main():
     ap.add_argument("--taxonomy", default="experiments/cases/taxonomy.yaml")
     args = ap.parse_args()
     cases = load_cases_dir(args.cases_dir)
+    if not cases:
+        print(f"[warn] 未在 {args.cases_dir} 下找到任何 Case（*.txt 为空或不存在）",
+              file=sys.stderr)
     tx = load_taxonomy(args.taxonomy)
     print(json.dumps(analyze(cases, tx), ensure_ascii=False, indent=2))
 
