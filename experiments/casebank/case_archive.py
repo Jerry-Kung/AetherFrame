@@ -1,9 +1,12 @@
 """实验结果 → 结构化 Case 归档。图片不落盘；预填 [meta]+种子+出图 Prompt，
 feedback/tags 留空待用户手工填写（设计文档 §2.1、feedback-case-data-first 记忆）。"""
 import json
+import logging
 import os
 
 from experiments.casebank.case_format import Case, serialize_cases
+
+logger = logging.getLogger(__name__)
 
 
 def _load_json(path):
@@ -21,13 +24,16 @@ def build_cases(layout, benchmark, source, date, ratings=None, key=None):
     for name, meta in benchmark.characters.items():
         char_name[str(meta["character_id"])] = name
 
-    # (variant, seed) -> ok 图数
+    # (variant, seed) 键集合来自全部 entries（不论 ok），避免全格失败被静默丢弃；
+    # images 仍只计 ok 条目数。
+    cell_keys = set()
     cell_images = {}
     for e in entries:
+        ck = (e["variant"], e["seed_id"])
+        cell_keys.add(ck)
         if not e.get("ok"):
             continue
-        cell_images.setdefault((e["variant"], e["seed_id"]), 0)
-        cell_images[(e["variant"], e["seed_id"])] += 1
+        cell_images[ck] = cell_images.get(ck, 0) + 1
 
     # (variant, seed) -> [bad_count, [notes]]  由盲评 ratings+key 汇总
     cell_bad = {}
@@ -44,9 +50,17 @@ def build_cases(layout, benchmark, source, date, ratings=None, key=None):
 
     cases = []
     idx = 0
-    for (variant, seed_id), n_img in sorted(cell_images.items()):
+    for variant, seed_id in sorted(cell_keys):
         idx += 1
         seed = seed_by_id.get(seed_id)
+        if seed is None:
+            # 归档是一次性批处理，manifest 与 benchmark 数据不一致须 fail-fast，
+            # 不能静默产出空元数据 Case；须先于 prompt 文件读取判断，
+            # 否则未知 seed 通常也没有对应 prompt 文件，会先炸 FileNotFoundError
+            # 掩盖真正原因。
+            raise ValueError(
+                f"seed_id 在 manifest 中存在但 benchmark 未找到: {seed_id}"
+            )
         with open(layout.prompt_path(variant, seed_id), "r",
                   encoding="utf-8") as f:
             final_prompt = f.read().rstrip("\n")
@@ -57,7 +71,7 @@ def build_cases(layout, benchmark, source, date, ratings=None, key=None):
             character=char_name.get(seed.character_id, "") if seed else "",
             seed_id=seed_id,
             difficulty=seed.difficulty if seed else "",
-            variant=variant, images=n_img,
+            variant=variant, images=cell_images.get(ck, 0),
             bad=cell_bad.get(ck, 0), tags=[], taxonomy_version="v1",
             seed_prompt=seed.text if seed else "",
             final_prompt=final_prompt,
@@ -68,6 +82,8 @@ def build_cases(layout, benchmark, source, date, ratings=None, key=None):
 
 def archive_experiment(layout, benchmark, source, out_path, date,
                        ratings_path=None, key_path=None):
+    if bool(ratings_path) != bool(key_path):
+        logger.warning("仅提供 ratings/key 之一，已按无评分处理")
     cases = build_cases(
         layout, benchmark, source=source, date=date,
         ratings=_load_json(ratings_path), key=_load_json(key_path),
