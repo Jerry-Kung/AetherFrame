@@ -1,0 +1,8 @@
+# exp002：腿脚规则包 A/B（control=现生产链路，rulepack=规则包链路）。
+# 每格 5 张、9 种子、2 变体 = 90 张/轮。concurrency 受 config MAX_CONCURRENCY=10 约束。
+exp_id: exp002
+benchmark: experiments/fixtures/benchmark_v2.yaml
+variants: [control, rulepack]
+images_per_cell: 5
+concurrency: 6
+review_shuffle_seed: 20260707
