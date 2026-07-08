@@ -39,6 +39,26 @@ def test_build_review_html_blind_and_reproducible(tmp_path):
     assert {v["variant"] for v in key.values()} == {"baseline", "slim"}
 
 
+def test_build_review_html_has_progress_persistence(tmp_path):
+    """盲评页须支持保存进度：localStorage 按实验 ID 隔离、自动恢复、可导入续评。"""
+    lay = ExpLayout(str(tmp_path), "exp001")
+    for e in _entries():
+        p = os.path.join(lay.root, e["image_path"])
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "wb") as f:
+            f.write(b"png")
+    html = build_review_html(lay, _entries(), shuffle_seed=42)
+    # 存储 key 含实验 ID（多实验共用浏览器时进度互不覆盖）
+    assert "blindReview:exp001" in html
+    # 自动保存 + 打开自动恢复 + 导入导出 + 清空
+    assert "localStorage.setItem" in html
+    assert "localStorage.getItem" in html
+    assert "importRatings" in html and "exportRatings" in html
+    assert "clearProgress" in html
+    # 进度计数用实际条目数
+    assert "TOTAL=4" in html
+
+
 def test_build_final_report(tmp_path):
     lay = ExpLayout(str(tmp_path), "exp001")
     for e in _entries():
