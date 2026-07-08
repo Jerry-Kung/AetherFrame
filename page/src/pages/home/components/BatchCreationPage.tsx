@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef, memo } from "react";
 import type { CharaProfile } from "@/types/material";
+import type { QuickCreateImage } from "@/types/quickCreate";
 import * as creationApi from "@/services/creationApi";
 import { listFixedSeedTemplates } from "@/services/materialApi";
 import { ApiError } from "@/services/api";
@@ -110,6 +111,8 @@ export default function BatchCreationPage({
   const [genHint, setGenHint] = useState("准备启动灵感产线…");
   const pollCancelRef = useRef(false);
   const [fixedSeedUsedFlags, setFixedSeedUsedFlags] = useState<boolean[]>([]);
+  const [exportingFeedback, setExportingFeedback] = useState(false);
+  const [exportHint, setExportHint] = useState<string | null>(null);
 
   const loadFixedSeedMeta = useCallback(async () => {
     try {
@@ -188,6 +191,67 @@ export default function BatchCreationPage({
     },
     [tasks, onMarkSeedUsed, loadTasksFromApi, loadFixedSeedMeta]
   );
+
+  const handleSaveFeedback = useCallback(
+    async (taskId: string, img: QuickCreateImage, feedbackText: string, legFootBad: boolean) => {
+      const task = tasks.find((t) => t.id === taskId);
+      if (!task?.quickCreateRecordId) {
+        throw new ApiError("该记录缺少美图创作任务，无法保存 feedback", 400);
+      }
+      if (typeof img.imageIndex !== "number") {
+        throw new ApiError("图片索引缺失，无法保存 feedback", 400);
+      }
+      const text = feedbackText.trim();
+      await creationApi.saveImageFeedback(task.quickCreateRecordId, img.promptId, img.imageIndex, {
+        feedback_text: text,
+        leg_foot_bad: legFootBad,
+      });
+      const filled = text.length > 0 || legFootBad;
+      const nextFb = filled ? { feedbackText: text, legFootBad } : null;
+      const patchImg = (im: QuickCreateImage) =>
+        im.id === img.id ? { ...im, userFeedback: nextFb } : im;
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id !== taskId
+            ? t
+            : {
+                ...t,
+                images: t.images.map(patchImg),
+                groups: t.groups.map((g) => ({ ...g, images: g.images.map(patchImg) })),
+              }
+        )
+      );
+    },
+    [tasks]
+  );
+
+  const handleExportFeedback = useCallback(async () => {
+    setExportingFeedback(true);
+    setExportHint(null);
+    try {
+      const payload = await creationApi.exportImageFeedback();
+      if (payload.records.length === 0) {
+        setExportHint("还没有已填写的 feedback～");
+        return;
+      }
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      a.href = url;
+      a.download = `feedback_export_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportHint(`已导出 ${payload.records.length} 条产线的 feedback 记录`);
+    } catch (e) {
+      setExportHint(e instanceof ApiError ? e.message : "导出失败，请重试");
+    } finally {
+      setExportingFeedback(false);
+    }
+  }, []);
 
   const startBatch = useCallback(async () => {
     const pickCharas =
@@ -492,6 +556,27 @@ export default function BatchCreationPage({
                   {tasks.length} 条产线记录
                 </span>
               </div>
+              <div className="flex items-center gap-2">
+                {exportHint && (
+                  <span className="text-xs text-rose-400/70">{exportHint}</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleExportFeedback()}
+                  disabled={exportingFeedback}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs cursor-pointer transition-all duration-200 whitespace-nowrap"
+                  style={{
+                    background: "rgba(253,164,175,0.1)",
+                    border: "1px solid rgba(253,164,175,0.2)",
+                    color: "#f472b6",
+                    fontFamily: "'ZCOOL KuaiLe', cursive",
+                    opacity: exportingFeedback ? 0.5 : 1,
+                  }}
+                >
+                  <i className="ri-download-2-line text-xs"></i>
+                  {exportingFeedback ? "导出中…" : "导出 Feedback JSON"}
+                </button>
+              </div>
             </div>
             {tasks.map((task, idx) => (
               <BatchTaskCard
@@ -500,6 +585,7 @@ export default function BatchCreationPage({
                 index={idx}
                 onDelete={handleDeleteTask}
                 onMarkUsed={handleMarkUsed}
+                onSaveFeedback={handleSaveFeedback}
               />
             ))}
           </div>
