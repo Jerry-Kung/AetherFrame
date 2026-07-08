@@ -519,10 +519,17 @@ class BatchAutomationService:
             raise ValueError("记录不存在")
         qc_id = (item.quick_create_task_id or "").strip()
         ppc_id = (item.prompt_precreation_task_id or "").strip()
+        # 子任务可能已在创作模块单独删除（悬空引用）；清理失败不应阻断产线记录本身的删除
         if qc_id:
-            QuickCreateService(self.db).delete_history(qc_id)
+            try:
+                QuickCreateService(self.db).delete_history(qc_id)
+            except ValueError:
+                logger.warning("批量条目 %s 关联的一键创作任务已不存在: %s", item_id, qc_id)
         if ppc_id:
-            PromptPrecreationService(self.db).delete_history(ppc_id)
+            try:
+                PromptPrecreationService(self.db).delete_history(ppc_id)
+            except ValueError:
+                logger.warning("批量条目 %s 关联的预生成任务已不存在: %s", item_id, ppc_id)
         self.batch_repo.delete_item_row(item_id)
         return {"deleted_id": item_id}
 

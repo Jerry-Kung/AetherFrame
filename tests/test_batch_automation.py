@@ -1,10 +1,14 @@
 """批量自动化创作：规划校验等单元测试"""
 
 import json
+import uuid
 
 import pytest
 from starlette.datastructures import UploadFile
 
+from app.repositories.creation_batch_repository import CreationBatchRepository
+from app.repositories.creation_repository import CreationQuickCreateRepository
+from app.repositories.material_repository import MaterialCharacterRepository
 from app.services.creation_service.batch_automation_service import BatchAutomationService
 from app.services.material_service.material_service import MaterialService
 
@@ -82,3 +86,76 @@ class TestBatchAutomationPlan:
         assert all(p["character_id"] == char.id for p in planned)
         assert all(p.get("seed_section") == "fixed" for p in planned)
         assert {p["seed_prompt_text"] for p in planned} == {"固定池A", "固定池B"}
+
+
+class TestBatchAutomationDeleteItem:
+    @staticmethod
+    def _make_item(db_session, **task_ids):
+        char = MaterialCharacterRepository(db_session).create(
+            {"id": f"mchar_{uuid.uuid4().hex[:12]}", "name": "batch-delete-char"}
+        )
+        batch_repo = CreationBatchRepository(db_session)
+        run = batch_repo.create_run(iterations_total=1, config_json="{}", status="completed")
+        item = batch_repo.create_item(
+            run_id=run.id,
+            step_index=0,
+            character_id=char.id,
+            seed_prompt_id="s1",
+            seed_section="general",
+            seed_prompt_text="seed",
+            status="completed",
+        )
+        if task_ids:
+            batch_repo.update_item(item.id, task_ids)
+        return batch_repo, item
+
+    def test_delete_item_with_dangling_task_refs(self, db_session):
+        """子任务已被单独删除（悬空引用）时，产线记录仍必须能删掉。"""
+        batch_repo, item = self._make_item(
+            db_session,
+            quick_create_task_id="qcreate_gone000000",
+            prompt_precreation_task_id="ppcpre_gone000000",
+        )
+
+        data = BatchAutomationService(db_session).delete_batch_item(item.id)
+
+        assert data == {"deleted_id": item.id}
+        assert batch_repo.get_item(item.id) is None
+
+    def test_delete_item_removes_row_even_if_ppc_missing(self, db_session):
+        """qc 存在但 ppc 悬空：qc 应被清理，且记录行必须删除（不能半途 404）。"""
+        qc_repo = CreationQuickCreateRepository(db_session)
+        char = MaterialCharacterRepository(db_session).create(
+            {"id": f"mchar_{uuid.uuid4().hex[:12]}", "name": "batch-delete-char2"}
+        )
+        qc_task = qc_repo.create(
+            character_id=char.id,
+            seed_prompt="seed",
+            n=1,
+            aspect_ratio="16:9",
+            selected_prompts=[],
+        )
+        batch_repo = CreationBatchRepository(db_session)
+        run = batch_repo.create_run(iterations_total=1, config_json="{}", status="completed")
+        item = batch_repo.create_item(
+            run_id=run.id,
+            step_index=0,
+            character_id=char.id,
+            seed_prompt_id="s1",
+            seed_section="general",
+            seed_prompt_text="seed",
+            status="completed",
+        )
+        batch_repo.update_item(
+            item.id,
+            {
+                "quick_create_task_id": qc_task.id,
+                "prompt_precreation_task_id": "ppcpre_gone000000",
+            },
+        )
+
+        data = BatchAutomationService(db_session).delete_batch_item(item.id)
+
+        assert data == {"deleted_id": item.id}
+        assert batch_repo.get_item(item.id) is None
+        assert qc_repo.get_by_id(qc_task.id) is None
