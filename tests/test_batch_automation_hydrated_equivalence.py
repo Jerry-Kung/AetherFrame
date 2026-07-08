@@ -204,6 +204,16 @@ def test_hydrated_equivalence_with_legacy(db_session):
         ],
     )
 
+    from app.services.creation_service.feedback_service import ImageFeedbackService
+
+    ImageFeedbackService(db).save_feedback(
+        task_id="qcreate_aaa",
+        prompt_id="p1",
+        image_index=0,
+        feedback_text="等价性校验用反馈",
+        leg_foot_bad=True,
+    )
+
     svc = BatchAutomationService(db)
     new_payload = svc.list_items_hydrated(limit=50, offset=0)
     legacy_payload = _legacy_hydrated(db, limit=50, offset=0)
@@ -214,6 +224,16 @@ def test_hydrated_equivalence_with_legacy(db_session):
         assert set(a.keys()) == set(b.keys()), f"键集合不一致: {a.keys()} vs {b.keys()}"
         for k in a:
             assert a[k] == b[k], f"字段 {k} 不一致: {a[k]!r} vs {b[k]!r}"
+
+    item_1 = next(it for it in new_payload["items"] if it["id"] == "bb_item_1")
+    assert item_1["feedbacks"] == [
+        {
+            "prompt_id": "p1",
+            "image_index": 0,
+            "leg_foot_bad": True,
+            "feedback_text": "等价性校验用反馈",
+        }
+    ], f"populated feedbacks 未正确装配: {item_1['feedbacks']!r}"
 
 
 def test_hydrated_returns_empty_when_no_items(db_session):
