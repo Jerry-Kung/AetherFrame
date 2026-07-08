@@ -64,13 +64,17 @@ python -m experiments.casebank.case_analyze --cases-dir experiments/cases
 ### 0. 定义实验（本地）
 
 1. 明确变量：一次只验证一包变化（如一组模板规则），提前写清判定标准（预注册，先于看数据承诺）。
-2. 基准集：复用 `fixtures/benchmark_vN.yaml` 或新建。种子草案须经用户审定后冻结；
+2. 数据来源：实验所需的 Case（角色）从 `characters_production` 中选择——该目录对应
+   生产环境中真实的角色素材数据（生产 `data/material/characters` 的拷贝，本地调试时
+   用 `MATERIAL_CHARACTERS_DIR` 指向其内层 `characters` 子目录）。benchmark 中的
+   `character_id` 必须取自该目录中真实存在的角色。
+3. 基准集：复用 `fixtures/benchmark_vN.yaml` 或新建。种子草案须经用户审定后冻结；
    种子文本一旦冻结不再修改（连续性豁免的缺陷也保留，如 hys_hard_bubble 无袜子描述）。
    难度分层 hard/medium/easy——**注意天花板效应**：广覆盖基准会稀释高危场景
    （exp002 control 崩坏率仅 8.3%，远低于 exp001 的 ~22%），要检出增益需富集 hard 种子。
-3. 写 `configs/expNNN.yaml`（exp_id、benchmark 路径、变体名列表、images_per_seed、
+4. 写 `configs/expNNN.yaml`（exp_id、benchmark 路径、变体名列表、images_per_seed、
    review_shuffle_seed）与 runbook 文档。
-4. 规模参考：120 张在低崩坏率下 Fisher 检验力不足，判定以人工揭盲对比为决定性依据；
+5. 规模参考：120 张在低崩坏率下 Fisher 检验力不足，判定以人工揭盲对比为决定性依据；
    想要统计显著需加大规模或富集 hard。
 
 ### 1. 生成并冻结变体 Prompt（生产环境）
