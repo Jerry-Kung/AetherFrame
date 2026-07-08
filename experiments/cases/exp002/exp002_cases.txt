@@ -9,7 +9,7 @@ variant: control
 images: 5
 bad: 0
 tags: [袜子/皱褶夸张, 脚部/简陋]
-taxonomy_version: v1
+taxonomy_version: v2
 [seed_prompt]
 暖色落地灯照亮的更衣间地毯上，角色优雅地侧坐，一条腿向前自然伸直，另一条腿在身侧微屈。她穿着高开衩的丝质居家长裙，双腿穿着缀金线细边的薄纱短袜，指尖捏着一枚顶针。
 [final_prompt]
@@ -69,8 +69,8 @@ difficulty: hard
 variant: control
 images: 5
 bad: 0
-tags: []
-taxonomy_version: v1
+tags: [画风/3D玩偶感]
+taxonomy_version: v2
 [seed_prompt]
 深夜私密卧室的木地板上，角色双膝并拢安静跪坐，脚背放松地贴平地面，裸露的右手抱着一只毛绒玩偶到胸前，左手黑色长手套半脱至腕部。她穿着浅紫色吊带睡裙，双腿裹着白色大腿袜。
 [final_prompt]
@@ -138,8 +138,8 @@ difficulty: easy
 variant: control
 images: 5
 bad: 0
-tags: [脚部/夸张, 其他/未分类]
-taxonomy_version: v1
+tags: [脚部/夸张, 脚部/脚尖变色]
+taxonomy_version: v2
 [seed_prompt]
 清晨冷调光线的简约起居室里，角色安静地站在浅色木地板上，身体微微侧向镜头，重心落在一条腿上，另一条腿放松地虚点地面。她穿着简洁的白色居家连衣裙，双脚穿着浅蓝色薄纱短袜。
 [final_prompt]
@@ -200,7 +200,7 @@ variant: control
 images: 5
 bad: 0
 tags: [脚部/夸张]
-taxonomy_version: v1
+taxonomy_version: v2
 [seed_prompt]
 在铺着深色抱枕的榻榻米上，角色双腿交叠盘腿坐着，双手捧着一杯温热的茶轻轻吹气。她穿着宽松的和风居家短袍，双脚穿着白色及踝棉袜，午后阳光透过障子门洒下斑驳光影。
 [final_prompt]
@@ -258,8 +258,8 @@ difficulty: hard
 variant: control
 images: 5
 bad: 0
-tags: [脚部/夸张]
-taxonomy_version: v1
+tags: [脚部/夸张, 画风/3D玩偶感]
+taxonomy_version: v2
 [seed_prompt]
 暮色四合的卧室大床上，角色背靠床头软枕斜坐，双腿并拢折起、穿着袜子的双脚平稳踩在床单上，双手轻轻环抱膝盖。她穿着柔软的针织居家裙，双腿裹着深色半透明大腿袜。
 [final_prompt]
@@ -319,7 +319,7 @@ variant: control
 images: 5
 bad: 2
 tags: [袜子/皱褶夸张, 袜子/缺失, 脚部/夸张, 画风/写实化]
-taxonomy_version: v1
+taxonomy_version: v2
 [seed_prompt]
 铺着厚地毯的书房里，角色穿着宽大的针织开衫鸭子坐在地毯上，双手在膝前捧着一本摊开的厚重典籍。她的双腿穿着黑色薄透大腿袜，身旁散落着几枚精巧的机械零件。
 [final_prompt]
@@ -378,8 +378,8 @@ difficulty: hard
 variant: control
 images: 5
 bad: 2
-tags: [身体比例/整体不协调, 其他/未分类]
-taxonomy_version: v1
+tags: [身体比例/整体不协调, 袜子/穿鞋, 画风/3D玩偶感]
+taxonomy_version: v2
 [seed_prompt]
 低饱和灰蓝色调的古典居家画室中，角色慵懒而端庄地侧坐在铺有深海蓝天鹅绒坐垫的古典高背椅上，双手捧着吹泡泡细管置于唇边认真轻吹。一条腿曲起折叠在坐垫上，另一条腿从椅缘向斜下方自然伸展、足尖轻触木地板。夕阳碎光透过百叶窗洒入，空气中漂浮着数个肥皂泡。
 [final_prompt]
@@ -439,7 +439,7 @@ variant: control
 images: 5
 bad: 1
 tags: [袜子/上色感, 脚部/简陋]
-taxonomy_version: v1
+taxonomy_version: v2
 [seed_prompt]
 明亮的开放式起居室里，角色整个人陷进巨大的奶白色懒人沙发，双腿微微蜷起、脚背自然绷直。她穿着浅色连帽居家服和及膝白袜，怀里抱着一台拍立得相机。
 [final_prompt]
@@ -498,8 +498,8 @@ difficulty: easy
 variant: control
 images: 5
 bad: 0
-tags: [脚部/夸张, 其他/未分类]
-taxonomy_version: v1
+tags: [脚部/夸张, 脚部/脚尖变色]
+taxonomy_version: v2
 [seed_prompt]
 客厅低矮沙发上，角色慵懒地斜倚在松软靠枕间，双腿交叠向一侧自然舒展，脚背轻轻绷起。她穿着真丝质感的吊带长裙，双腿穿着薄透白色大腿袜。
 [final_prompt]
@@ -560,7 +560,7 @@ variant: control
 images: 5
 bad: 0
 tags: []
-taxonomy_version: v1
+taxonomy_version: v2
 [seed_prompt]
 深夜城市灯火背景的飘窗台上，角色屈起双膝侧坐，双臂环在膝上、下巴轻搭在手背，脚跟抵着窗台边缘。她穿着宽松的条纹居家衫，双脚穿着黑白拼色及踝短袜。
 [final_prompt]
@@ -619,8 +619,8 @@ difficulty: medium
 variant: control
 images: 5
 bad: 0
-tags: [袜子/皱褶夸张, 脚部/简陋]
-taxonomy_version: v1
+tags: [袜子/皱褶夸张, 脚部/简陋, 画风/3D玩偶感]
+taxonomy_version: v2
 [seed_prompt]
 霓虹灯带映照的电竞房里，角色侧坐在人体工学椅上，一条腿屈起踩在椅面，另一条腿自然垂下、脚尖轻点地板。她穿着oversize连帽卫衣与灰色棉质短袜，手里握着游戏手柄。
 [final_prompt]
@@ -680,7 +680,7 @@ variant: control
 images: 5
 bad: 0
 tags: []
-taxonomy_version: v1
+taxonomy_version: v2
 [seed_prompt]
 角色乖巧地蹲在洒满阳光的玄关，双膝并拢，正伸手温柔地逗弄一只趴在鞋柜上的三花猫。她穿着简单的居家白裙，双脚穿着淡粉色薄纱短袜。
 [final_prompt]
@@ -742,8 +742,8 @@ difficulty: medium
 variant: rulepack
 images: 5
 bad: 0
-tags: []
-taxonomy_version: v1
+tags: [画风/3D玩偶感]
+taxonomy_version: v2
 [seed_prompt]
 暖色落地灯照亮的更衣间地毯上，角色优雅地侧坐，一条腿向前自然伸直，另一条腿在身侧微屈。她穿着高开衩的丝质居家长裙，双腿穿着缀金线细边的薄纱短袜，指尖捏着一枚顶针。
 [final_prompt]
@@ -802,8 +802,8 @@ difficulty: hard
 variant: rulepack
 images: 5
 bad: 0
-tags: [袜子/皱褶夸张, 身体比例/整体不协调]
-taxonomy_version: v1
+tags: [袜子/皱褶夸张, 身体比例/整体不协调, 画风/3D玩偶感]
+taxonomy_version: v2
 [seed_prompt]
 深夜私密卧室的木地板上，角色双膝并拢安静跪坐，脚背放松地贴平地面，裸露的右手抱着一只毛绒玩偶到胸前，左手黑色长手套半脱至腕部。她穿着浅紫色吊带睡裙，双腿裹着白色大腿袜。
 [final_prompt]
@@ -867,8 +867,8 @@ difficulty: easy
 variant: rulepack
 images: 5
 bad: 0
-tags: [其他/未分类]
-taxonomy_version: v1
+tags: [脚部/脚尖变色]
+taxonomy_version: v2
 [seed_prompt]
 清晨冷调光线的简约起居室里，角色安静地站在浅色木地板上，身体微微侧向镜头，重心落在一条腿上，另一条腿放松地虚点地面。她穿着简洁的白色居家连衣裙，双脚穿着浅蓝色薄纱短袜。
 [final_prompt]
@@ -929,7 +929,7 @@ variant: rulepack
 images: 5
 bad: 1
 tags: [袜子/皱褶夸张, 脚部/夸张]
-taxonomy_version: v1
+taxonomy_version: v2
 [seed_prompt]
 在铺着深色抱枕的榻榻米上，角色双腿交叠盘腿坐着，双手捧着一杯温热的茶轻轻吹气。她穿着宽松的和风居家短袍，双脚穿着白色及踝棉袜，午后阳光透过障子门洒下斑驳光影。
 [final_prompt]
@@ -988,8 +988,8 @@ difficulty: hard
 variant: rulepack
 images: 5
 bad: 0
-tags: [脚部/简陋]
-taxonomy_version: v1
+tags: [脚部/简陋, 画风/3D玩偶感]
+taxonomy_version: v2
 [seed_prompt]
 暮色四合的卧室大床上，角色背靠床头软枕斜坐，双腿并拢折起、穿着袜子的双脚平稳踩在床单上，双手轻轻环抱膝盖。她穿着柔软的针织居家裙，双腿裹着深色半透明大腿袜。
 [final_prompt]
@@ -1055,7 +1055,7 @@ variant: rulepack
 images: 5
 bad: 0
 tags: [脚部/夸张]
-taxonomy_version: v1
+taxonomy_version: v2
 [seed_prompt]
 铺着厚地毯的书房里，角色穿着宽大的针织开衫鸭子坐在地毯上，双手在膝前捧着一本摊开的厚重典籍。她的双腿穿着黑色薄透大腿袜，身旁散落着几枚精巧的机械零件。
 [final_prompt]
@@ -1114,7 +1114,7 @@ variant: rulepack
 images: 5
 bad: 2
 tags: [袜子/缺失]
-taxonomy_version: v1
+taxonomy_version: v2
 [seed_prompt]
 低饱和灰蓝色调的古典居家画室中，角色慵懒而端庄地侧坐在铺有深海蓝天鹅绒坐垫的古典高背椅上，双手捧着吹泡泡细管置于唇边认真轻吹。一条腿曲起折叠在坐垫上，另一条腿从椅缘向斜下方自然伸展、足尖轻触木地板。夕阳碎光透过百叶窗洒入，空气中漂浮着数个肥皂泡。
 [final_prompt]
@@ -1174,7 +1174,7 @@ variant: rulepack
 images: 5
 bad: 0
 tags: [脚部/简陋]
-taxonomy_version: v1
+taxonomy_version: v2
 [seed_prompt]
 明亮的开放式起居室里，角色整个人陷进巨大的奶白色懒人沙发，双腿微微蜷起、脚背自然绷直。她穿着浅色连帽居家服和及膝白袜，怀里抱着一台拍立得相机。
 [final_prompt]
@@ -1241,7 +1241,7 @@ variant: rulepack
 images: 5
 bad: 0
 tags: [脚部/夸张]
-taxonomy_version: v1
+taxonomy_version: v2
 [seed_prompt]
 客厅低矮沙发上，角色慵懒地斜倚在松软靠枕间，双腿交叠向一侧自然舒展，脚背轻轻绷起。她穿着真丝质感的吊带长裙，双腿穿着薄透白色大腿袜。
 [final_prompt]
@@ -1302,7 +1302,7 @@ variant: rulepack
 images: 5
 bad: 1
 tags: [脚部/比例结构]
-taxonomy_version: v1
+taxonomy_version: v2
 [seed_prompt]
 深夜城市灯火背景的飘窗台上，角色屈起双膝侧坐，双臂环在膝上、下巴轻搭在手背，脚跟抵着窗台边缘。她穿着宽松的条纹居家衫，双脚穿着黑白拼色及踝短袜。
 [final_prompt]
@@ -1363,7 +1363,7 @@ variant: rulepack
 images: 5
 bad: 0
 tags: []
-taxonomy_version: v1
+taxonomy_version: v2
 [seed_prompt]
 霓虹灯带映照的电竞房里，角色侧坐在人体工学椅上，一条腿屈起踩在椅面，另一条腿自然垂下、脚尖轻点地板。她穿着oversize连帽卫衣与灰色棉质短袜，手里握着游戏手柄。
 [final_prompt]
@@ -1423,7 +1423,7 @@ variant: rulepack
 images: 5
 bad: 0
 tags: [脚部/简陋]
-taxonomy_version: v1
+taxonomy_version: v2
 [seed_prompt]
 角色乖巧地蹲在洒满阳光的玄关，双膝并拢，正伸手温柔地逗弄一只趴在鞋柜上的三花猫。她穿着简单的居家白裙，双脚穿着淡粉色薄纱短袜。
 [final_prompt]

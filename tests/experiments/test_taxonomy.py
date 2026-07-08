@@ -8,11 +8,15 @@ from experiments.casebank.taxonomy import Taxonomy, load_taxonomy
 DATA = "experiments/cases/taxonomy.yaml"
 
 
-def test_loads_real_taxonomy_v1():
+def test_loads_real_taxonomy():
     tx = load_taxonomy(DATA)
-    assert tx.version == "v1"
+    assert tx.version == "v2"
     assert "袜子" in tx.tags
     assert "上色感" in tx.tags["袜子"]
+    # v2 新增（exp002 揭盲后用户确认）
+    assert tx.is_valid("脚部/脚尖变色")
+    assert tx.is_valid("袜子/穿鞋")
+    assert tx.is_valid("画风/3D玩偶感")
 
 
 def test_is_valid_accepts_known_child_tag():
