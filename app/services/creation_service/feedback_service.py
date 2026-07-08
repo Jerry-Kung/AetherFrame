@@ -175,6 +175,11 @@ class ImageFeedbackService:
         result_by_pid = {
             str(r.get("prompt_id") or ""): r for r in results if isinstance(r, dict)
         }
+        index_by_pid = {
+            str(r.get("prompt_id") or ""): i
+            for i, r in enumerate(results)
+            if isinstance(r, dict)
+        }
 
         fb_by_prompt: Dict[str, List[Any]] = {}
         for fb in sorted(fb_rows, key=lambda r: (r.prompt_id, r.image_index)):
@@ -198,12 +203,21 @@ class ImageFeedbackService:
             prompt_groups.append(
                 {
                     "prompt_id": pid,
+                    "prompt_index": index_by_pid.get(pid, -1),
                     "prompt_title": title_map.get(pid) or pid,
                     "full_prompt": str(res.get("full_prompt") or ""),
                     "total_images": len(gen),
                     "images": images,
                 }
             )
+
+        prompt_groups.sort(
+            key=lambda g: (
+                g["prompt_index"] == -1,
+                g["prompt_index"] if g["prompt_index"] != -1 else 0,
+                g["prompt_id"],
+            )
+        )
 
         ch = char_map.get(task.character_id)
         return {

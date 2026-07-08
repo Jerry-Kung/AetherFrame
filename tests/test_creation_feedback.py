@@ -212,6 +212,7 @@ class TestBuildExport:
         assert len(rec["prompt_groups"]) == 1
         g = rec["prompt_groups"][0]
         assert g["prompt_id"] == "p1"
+        assert g["prompt_index"] == 0
         assert g["prompt_title"] == "p1"  # 无预生成卡片时回落 prompt_id
         assert g["full_prompt"] == "最终 Prompt 甲"
         assert g["total_images"] == 3
@@ -232,6 +233,21 @@ class TestBuildExport:
         assert rec["seed_prompt_id"] is None
         assert rec["seed_section"] is None
         assert rec["seed_prompt_text"] == "手动种子"
+        assert rec["prompt_groups"][0]["prompt_index"] == 1
+
+    def test_export_orders_groups_by_prompt_index_not_fill_order(self, db_session):
+        # 先填 p2 再填 p1，验证分组顺序来自 result_json 生成序（prompt_index），
+        # 而非填写顺序，也不是 prompt_id 的 UUID 字典序。
+        task = make_qc_task(db_session, results=QC_RESULTS)
+        svc = ImageFeedbackService(db_session)
+        svc.save_feedback(task_id=task.id, prompt_id="p2", image_index=0,
+                          feedback_text="乙组反馈", leg_foot_bad=False)
+        svc.save_feedback(task_id=task.id, prompt_id="p1", image_index=0,
+                          feedback_text="甲组反馈", leg_foot_bad=True)
+
+        rec = svc.build_export()["records"][0]
+        assert [g["prompt_id"] for g in rec["prompt_groups"]] == ["p1", "p2"]
+        assert [g["prompt_index"] for g in rec["prompt_groups"]] == [0, 1]
 
     def test_export_skips_dangling_rows_and_empty_is_ok(self, db_session):
         svc = ImageFeedbackService(db_session)

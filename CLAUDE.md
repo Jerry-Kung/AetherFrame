@@ -56,7 +56,7 @@ pytest
 ### Frontend (page/)
 
 - **Stack**: React 19 + TypeScript + Vite + Tailwind CSS + react-router-dom v7
-- **Auto-imports**: `unplugin-auto-import` provides React hooks, router hooks, and i18n hooks as globals (no manual imports needed). ESLint config declares matching globals.
+- **Auto-imports**: `unplugin-auto-import` serves the Vite build (React hooks, router hooks, i18n hooks as globals), but `tsconfig.app.json` does not include the generated `auto-imports.d.ts`, so `npm run type-check` requires explicit imports — the repo convention is to always import React hooks explicitly (`import { useState } from "react"`).
 - **Pages**: `page/src/pages/` — `home/`, `material/`, `repair/`, `creation/` (each has `page.tsx` + `components/`)
 - **Services**: `page/src/services/` — API client modules (`api.ts` is the base HTTP wrapper for `/api/repair`; `materialApi.ts`, `creationApi.ts` for other modules)
 - **i18n**: react-i18next with browser language detection, English default

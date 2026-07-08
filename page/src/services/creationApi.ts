@@ -680,6 +680,7 @@ export interface FeedbackExportImage {
 
 export interface FeedbackExportPromptGroup {
   prompt_id: string;
+  prompt_index: number;
   prompt_title: string;
   full_prompt: string;
   total_images: number;

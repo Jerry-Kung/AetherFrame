@@ -90,6 +90,7 @@ seed/角色信息（无 batch item 的 quick create 任务也导出：`seed_prom
       "prompt_groups": [
         {
           "prompt_id": "...",
+          "prompt_index": 0,
           "prompt_title": "...",
           "full_prompt": "...",
           "total_images": 3,
@@ -138,7 +139,10 @@ seed/角色信息（无 batch item 的 quick create 任务也导出：`seed_prom
 ## 4. Case 映射约定（Claude 归档时执行，写入本 spec 作为口径）
 
 - 一个 Case = 一条产线记录 × 一个 Prompt 组：
-  - `case_id`：`Case_prod_{YYYYMMDD}_{quick_create_task_id 前 8 位}_{promptIdx}`；
+  - `case_id`：`Case_prod_{YYYYMMDD}_{qc_hex8}_{prompt_index}`——`qc_hex8` 取
+    `quick_create_task_id` 去掉 `qcreate_` 前缀后的前 8 位十六进制；
+    `prompt_index` 取导出组的 `prompt_index` 字段（result_json 生成顺序位，
+    稳定不随填写顺序变化；为 -1 时回落 `prompt_id` 前 8 位）；
   - `seed_prompt` = `seed_prompt_text` 原文；`final_prompt` = 该组 `full_prompt`；
   - `images` = `total_images`；`bad` = 组内 `leg_foot_bad=true` 的数量；
   - `feed_back` = 逐图「图{image_index+1}: {feedback_text}」按序拼接
@@ -174,3 +178,7 @@ seed/角色信息（无 batch item 的 quick create 任务也导出：`seed_prom
 - 不做服务器端落盘副本；
 - 不在快速创作页/灯箱内加入口（本期只做首页产线记录网格）；
 - 不做后端直接生成 Case txt（归档由 Claude 读 JSON 执行，保留人工 tags 复核环节）。
+
+## 修订记录
+
+2026-07-08 终审修订：case_id 派生改用 qc id 十六进制段 + 导出新增 prompt_groups[].prompt_index（原「task_id 前 8 位」恒为 qcreate_ 前缀、promptIdx 不稳定，会破坏归档去重）。
