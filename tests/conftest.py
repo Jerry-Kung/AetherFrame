@@ -70,6 +70,7 @@ def db_session(temp_data_dir):
     from app.models.creation import CreationPromptPrecreationTask, CreationQuickCreateTask
     from app.models.creation_batch import CreationBatchRunItem, CreationBatchRun
     from app.models.beautify import ImageBeautifyTask
+    from app.models.creation_feedback import CreationImageFeedback
 
     database.init_db()
     db = database.SessionLocal()
@@ -81,6 +82,7 @@ def db_session(temp_data_dir):
     yield db
 
     try:
+        db.query(CreationImageFeedback).delete()
         db.query(ImageBeautifyTask).delete()
         db.query(CreationBatchRunItem).delete()
         db.query(CreationBatchRun).delete()

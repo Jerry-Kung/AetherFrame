@@ -544,6 +544,7 @@ def init_db():
         from app.models.creation import CreationPromptPrecreationTask, CreationQuickCreateTask  # noqa: F401
         from app.models.creation_batch import CreationBatchRun, CreationBatchRunItem  # noqa: F401
         from app.models.beautify import ImageBeautifyTask  # noqa: F401
+        from app.models.creation_feedback import CreationImageFeedback  # noqa: F401
 
         Base.metadata.create_all(bind=engine)
         _ensure_app_migrations_table()
