@@ -30,5 +30,8 @@ class ExpLayout:
     def review_html_path(self) -> str:
         return os.path.join(self.root, "review.html")
 
+    def reveal_html_path(self) -> str:
+        return os.path.join(self.root, "reveal.html")
+
     def final_report_path(self) -> str:
         return os.path.join(self.root, "final_report.md")

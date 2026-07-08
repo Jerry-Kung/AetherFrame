@@ -232,6 +232,106 @@ def build_review_html(layout: ExpLayout, manifest_entries: list,
     return html
 
 
+_REVEAL_LABELS = {
+    "face": ("脸部", {"ok": "正常", "minor": "轻微异常", "broken": "崩坏"}),
+    "anchor": ("锚点", {"full": "齐全", "partial": "部分丢失", "lost": "严重丢失"}),
+    "leg": ("腿脚袜", {"ok": "正常", "minor": "轻微异常", "broken": "崩坏"}),
+}
+_REVEAL_LEVEL = {  # 评分值 -> 徽章色级
+    "ok": "good", "full": "good",
+    "minor": "warn", "partial": "warn",
+    "broken": "bad", "lost": "bad",
+}
+
+
+def build_reveal_html(layout: ExpLayout, manifest_entries: list, key: dict,
+                      ratings: dict, seeds: list) -> str:
+    """揭盲对比页：按种子分组，各变体同种子的出图并排展示，回显盲评评分与备注。
+    引用原始 images/ 路径（含变体名，仅在揭盲后使用）。"""
+    rid_by_ident = {
+        (v["variant"], v["seed_id"], v["image_index"]): rid
+        for rid, v in key.items()
+    }
+    seed_meta = {s.seed_id: s for s in seeds}
+    by_seed = {}
+    variants = []
+    for e in manifest_entries:
+        if not e.get("ok"):
+            continue
+        by_seed.setdefault(e["seed_id"], {}).setdefault(
+            e["variant"], []).append(e)
+        if e["variant"] not in variants:
+            variants.append(e["variant"])
+
+    # 种子按 难度(hard->easy) 再按 id 排序，高危组优先对比
+    diff_order = {"hard": 0, "medium": 1, "easy": 2}
+    def seed_sort(sid):
+        s = seed_meta.get(sid)
+        return (diff_order.get(s.difficulty, 9) if s else 9, sid)
+
+    sections = []
+    for sid in sorted(by_seed, key=seed_sort):
+        s = seed_meta.get(sid)
+        head = (f'<h2 id="{sid}">{sid}'
+                + (f' <small>[{s.difficulty}] {s.character_id}</small>' if s else "")
+                + "</h2>")
+        seed_text = f'<p class="seed">{s.text}</p>' if s else ""
+        rows = []
+        for v in variants:
+            cells = []
+            for e in sorted(by_seed[sid].get(v, []),
+                            key=lambda x: x["image_index"]):
+                rid = rid_by_ident.get((v, sid, e["image_index"]))
+                r = ratings.get(rid, {}) if rid else {}
+                badges = []
+                for f, (label, texts) in _REVEAL_LABELS.items():
+                    val = r.get(f)
+                    lvl = _REVEAL_LEVEL.get(val, "none")
+                    badges.append(f'<span class="b {lvl}">{label}:'
+                                  f'{texts.get(val, "未评")}</span>')
+                note = (r.get("note") or "").strip()
+                cells.append(
+                    '<div class="cell">'
+                    f'<a href="{e["image_path"]}" target="_blank">'
+                    f'<img src="{e["image_path"]}" loading="lazy"></a>'
+                    f'<div class="rid">{rid or "?"} · img{e["image_index"]}</div>'
+                    f'<div>{"".join(badges)}</div>'
+                    + (f'<div class="note">{note}</div>' if note else "")
+                    + "</div>"
+                )
+            rows.append(f'<div class="vrow"><div class="vname">{v}</div>'
+                        f'<div class="imgs">{"".join(cells)}</div></div>')
+        sections.append(f'<section>{head}{seed_text}{"".join(rows)}</section>')
+
+    toc = " · ".join(f'<a href="#{sid}">{sid}</a>'
+                     for sid in sorted(by_seed, key=seed_sort))
+    html = (
+        "<!DOCTYPE html><html lang=\"zh\"><head><meta charset=\"utf-8\">"
+        "<title>exp 揭盲对比</title><style>"
+        "body{font-family:sans-serif;margin:16px}"
+        "section{border-top:2px solid #333;margin-top:24px;padding-top:8px}"
+        ".seed{color:#555;max-width:960px}"
+        ".vrow{display:flex;margin:8px 0}"
+        ".vname{writing-mode:vertical-lr;font-weight:bold;padding:4px;"
+        "background:#eee;margin-right:8px;text-align:center}"
+        ".imgs{display:flex;gap:8px;overflow-x:auto}"
+        ".cell{flex:0 0 auto;width:260px}"
+        ".cell img{width:100%;display:block}"
+        ".rid{color:#888;font-size:12px;margin-top:2px}"
+        ".b{display:inline-block;font-size:12px;border-radius:3px;"
+        "padding:0 4px;margin:2px 2px 0 0}"
+        ".b.good{background:#e2f4e2}.b.warn{background:#fdeec8}"
+        ".b.bad{background:#f8d3d3}.b.none{background:#eee;color:#999}"
+        ".note{font-size:13px;color:#a33;margin-top:2px}"
+        "</style></head><body><h1>揭盲对比（按种子分组，变体并排）</h1>"
+        f"<p>{toc}</p>"
+        + "".join(sections) + "</body></html>"
+    )
+    with open(layout.reveal_html_path(), "w", encoding="utf-8") as f:
+        f.write(html)
+    return html
+
+
 def _rating_rates(ratings: dict, key: dict) -> dict:
     """按 variant 汇总人工盲评：崩坏率 = broken/lost 档占已评图数比例。"""
     by_variant = {}
@@ -294,10 +394,11 @@ def main() -> None:
     from experiments.config import load_experiment_config
 
     ap = argparse.ArgumentParser(description="实验报告工具")
-    ap.add_argument("command", choices=["metrics", "review", "final"])
+    ap.add_argument("command", choices=["metrics", "review", "reveal", "final"])
     ap.add_argument("--config", required=True)
     ap.add_argument("--results-root", default="experiments/results")
-    ap.add_argument("--ratings", help="final 命令：盲评导出的 ratings.json 路径")
+    ap.add_argument("--ratings", help="final/reveal 命令：盲评导出的 ratings.json 路径"
+                    "（reveal 缺省用 results 下的 ratings.json）")
     args = ap.parse_args()
     cfg = load_experiment_config(args.config)
     layout = ExpLayout(args.results_root, cfg.exp_id)
@@ -309,6 +410,24 @@ def main() -> None:
             entries = json.load(f)["entries"]
         build_review_html(layout, entries, cfg.review_shuffle_seed)
         print(f"盲评页已生成: {layout.review_html_path()}")
+    elif args.command == "reveal":
+        from experiments.config import load_benchmark
+
+        with open(layout.manifest_path(), "r", encoding="utf-8") as f:
+            entries = json.load(f)["entries"]
+        with open(os.path.join(layout.root, "review_key.json"), "r",
+                  encoding="utf-8") as f:
+            key = json.load(f)
+        ratings_path = args.ratings or os.path.join(layout.root, "ratings.json")
+        ratings = {}
+        if os.path.isfile(ratings_path):
+            with open(ratings_path, "r", encoding="utf-8") as f:
+                ratings = json.load(f)
+        else:
+            print(f"[warn] 未找到 {ratings_path}，揭盲页将不含评分回显")
+        bench = load_benchmark(cfg.benchmark)
+        build_reveal_html(layout, entries, key, ratings, bench.seeds)
+        print(f"揭盲对比页已生成: {layout.reveal_html_path()}")
     else:
         if not args.ratings:
             ap.error("final 需要 --ratings")
