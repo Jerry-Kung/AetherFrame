@@ -33,11 +33,13 @@ from app.schemas.creation import (
     PromptPrecreationHistoryDetailResponse,
     PromptPrecreationHistoryListResponse,
     PromptCardItem,
+    ImageFeedbackSaveRequest,
 )
 from app.services.creation_service.batch_automation_service import (
     BatchAutomationService,
     run_batch_automation_job,
 )
+from app.services.creation_service.feedback_service import ImageFeedbackService
 from app.services.creation_service.prompt_precreation_service import PromptPrecreationService
 from app.services.creation_service.quick_create_service import QuickCreateService
 
@@ -533,6 +535,46 @@ def batch_automation_delete_item(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     return ApiResponse(success=True, data=data, message="删除批量创作条目成功")
+
+
+@router.put(
+    "/quick-create/tasks/{task_id}/feedback/{prompt_id}/{image_index}",
+    response_model=ApiResponse,
+)
+def save_quick_create_image_feedback(
+    task_id: str,
+    prompt_id: str,
+    image_index: int,
+    body: ImageFeedbackSaveRequest,
+    db: Session = Depends(get_db),
+):
+    tid = (task_id or "").strip()
+    pid = (prompt_id or "").strip()
+    if not tid or not pid:
+        raise HTTPException(status_code=400, detail="task_id / prompt_id 无效")
+    if image_index < 0:
+        raise HTTPException(status_code=422, detail="image_index 无效")
+    try:
+        data = ImageFeedbackService(db).save_feedback(
+            task_id=tid,
+            prompt_id=pid,
+            image_index=image_index,
+            feedback_text=body.feedback_text,
+            leg_foot_bad=body.leg_foot_bad,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return ApiResponse(
+        success=True,
+        data=data,
+        message="保存 feedback 成功" if data is not None else "已清除 feedback",
+    )
+
+
+@router.get("/feedback/export", response_model=ApiResponse)
+def export_image_feedback(db: Session = Depends(get_db)):
+    data = ImageFeedbackService(db).build_export()
+    return ApiResponse(success=True, data=data, message="导出 feedback 成功")
 
 
 @router.get("/quick-create/tasks/{task_id}/images/{image_path:path}")

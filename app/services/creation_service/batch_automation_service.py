@@ -425,6 +425,17 @@ class BatchAutomationService:
             else {}
         )
 
+        from app.repositories.creation_feedback_repository import (
+            CreationImageFeedbackRepository,
+        )
+        from app.services.creation_service.feedback_service import serialize_feedback_row
+
+        feedback_groups = (
+            CreationImageFeedbackRepository(self.db).list_for_task_ids(list(qc_map.keys()))
+            if qc_map
+            else {}
+        )
+
         ppc_service = PromptPrecreationService(self.db) if ppc_map else None
         qc_service = QuickCreateService(self.db) if qc_map else None
 
@@ -459,6 +470,7 @@ class BatchAutomationService:
                 "updated_at": it.updated_at,
                 "prompt_cards": None,
                 "quick_create_results": None,
+                "feedbacks": [],
             }
 
             if it.status == "completed":
@@ -499,6 +511,12 @@ class BatchAutomationService:
                         logger.exception(
                             "批量装配 quick_create 详情失败 qc_id=%s", qc_id
                         )
+
+                if qc_id:
+                    item_data["feedbacks"] = [
+                        serialize_feedback_row(f)
+                        for f in feedback_groups.get(qc_id, [])
+                    ]
 
             items_payload.append(item_data)
 

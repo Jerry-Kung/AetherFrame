@@ -292,3 +292,15 @@ class BatchAutomationRunDetailResponse(BaseModel):
 class BatchAutomationItemListResponse(BaseModel):
     items: List[BatchAutomationRunListItemOut] = Field(default_factory=list)
     total: int = 0
+
+
+class ImageFeedbackSaveRequest(BaseModel):
+    feedback_text: str = ""
+    leg_foot_bad: bool = False
+
+
+class ImageFeedbackOut(BaseModel):
+    prompt_id: str
+    image_index: int
+    leg_foot_bad: bool
+    feedback_text: str

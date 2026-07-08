@@ -125,6 +125,12 @@ def _legacy_hydrated(db, limit: int, offset: int):
     ms = MaterialService(db)
     ppc_service = PromptPrecreationService(db)
     qc_service = QuickCreateService(db)
+    from app.repositories.creation_feedback_repository import (
+        CreationImageFeedbackRepository,
+    )
+    from app.services.creation_service.feedback_service import serialize_feedback_row
+
+    feedback_repo = CreationImageFeedbackRepository(db)
     for it in rows:
         run = batch_repo.get_run(it.run_id)
         if not run:
@@ -152,6 +158,7 @@ def _legacy_hydrated(db, limit: int, offset: int):
             "updated_at": it.updated_at,
             "prompt_cards": None,
             "quick_create_results": None,
+            "feedbacks": [],
         }
         if it.status == "completed":
             ppc_id = (it.prompt_precreation_task_id or "").strip()
@@ -167,6 +174,11 @@ def _legacy_hydrated(db, limit: int, offset: int):
                     item_data["quick_create_selected_prompts"] = d.get(
                         "selected_prompts", []
                     )
+            if qc_id:
+                item_data["feedbacks"] = [
+                    serialize_feedback_row(f)
+                    for f in feedback_repo.list_for_task_ids([qc_id]).get(qc_id, [])
+                ]
         items_payload.append(item_data)
     return {"items": items_payload, "total": total}
 
