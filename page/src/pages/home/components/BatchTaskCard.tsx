@@ -2,6 +2,7 @@ import { memo, useState, useCallback } from "react";
 import CreationResultLightbox from "@/components/CreationResultLightbox";
 import AiCommentModal from "@/pages/creation/components/AiCommentModal";
 import BatchTaskDetailModal from "./BatchTaskDetailModal";
+import ImageFeedbackModal from "./ImageFeedbackModal";
 import DirectionChip from "@/pages/material/components/direction/DirectionChip";
 import type { BatchTask } from "@/types/batchAutomation";
 import type { AiComment, QuickCreateImage } from "@/types/quickCreate";
@@ -16,6 +17,12 @@ interface BatchTaskCardProps {
   index: number;
   onDelete: (taskId: string) => void | Promise<void>;
   onMarkUsed: (taskId: string) => void | Promise<void>;
+  onSaveFeedback: (
+    taskId: string,
+    img: QuickCreateImage,
+    feedbackText: string,
+    legFootBad: boolean
+  ) => Promise<void>;
 }
 
 function seedPreview(text: string): string {
@@ -32,12 +39,13 @@ function promptTitleForBatchImage(task: BatchTask, img: QuickCreateImage): strin
   return "Prompt";
 }
 
-export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed }: BatchTaskCardProps) {
+export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed, onSaveFeedback }: BatchTaskCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [lightbox, setLightbox] = useState<ImageLightboxState | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUsedConfirm, setShowUsedConfirm] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
+  const [feedbackTarget, setFeedbackTarget] = useState<QuickCreateImage | null>(null);
   const [viewingComment, setViewingComment] = useState<{
     comment: AiComment;
     imageUrl: string;
@@ -330,6 +338,36 @@ export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed }
                     </div>
                   </button>
 
+                  {task.quickCreateRecordId && typeof img.imageIndex === "number" && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFeedbackTarget(img);
+                      }}
+                      className="absolute bottom-2 left-2 z-10 flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs cursor-pointer transition-all duration-200 whitespace-nowrap hover:opacity-90 pointer-events-auto"
+                      style={{
+                        fontFamily: "'ZCOOL KuaiLe', cursive",
+                        ...(img.userFeedback
+                          ? {
+                              background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+                              color: "white",
+                              boxShadow: "0 2px 10px rgba(244,114,182,0.4)",
+                            }
+                          : {
+                              background: "rgba(255,255,255,0.85)",
+                              color: "#f472b6",
+                              border: "1px solid rgba(244,114,182,0.35)",
+                            }),
+                      }}
+                    >
+                      <span className="w-3 h-3 flex items-center justify-center" aria-hidden>
+                        <i className="ri-feedback-line text-xs"></i>
+                      </span>
+                      {img.userFeedback ? "已反馈" : "反馈"}
+                    </button>
+                  )}
+
                   {img.aiComment && (
                     <button
                       type="button"
@@ -412,6 +450,15 @@ export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed }
 
       {showDetail && <BatchTaskDetailModal task={task} onClose={() => setShowDetail(false)} />}
 
+      {feedbackTarget && (
+        <ImageFeedbackModal
+          image={feedbackTarget}
+          promptTitle={promptTitleForBatchImage(task, feedbackTarget)}
+          onSave={(text, bad) => onSaveFeedback(task.id, feedbackTarget, text, bad)}
+          onClose={() => setFeedbackTarget(null)}
+        />
+      )}
+
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center">
           <div
@@ -438,7 +485,7 @@ export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed }
                 删除这条产线记录？
               </h3>
               <p className="text-sm text-rose-400/70 text-center leading-relaxed">
-                这会同步删除对应的 Prompt 预生成记录和美图创作记录，不可恢复哦～
+                这会同步删除对应的 Prompt 预生成记录、美图创作记录和已填写的人工 feedback，不可恢复哦～想保留 feedback 请先导出～
               </p>
             </div>
             <div className="h-px mx-5" style={{ background: "rgba(253,164,175,0.2)" }} />
