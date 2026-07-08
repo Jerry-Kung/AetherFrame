@@ -32,6 +32,7 @@ export function quickCreateImageFromApiEntry(
     return {
       id,
       promptId,
+      imageIndex: index,
       url: creationApi.buildQuickCreateResultImageUrl(taskId, path),
     };
   }
@@ -40,6 +41,7 @@ export function quickCreateImageFromApiEntry(
   const base: QuickCreateImage = {
     id,
     promptId,
+    imageIndex: index,
     url: creationApi.buildQuickCreateResultImageUrl(taskId, path),
   };
   if (typeof entry !== "string") {

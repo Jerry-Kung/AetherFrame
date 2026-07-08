@@ -199,14 +199,21 @@ export function buildBatchTaskFromHydrated(
 
   if (row.quick_create_results && row.quick_create_task_id) {
     const taskId = row.quick_create_task_id;
+    const fbMap = new Map(
+      (row.feedbacks ?? []).map((f) => [`${f.prompt_id}#${f.image_index}`, f] as const)
+    );
     const selectedPromptMap = new Map(
       (row.quick_create_selected_prompts ?? []).map((p) => [p.id, p.fullPrompt] as const)
     );
 
     for (const r of row.quick_create_results) {
-      const imgs: QuickCreateImage[] = (r.generated_images ?? []).map((img, i) =>
-        quickCreateImageFromApiEntry(taskId, r.prompt_id, i, img)
-      );
+      const imgs: QuickCreateImage[] = (r.generated_images ?? []).map((img, i) => {
+        const base = quickCreateImageFromApiEntry(taskId, r.prompt_id, i, img);
+        const fb = fbMap.get(`${r.prompt_id}#${i}`);
+        return fb
+          ? { ...base, userFeedback: { feedbackText: fb.feedback_text, legFootBad: fb.leg_foot_bad } }
+          : base;
+      });
       for (const im of imgs) flat.push(im);
 
       const titleFromCards = promptTitleById.get(r.prompt_id)?.trim();

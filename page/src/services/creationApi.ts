@@ -559,6 +559,7 @@ export interface HydratedBatchItem extends BatchAutomationListItemRow {
     id: string;
     fullPrompt: string;
   }> | null;
+  feedbacks?: ImageFeedbackEntry[] | null;
 }
 
 export interface HydratedBatchItemListResponse {
@@ -635,4 +636,82 @@ export function parseQuickCreateResultImagePath(imageUrl: string, taskId: string
       }
     })
     .join("/");
+}
+
+export interface ImageFeedbackEntry {
+  prompt_id: string;
+  image_index: number;
+  leg_foot_bad: boolean;
+  feedback_text: string;
+}
+
+export async function saveImageFeedback(
+  taskId: string,
+  promptId: string,
+  imageIndex: number,
+  body: { feedback_text: string; leg_foot_bad: boolean }
+): Promise<ImageFeedbackEntry | null> {
+  const tid = String(taskId ?? "").trim();
+  const pid = String(promptId ?? "").trim();
+  if (!tid || !pid || !Number.isInteger(imageIndex) || imageIndex < 0) {
+    throw new ApiError("feedback 定位参数无效", 400);
+  }
+  const url = `${API_BASE}/quick-create/tasks/${encodeURIComponent(tid)}/feedback/${encodeURIComponent(pid)}/${imageIndex}`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await parseJson<ImageFeedbackEntry | null>(response);
+    throwIfError(response, data);
+    return (data.data ?? null) as ImageFeedbackEntry | null;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
+export interface FeedbackExportImage {
+  image_index: number;
+  image_path: string;
+  leg_foot_bad: boolean;
+  feedback_text: string;
+}
+
+export interface FeedbackExportPromptGroup {
+  prompt_id: string;
+  prompt_title: string;
+  full_prompt: string;
+  total_images: number;
+  images: FeedbackExportImage[];
+}
+
+export interface FeedbackExportRecord {
+  batch_item_id: string | null;
+  quick_create_task_id: string;
+  character_id: string;
+  character_name: string;
+  seed_prompt_id: string | null;
+  seed_section: string | null;
+  seed_prompt_text: string;
+  created_at: string;
+  prompt_groups: FeedbackExportPromptGroup[];
+}
+
+export interface FeedbackExportPayload {
+  schema: string;
+  exported_at: string;
+  records: FeedbackExportRecord[];
+}
+
+export async function exportImageFeedback(): Promise<FeedbackExportPayload> {
+  const url = `${API_BASE}/feedback/export`;
+  try {
+    const response = await fetchWithTimeout(url, { method: "GET" });
+    const data = await parseJson<FeedbackExportPayload>(response);
+    throwIfError(response, data);
+    return data.data as FeedbackExportPayload;
+  } catch (e) {
+    rethrow(e);
+  }
 }

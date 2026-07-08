@@ -14,7 +14,11 @@ export interface QuickCreateImage {
   id: string;
   url: string;
   promptId: string;
+  /** 组内序号（generated_images 下标），人工 feedback 定位用 */
+  imageIndex?: number;
   aiComment?: AiComment | null;
+  /** 已填的人工 feedback（null/undefined = 未填） */
+  userFeedback?: { feedbackText: string; legFootBad: boolean } | null;
   beautifiedUrl?: string | null;
   beautifyTaskId?: string | null;
   beautifyStatus?: BeautifyStatus | null;
