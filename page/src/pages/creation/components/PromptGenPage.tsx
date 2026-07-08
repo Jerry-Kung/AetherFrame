@@ -3,6 +3,7 @@ import type { CharaProfile } from "@/types/material";
 import type { PromptCard, CreationPromptSession, PromptHistoryRecord } from "@/types/creation";
 import * as creationApi from "@/services/creationApi";
 import { ApiError } from "@/services/api";
+import { copyTextToClipboard } from "@/utils/clipboard";
 import { type AutoSubmitConfig } from "./AutoSubmitConfigModal";
 import type { ChainedQuickCreateResumePayload } from "../page";
 interface PromptGenPageProps {
@@ -357,7 +358,7 @@ const DetailPanel = ({ card, onClose, onSave }: DetailPanelProps) => {
   };
 
   const handleCopy = () => {
-    void navigator.clipboard.writeText(editText);
+    void copyTextToClipboard(editText);
   };
 
   return (

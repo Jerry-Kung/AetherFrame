@@ -99,6 +99,76 @@ _PREREG_TABLE = """## 预注册结论标准（spec §7，先于看数据承诺�
 """
 
 
+# 盲评页脚本：评分实时自动保存到浏览器 localStorage（按实验 ID 隔离），
+# 重新打开页面自动恢复；也可通过"导入评分 JSON"从此前导出的文件续评。
+_REVIEW_SCRIPT = """
+const KEY='blindReview:__EXP_ID__';
+const TOTAL=__TOTAL__;
+function collectRatings(){
+  const out={};
+  document.querySelectorAll('.card').forEach(c=>{
+    const rid=c.id; const r={note:c.querySelector('textarea').value};
+    ['face','anchor','leg'].forEach(f=>{
+      const el=c.querySelector(`input[name='${rid}_${f}']:checked`);
+      r[f]=el?el.value:null;});
+    out[rid]=r;});
+  return out;
+}
+function applyRatings(data){
+  for(const [rid,r] of Object.entries(data)){
+    const c=document.getElementById(rid); if(!c) continue;
+    c.querySelector('textarea').value=r.note||'';
+    ['face','anchor','leg'].forEach(f=>{
+      if(!r[f]) return;
+      const el=c.querySelector(`input[name='${rid}_${f}'][value='${r[f]}']`);
+      if(el) el.checked=true;});
+  }
+}
+function saveProgress(){
+  try{localStorage.setItem(KEY,JSON.stringify(collectRatings()));}
+  catch(e){document.getElementById('status').textContent='自动保存失败：'+e;return;}
+  updateStatus();
+}
+function updateStatus(){
+  let done=0;
+  Object.values(collectRatings()).forEach(r=>{
+    if(r.face&&r.anchor&&r.leg)done++;});
+  document.getElementById('status').textContent=
+    `已完成 ${done}/${TOTAL}（进度实时自动保存，可关页续评）`;
+}
+function importRatings(ev){
+  const f=ev.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{applyRatings(JSON.parse(rd.result));}
+    catch(e){alert('导入失败：'+e);return;}
+    saveProgress();};
+  rd.readAsText(f);
+  ev.target.value='';
+}
+function clearProgress(){
+  if(!confirm('确定清空本页所有评分与备注？此操作不可撤销。'))return;
+  localStorage.removeItem(KEY);
+  document.querySelectorAll('.card input[type=radio]').forEach(el=>el.checked=false);
+  document.querySelectorAll('.card textarea').forEach(el=>el.value='');
+  updateStatus();
+}
+function exportRatings(){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(collectRatings(),null,2)],{type:'application/json'}));
+  a.download='ratings.json'; a.click();
+}
+window.addEventListener('load',()=>{
+  const s=localStorage.getItem(KEY);
+  if(s){try{applyRatings(JSON.parse(s));}catch(e){}}
+  updateStatus();
+  document.body.addEventListener('change',saveProgress);
+  document.body.addEventListener('input',ev=>{
+    if(ev.target.tagName==='TEXTAREA')saveProgress();});
+});
+"""
+
+
 def build_review_html(layout: ExpLayout, manifest_entries: list,
                       shuffle_seed: int) -> str:
     entries = [e for e in manifest_entries if e.get("ok")]
@@ -129,36 +199,136 @@ def build_review_html(layout: ExpLayout, manifest_entries: list,
             + "".join(radios)
             + f'<textarea name="{rid}_note" placeholder="备注"></textarea></div>'
         )
+    exp_id = os.path.basename(layout.root)
+    script = (_REVIEW_SCRIPT
+              .replace("__EXP_ID__", exp_id)
+              .replace("__TOTAL__", str(len(entries))))
     html = (
         "<!DOCTYPE html><html lang=\"zh\"><head><meta charset=\"utf-8\">"
         "<title>exp 盲评</title><style>"
         ".card{border:1px solid #ccc;margin:16px;padding:12px}"
         "img{max-width:720px;display:block;margin-bottom:8px}"
         "textarea{width:100%;margin-top:6px}"
-        "</style></head><body><h1>盲评（图片已乱序，不显示分组）</h1>"
-        "<p>逐图三组评分后点击底部按钮导出 JSON。</p>"
+        "#toolbar{position:sticky;top:0;background:#fff;padding:8px 16px;"
+        "border-bottom:1px solid #ccc;z-index:1}"
+        "</style></head><body>"
+        "<div id=\"toolbar\"><span id=\"status\"></span> "
+        "<button onclick=\"exportRatings()\">导出评分 JSON</button> "
+        "<label style=\"cursor:pointer\"><u>导入评分 JSON</u>"
+        "<input type=\"file\" accept=\".json\" style=\"display:none\" "
+        "onchange=\"importRatings(event)\"></label> "
+        "<button onclick=\"clearProgress()\">清空评分</button></div>"
+        "<h1>盲评（图片已乱序，不显示分组）</h1>"
+        "<p>逐图三组评分，进度实时自动保存在本浏览器；全部评完后点击「导出评分 JSON」。</p>"
         + "".join(cards) +
         "<button onclick=\"exportRatings()\">导出评分 JSON</button>"
-        "<script>\n"
-        "function exportRatings(){\n"
-        "  const out={};\n"
-        "  document.querySelectorAll('.card').forEach(c=>{\n"
-        "    const rid=c.id; const r={note:c.querySelector('textarea').value};\n"
-        "    ['face','anchor','leg'].forEach(f=>{\n"
-        "      const el=c.querySelector(`input[name='${rid}_${f}']:checked`);\n"
-        "      r[f]=el?el.value:null;});\n"
-        "    out[rid]=r;});\n"
-        "  const a=document.createElement('a');\n"
-        "  a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],"
-        "{type:'application/json'}));\n"
-        "  a.download='ratings.json'; a.click();\n"
-        "}\n</script></body></html>"
+        "<script>" + script + "</script></body></html>"
     )
     with open(layout.review_html_path(), "w", encoding="utf-8") as f:
         f.write(html)
     with open(os.path.join(layout.root, "review_key.json"), "w",
               encoding="utf-8") as f:
         json.dump(key, f, ensure_ascii=False, indent=2)
+    return html
+
+
+_REVEAL_LABELS = {
+    "face": ("脸部", {"ok": "正常", "minor": "轻微异常", "broken": "崩坏"}),
+    "anchor": ("锚点", {"full": "齐全", "partial": "部分丢失", "lost": "严重丢失"}),
+    "leg": ("腿脚袜", {"ok": "正常", "minor": "轻微异常", "broken": "崩坏"}),
+}
+_REVEAL_LEVEL = {  # 评分值 -> 徽章色级
+    "ok": "good", "full": "good",
+    "minor": "warn", "partial": "warn",
+    "broken": "bad", "lost": "bad",
+}
+
+
+def build_reveal_html(layout: ExpLayout, manifest_entries: list, key: dict,
+                      ratings: dict, seeds: list) -> str:
+    """揭盲对比页：按种子分组，各变体同种子的出图并排展示，回显盲评评分与备注。
+    引用原始 images/ 路径（含变体名，仅在揭盲后使用）。"""
+    rid_by_ident = {
+        (v["variant"], v["seed_id"], v["image_index"]): rid
+        for rid, v in key.items()
+    }
+    seed_meta = {s.seed_id: s for s in seeds}
+    by_seed = {}
+    variants = []
+    for e in manifest_entries:
+        if not e.get("ok"):
+            continue
+        by_seed.setdefault(e["seed_id"], {}).setdefault(
+            e["variant"], []).append(e)
+        if e["variant"] not in variants:
+            variants.append(e["variant"])
+
+    # 种子按 难度(hard->easy) 再按 id 排序，高危组优先对比
+    diff_order = {"hard": 0, "medium": 1, "easy": 2}
+    def seed_sort(sid):
+        s = seed_meta.get(sid)
+        return (diff_order.get(s.difficulty, 9) if s else 9, sid)
+
+    sections = []
+    for sid in sorted(by_seed, key=seed_sort):
+        s = seed_meta.get(sid)
+        head = (f'<h2 id="{sid}">{sid}'
+                + (f' <small>[{s.difficulty}] {s.character_id}</small>' if s else "")
+                + "</h2>")
+        seed_text = f'<p class="seed">{s.text}</p>' if s else ""
+        rows = []
+        for v in variants:
+            cells = []
+            for e in sorted(by_seed[sid].get(v, []),
+                            key=lambda x: x["image_index"]):
+                rid = rid_by_ident.get((v, sid, e["image_index"]))
+                r = ratings.get(rid, {}) if rid else {}
+                badges = []
+                for f, (label, texts) in _REVEAL_LABELS.items():
+                    val = r.get(f)
+                    lvl = _REVEAL_LEVEL.get(val, "none")
+                    badges.append(f'<span class="b {lvl}">{label}:'
+                                  f'{texts.get(val, "未评")}</span>')
+                note = (r.get("note") or "").strip()
+                cells.append(
+                    '<div class="cell">'
+                    f'<a href="{e["image_path"]}" target="_blank">'
+                    f'<img src="{e["image_path"]}" loading="lazy"></a>'
+                    f'<div class="rid">{rid or "?"} · img{e["image_index"]}</div>'
+                    f'<div>{"".join(badges)}</div>'
+                    + (f'<div class="note">{note}</div>' if note else "")
+                    + "</div>"
+                )
+            rows.append(f'<div class="vrow"><div class="vname">{v}</div>'
+                        f'<div class="imgs">{"".join(cells)}</div></div>')
+        sections.append(f'<section>{head}{seed_text}{"".join(rows)}</section>')
+
+    toc = " · ".join(f'<a href="#{sid}">{sid}</a>'
+                     for sid in sorted(by_seed, key=seed_sort))
+    html = (
+        "<!DOCTYPE html><html lang=\"zh\"><head><meta charset=\"utf-8\">"
+        "<title>exp 揭盲对比</title><style>"
+        "body{font-family:sans-serif;margin:16px}"
+        "section{border-top:2px solid #333;margin-top:24px;padding-top:8px}"
+        ".seed{color:#555;max-width:960px}"
+        ".vrow{display:flex;margin:8px 0}"
+        ".vname{writing-mode:vertical-lr;font-weight:bold;padding:4px;"
+        "background:#eee;margin-right:8px;text-align:center}"
+        ".imgs{display:flex;gap:8px;overflow-x:auto}"
+        ".cell{flex:0 0 auto;width:260px}"
+        ".cell img{width:100%;display:block}"
+        ".rid{color:#888;font-size:12px;margin-top:2px}"
+        ".b{display:inline-block;font-size:12px;border-radius:3px;"
+        "padding:0 4px;margin:2px 2px 0 0}"
+        ".b.good{background:#e2f4e2}.b.warn{background:#fdeec8}"
+        ".b.bad{background:#f8d3d3}.b.none{background:#eee;color:#999}"
+        ".note{font-size:13px;color:#a33;margin-top:2px}"
+        "</style></head><body><h1>揭盲对比（按种子分组，变体并排）</h1>"
+        f"<p>{toc}</p>"
+        + "".join(sections) + "</body></html>"
+    )
+    with open(layout.reveal_html_path(), "w", encoding="utf-8") as f:
+        f.write(html)
     return html
 
 
@@ -224,10 +394,11 @@ def main() -> None:
     from experiments.config import load_experiment_config
 
     ap = argparse.ArgumentParser(description="实验报告工具")
-    ap.add_argument("command", choices=["metrics", "review", "final"])
+    ap.add_argument("command", choices=["metrics", "review", "reveal", "final"])
     ap.add_argument("--config", required=True)
     ap.add_argument("--results-root", default="experiments/results")
-    ap.add_argument("--ratings", help="final 命令：盲评导出的 ratings.json 路径")
+    ap.add_argument("--ratings", help="final/reveal 命令：盲评导出的 ratings.json 路径"
+                    "（reveal 缺省用 results 下的 ratings.json）")
     args = ap.parse_args()
     cfg = load_experiment_config(args.config)
     layout = ExpLayout(args.results_root, cfg.exp_id)
@@ -239,6 +410,24 @@ def main() -> None:
             entries = json.load(f)["entries"]
         build_review_html(layout, entries, cfg.review_shuffle_seed)
         print(f"盲评页已生成: {layout.review_html_path()}")
+    elif args.command == "reveal":
+        from experiments.config import load_benchmark
+
+        with open(layout.manifest_path(), "r", encoding="utf-8") as f:
+            entries = json.load(f)["entries"]
+        with open(os.path.join(layout.root, "review_key.json"), "r",
+                  encoding="utf-8") as f:
+            key = json.load(f)
+        ratings_path = args.ratings or os.path.join(layout.root, "ratings.json")
+        ratings = {}
+        if os.path.isfile(ratings_path):
+            with open(ratings_path, "r", encoding="utf-8") as f:
+                ratings = json.load(f)
+        else:
+            print(f"[warn] 未找到 {ratings_path}，揭盲页将不含评分回显")
+        bench = load_benchmark(cfg.benchmark)
+        build_reveal_html(layout, entries, key, ratings, bench.seeds)
+        print(f"揭盲对比页已生成: {layout.reveal_html_path()}")
     else:
         if not args.ratings:
             ap.error("final 需要 --ratings")

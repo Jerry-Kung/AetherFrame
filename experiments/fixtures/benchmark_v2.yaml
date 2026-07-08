@@ -1,0 +1,59 @@
+# 基准集 v2（exp002 腿脚高危侧重）。种子 Claude 起草、用户审定后冻结。
+# 复用 v1 的 medium/hard 种子；新增 5 个丝袜高危场景（种子级，非 bad case 原文）。
+# aspect_ratio 预填惯例值；出图时 runner 跟随各变体 step1 决策块。
+characters:
+  castorice:
+    character_id: mchar_3695c70ca7
+    anchors: experiments/fixtures/anchors/castorice.yaml
+  hysilens:
+    character_id: mchar_50c51e6e37
+    anchors: experiments/fixtures/anchors/hysilens.yaml
+
+seeds:
+  # —— 复用 v1 medium/hard ——
+  - seed_id: cas_med_squat
+    character: castorice
+    difficulty: medium
+    aspect_ratio: "3:4"
+    text: 角色乖巧地蹲在满是阳光的玄关处，穿着简单的居家白裙，嘴角挂着若有似无的浅笑。她褪去一半左手的黑色长手套，正用指尖试探性地温柔抚摸着一只趴在鞋柜上的毛绒白猫，展现出极致的信任感。
+  - seed_id: cas_hard_wsit
+    character: castorice
+    difficulty: hard
+    aspect_ratio: "4:3"
+    text: 阳光明媚的客厅里，角色穿着宽大的浅紫色针织衫鸭子坐在地毯上，正用裸露的右手小心翼翼地半褪下左手的黑色长手套。她紫色的眼眸温柔地注视着镜头，头顶的黑荆棘花冠与现代家居形成奇妙的反差萌。
+  - seed_id: hys_med_crossleg
+    character: hysilens
+    difficulty: medium
+    aspect_ratio: "4:3"
+    text: 在放着深色抱枕的水光榻榻米上，角色双腿交叠盘腿坐着，双手捧着红色的玻璃杯，微微出神。榻榻米表面折射出梦幻般斑驳的水波焦散光斑。
+  - seed_id: hys_hard_bubble
+    character: hysilens
+    difficulty: hard
+    aspect_ratio: "16:9"
+    text: 低饱和灰蓝色调的古典居家画室中，角色慵懒而端庄地侧坐在铺有深海蓝天鹅绒坐垫的古典高背椅上，双手捧着吹泡泡细管置于唇边认真轻吹。一条腿曲起折叠在坐垫上，另一条腿从椅缘向斜下方自然伸展、足尖轻触木地板。夕阳碎光透过百叶窗洒入，空气中漂浮着数个肥皂泡。
+  # —— 新增丝袜高危场景（种子级，源自 bad cases 的问题模式）——
+  - seed_id: cas_hard_kneel_sock
+    character: castorice
+    difficulty: hard
+    aspect_ratio: "3:4"
+    text: 深夜私密卧室的木地板上，角色双膝并拢安静跪坐，脚背放松地贴平地面，裸露的右手抱着一只毛绒玩偶到胸前，左手黑色长手套半脱至腕部。她穿着浅紫色吊带睡裙，双腿裹着白色大腿袜。
+  - seed_id: cas_med_floorsit_sheer
+    character: castorice
+    difficulty: medium
+    aspect_ratio: "3:4"
+    text: 暖黄香薰灯光照亮床边木地板，角色斜坐在地板上，一条腿向前自然平放伸直，另一条腿在身侧微屈。她身穿轻薄淡紫色吊带睡裙，双腿穿着薄透白色大腿袜，怀里抱着一只毛绒小熊。
+  - seed_id: cas_hard_hugknee_bed
+    character: castorice
+    difficulty: hard
+    aspect_ratio: "3:4"
+    text: 幽暗静谧的卧室大床上，角色背靠床头软枕斜坐，双腿并拢折起、穿着袜子的双脚平稳踩在床单上，双手轻轻环抱膝盖。她身穿白色真丝吊带睡裙，双腿裹着淡紫色半透明大腿袜。
+  - seed_id: hys_med_recline_sock
+    character: hysilens
+    difficulty: medium
+    aspect_ratio: "16:9"
+    text: 客厅低矮沙发上，角色穿着真丝吊带裙慵懒斜倚在松软靠枕间，双腿交叠向一侧自然伸展，脚背舒展。双腿穿着薄透白色大腿袜，一侧苍白肩膀从松垮开衫中滑落。
+  - seed_id: cas_easy_sock_stand
+    character: castorice
+    difficulty: easy
+    aspect_ratio: "3:4"
+    text: 清晨冷光洒进简约北欧风起居室，角色安静地站在浅灰木地板上，身体微微侧向镜头，重心落在一条腿上，另一条腿自然放松。她穿着居家长裙，双脚穿着薄透短袜。

@@ -1,0 +1,99 @@
+# 基准集 v3（exp002 腿脚高危侧重 + 广角色覆盖）。种子 Claude 起草，用户已于 2026-07-07 审定冻结——本文件不得再改动。
+# 12 角色 × 各 1 种子 = 12 格。角色数据：生产环境默认目录 data/material/characters；
+# 本地调试用生产拷贝时经 MATERIAL_CHARACTERS_DIR 接入（见 exp002 runbook §0）。
+# 选择依据：保留 castorice/hysilens 与 exp001/exp001b 数据连续性；新增 10 位按外观特征
+# 分层挑选（兽耳/护目镜/人偶关节/花冠/双马尾/精灵耳等锚点类型互异），扩大规则包压力面。
+# 种子场景沿用 v2 的腿脚高危谱系（跪坐/鸭子坐/抱膝/盘腿/斜倚/蹲姿/站姿），袜型多样化。
+# anchors 仅 cas/hys 两角色有人工锚点清单（checker 专用、可选）；新角色暂不建 anchors。
+# aspect_ratio 预填惯例值；出图时 runner 跟随各变体 step1 决策块。
+characters:
+  castorice:
+    character_id: mchar_3695c70ca7
+    anchors: experiments/fixtures/anchors/castorice.yaml
+  hysilens:
+    character_id: mchar_50c51e6e37
+    anchors: experiments/fixtures/anchors/hysilens.yaml
+  firefly:
+    character_id: mchar_21f5badd5b
+  march7:
+    character_id: mchar_31f79932e1
+  herta:
+    character_id: mchar_4ae67e0905
+  silverwolf:
+    character_id: mchar_5178bc1c48
+  yaesakura:
+    character_id: mchar_54962128b1
+  robin:
+    character_id: mchar_a6fef45f15
+  fugue:
+    character_id: mchar_b3ad67a3e2
+  aglaea:
+    character_id: mchar_d6f6bfe4fc
+  sparkle:
+    character_id: mchar_de2cd8d17f
+  cyberdoll:
+    character_id: mchar_009fb5bb89
+
+seeds:
+  # —— 高危回归（沿用 v2 文本，保持连续性）——
+  - seed_id: cas_hard_kneel_sock
+    character: castorice
+    difficulty: hard
+    aspect_ratio: "3:4"
+    text: 深夜私密卧室的木地板上，角色双膝并拢安静跪坐，脚背放松地贴平地面，裸露的右手抱着一只毛绒玩偶到胸前，左手黑色长手套半脱至腕部。她穿着浅紫色吊带睡裙，双腿裹着白色大腿袜。
+  - seed_id: hys_hard_bubble
+    character: hysilens
+    difficulty: hard
+    aspect_ratio: "16:9"
+    text: 低饱和灰蓝色调的古典居家画室中，角色慵懒而端庄地侧坐在铺有深海蓝天鹅绒坐垫的古典高背椅上，双手捧着吹泡泡细管置于唇边认真轻吹。一条腿曲起折叠在坐垫上，另一条腿从椅缘向斜下方自然伸展、足尖轻触木地板。夕阳碎光透过百叶窗洒入，空气中漂浮着数个肥皂泡。
+  # —— 新角色 × 腿脚高危场景（场景级描述，角色人设由档案提供）——
+  - seed_id: ff_med_tatami
+    character: firefly
+    difficulty: medium
+    aspect_ratio: "4:3"
+    text: 在铺着深色抱枕的榻榻米上，角色双腿交叠盘腿坐着，双手捧着一杯温热的茶轻轻吹气。她穿着宽松的和风居家短袍，双脚穿着白色及踝棉袜，午后阳光透过障子门洒下斑驳光影。
+  - seed_id: m7_easy_beanbag
+    character: march7
+    difficulty: easy
+    aspect_ratio: "3:4"
+    text: 明亮的开放式起居室里，角色整个人陷进巨大的奶白色懒人沙发，双腿微微蜷起、脚背自然绷直。她穿着浅色连帽居家服和及膝白袜，怀里抱着一台拍立得相机。
+  - seed_id: herta_hard_wsit
+    character: herta
+    difficulty: hard
+    aspect_ratio: "3:4"
+    text: 铺着厚地毯的书房里，角色穿着宽大的针织开衫鸭子坐在地毯上，双手在膝前捧着一本摊开的厚重典籍。她的双腿穿着黑色薄透大腿袜，身旁散落着几枚精巧的机械零件。
+  - seed_id: sw_med_gamingchair
+    character: silverwolf
+    difficulty: medium
+    aspect_ratio: "16:9"
+    text: 霓虹灯带映照的电竞房里，角色侧坐在人体工学椅上，一条腿屈起踩在椅面，另一条腿自然垂下、脚尖轻点地板。她穿着oversize连帽卫衣与灰色棉质短袜，手里握着游戏手柄。
+  - seed_id: ys_med_squat_cat
+    character: yaesakura
+    difficulty: medium
+    aspect_ratio: "3:4"
+    text: 角色乖巧地蹲在洒满阳光的玄关，双膝并拢，正伸手温柔地逗弄一只趴在鞋柜上的三花猫。她穿着简单的居家白裙，双脚穿着淡粉色薄纱短袜。
+  - seed_id: robin_easy_recline
+    character: robin
+    difficulty: easy
+    aspect_ratio: "16:9"
+    text: 客厅低矮沙发上，角色慵懒地斜倚在松软靠枕间，双腿交叠向一侧自然舒展，脚背轻轻绷起。她穿着真丝质感的吊带长裙，双腿穿着薄透白色大腿袜。
+  - seed_id: fugue_hard_hugknee
+    character: fugue
+    difficulty: hard
+    aspect_ratio: "3:4"
+    text: 暮色四合的卧室大床上，角色背靠床头软枕斜坐，双腿并拢折起、穿着袜子的双脚平稳踩在床单上，双手轻轻环抱膝盖。她穿着柔软的针织居家裙，双腿裹着深色半透明大腿袜。
+  - seed_id: agl_med_floorsit
+    character: aglaea
+    difficulty: medium
+    aspect_ratio: "4:3"
+    text: 暖色落地灯照亮的更衣间地毯上，角色优雅地侧坐，一条腿向前自然伸直，另一条腿在身侧微屈。她穿着高开衩的丝质居家长裙，双腿穿着缀金线细边的薄纱短袜，指尖捏着一枚顶针。
+  - seed_id: sp_hard_windowsill
+    character: sparkle
+    difficulty: hard
+    aspect_ratio: "16:9"
+    text: 深夜城市灯火背景的飘窗台上，角色屈起双膝侧坐，双臂环在膝上、下巴轻搭在手背，脚跟抵着窗台边缘。她穿着宽松的条纹居家衫，双脚穿着黑白拼色及踝短袜。
+  - seed_id: doll_easy_stand
+    character: cyberdoll
+    difficulty: easy
+    aspect_ratio: "3:4"
+    text: 清晨冷调光线的简约起居室里，角色安静地站在浅色木地板上，身体微微侧向镜头，重心落在一条腿上，另一条腿放松地虚点地面。她穿着简洁的白色居家连衣裙，双脚穿着浅蓝色薄纱短袜。

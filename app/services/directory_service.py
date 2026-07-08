@@ -49,7 +49,14 @@ def get_material_dir() -> str:
 
 
 def get_material_characters_dir() -> str:
-    """获取素材加工 — 角色根目录（data/material/characters）"""
+    """获取素材加工 — 角色根目录（data/material/characters）。
+
+    环境变量 MATERIAL_CHARACTERS_DIR 可整体覆盖（用于实验链路读取生产角色拷贝，
+    如 data/material/characters_production/characters）；未设置时行为不变。
+    """
+    override = os.getenv("MATERIAL_CHARACTERS_DIR")
+    if override:
+        return os.path.abspath(override)
     return os.path.join(get_material_dir(), "characters")
 
 

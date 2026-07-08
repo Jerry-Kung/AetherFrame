@@ -1,8 +1,10 @@
 import json
 import os
 
+from experiments.config import SeedCase
 from experiments.layout import ExpLayout
-from experiments.report import build_final_report, build_review_html
+from experiments.report import (build_final_report, build_review_html,
+                                build_reveal_html)
 
 
 def _entries():
@@ -37,6 +39,58 @@ def test_build_review_html_blind_and_reproducible(tmp_path):
         key = json.load(f)
     assert len(key) == 4
     assert {v["variant"] for v in key.values()} == {"baseline", "slim"}
+
+
+def test_build_review_html_has_progress_persistence(tmp_path):
+    """盲评页须支持保存进度：localStorage 按实验 ID 隔离、自动恢复、可导入续评。"""
+    lay = ExpLayout(str(tmp_path), "exp001")
+    for e in _entries():
+        p = os.path.join(lay.root, e["image_path"])
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "wb") as f:
+            f.write(b"png")
+    html = build_review_html(lay, _entries(), shuffle_seed=42)
+    # 存储 key 含实验 ID（多实验共用浏览器时进度互不覆盖）
+    assert "blindReview:exp001" in html
+    # 自动保存 + 打开自动恢复 + 导入导出 + 清空
+    assert "localStorage.setItem" in html
+    assert "localStorage.getItem" in html
+    assert "importRatings" in html and "exportRatings" in html
+    assert "clearProgress" in html
+    # 进度计数用实际条目数
+    assert "TOTAL=4" in html
+
+
+def test_build_reveal_html_groups_by_seed(tmp_path):
+    """揭盲页：同种子两变体并排、回显评分与备注、引用原始图片路径。"""
+    lay = ExpLayout(str(tmp_path), "exp001")
+    for e in _entries():
+        p = os.path.join(lay.root, e["image_path"])
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "wb") as f:
+            f.write(b"png")
+    build_review_html(lay, _entries(), shuffle_seed=42)
+    with open(os.path.join(lay.root, "review_key.json"), encoding="utf-8") as f:
+        key = json.load(f)
+    rid_baseline_1 = next(r for r, v in key.items()
+                          if v["variant"] == "baseline" and v["image_index"] == 1)
+    ratings = {rid_baseline_1: {"face": "ok", "anchor": "full",
+                                "leg": "broken", "note": "袜子缺了一只"}}
+    seeds = [SeedCase(seed_id="s1", character_id="mchar_x",
+                      difficulty="hard", aspect_ratio="4:3", text="种子文本样例")]
+    html = build_reveal_html(lay, _entries(), key, ratings, seeds)
+    assert os.path.isfile(lay.reveal_html_path())
+    # 揭盲：变体名可见，两变体各成一行；种子文本展示
+    assert html.count('<div class="vname">baseline</div>') == 1
+    assert html.count('<div class="vname">slim</div>') == 1
+    assert "种子文本样例" in html
+    # 引用原始（含变体名）路径，而非匿名 review_images
+    assert "images/baseline/s1/img_1.png" in html
+    assert "review_images/" not in html
+    # 评分与备注回显；未评图标记"未评"
+    assert "袜子缺了一只" in html
+    assert "腿脚袜:崩坏" in html
+    assert "未评" in html
 
 
 def test_build_final_report(tmp_path):

@@ -38,7 +38,8 @@ def generate_baseline_for_seed(seed, chara_profile: str,
     decided_ar = comp.get("aspect_ratio")
     if decided_ar and decided_ar != seed.aspect_ratio:
         logger.warning(
-            "种子 %s: step1 决策画幅 %s 与 benchmark 声明 %s 不一致，出图以 benchmark 为准",
+            "种子 %s: step1 决策画幅 %s 与 benchmark 预填 %s 不同（正常现象，"
+            "出图时 runner 跟随决策块画幅，benchmark 值仅作无决策块时的兜底）",
             seed.seed_id, decided_ar, seed.aspect_ratio,
         )
     p2 = prompt_step2.format(
