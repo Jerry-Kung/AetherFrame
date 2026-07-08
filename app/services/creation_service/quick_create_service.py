@@ -605,6 +605,15 @@ class QuickCreateService:
         except Exception:
             logger.warning("清理美化任务失败: %s", hid, exc_info=True)
 
+        try:
+            from app.repositories.creation_feedback_repository import (
+                CreationImageFeedbackRepository,
+            )
+
+            CreationImageFeedbackRepository(self.db).delete_for_task(hid)
+        except Exception:
+            logger.warning("清理图片 feedback 失败: %s", hid, exc_info=True)
+
         deleted = self.quick_repo.delete(hid)
         if not deleted:
             raise ValueError("历史记录不存在")

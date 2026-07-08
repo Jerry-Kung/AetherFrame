@@ -87,3 +87,62 @@ class TestFeedbackRepository:
                         leg_foot_bad=False, feedback_text=f"n{i}")
         assert repo.delete_for_task(task.id) == 3
         assert repo.list_all() == []
+
+
+from app.services.creation_service.feedback_service import ImageFeedbackService
+
+
+class TestImageFeedbackService:
+    def test_save_creates_row_and_returns_payload(self, db_session):
+        task = make_qc_task(db_session)
+        svc = ImageFeedbackService(db_session)
+        data = svc.save_feedback(
+            task_id=task.id, prompt_id="p1", image_index=0,
+            feedback_text="袜口花边过重", leg_foot_bad=True,
+        )
+        assert data == {
+            "prompt_id": "p1",
+            "image_index": 0,
+            "leg_foot_bad": True,
+            "feedback_text": "袜口花边过重",
+        }
+
+    def test_save_empty_clears_row(self, db_session):
+        task = make_qc_task(db_session)
+        svc = ImageFeedbackService(db_session)
+        svc.save_feedback(task_id=task.id, prompt_id="p1", image_index=0,
+                          feedback_text="临时", leg_foot_bad=False)
+        data = svc.save_feedback(task_id=task.id, prompt_id="p1", image_index=0,
+                                 feedback_text="   ", leg_foot_bad=False)
+        assert data is None
+        assert CreationImageFeedbackRepository(db_session).list_all() == []
+        # 行本不存在时清空也幂等成功
+        assert svc.save_feedback(task_id=task.id, prompt_id="p9", image_index=0,
+                                 feedback_text="", leg_foot_bad=False) is None
+
+    def test_save_only_checkbox_is_filled(self, db_session):
+        task = make_qc_task(db_session)
+        data = ImageFeedbackService(db_session).save_feedback(
+            task_id=task.id, prompt_id="p1", image_index=2,
+            feedback_text="", leg_foot_bad=True,
+        )
+        assert data is not None and data["leg_foot_bad"] is True
+
+    def test_save_missing_task_raises(self, db_session):
+        import pytest as _pytest
+        with _pytest.raises(ValueError, match="任务不存在"):
+            ImageFeedbackService(db_session).save_feedback(
+                task_id="qcreate_missing0000", prompt_id="p1", image_index=0,
+                feedback_text="x", leg_foot_bad=False,
+            )
+
+    def test_quick_create_delete_history_removes_feedback(self, db_session):
+        from app.services.creation_service.quick_create_service import QuickCreateService
+
+        task = make_qc_task(db_session)
+        ImageFeedbackService(db_session).save_feedback(
+            task_id=task.id, prompt_id="p1", image_index=0,
+            feedback_text="将被联动删除", leg_foot_bad=True,
+        )
+        QuickCreateService(db_session).delete_history(task.id)
+        assert CreationImageFeedbackRepository(db_session).list_all() == []
