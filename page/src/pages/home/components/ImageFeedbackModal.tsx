@@ -90,12 +90,20 @@ export default function ImageFeedbackModal({
   useEffect(() => {
     let alive = true;
     void getFeedbackTags().then((cfg) => {
-      if (alive) setTagDefs(cfg.tags);
+      if (!alive) return;
+      setTagDefs(cfg.tags);
+      // 已存的 legFootBad 是后端合并值（手动 OR 标签推导）；若已存标签本就推导出 bad，
+      // 手动兜底位应归零，否则取消标签后会残留一个无标签支撑的手动 bad。
+      const savedTags = image.userFeedback?.selectedTags ?? [];
+      const impliedBySaved = savedTags.some(
+        (s) => cfg.tags.find((t) => t.key === s.key)?.leg_foot_bad
+      );
+      if (impliedBySaved) setManualBad(false);
     });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [image.userFeedback]);
 
   const defByKey = new Map(tagDefs.map((t) => [t.key, t] as const));
   const derivedBad = selected.some((s) => defByKey.get(s.key)?.leg_foot_bad);
