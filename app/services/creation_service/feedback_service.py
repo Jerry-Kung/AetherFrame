@@ -3,6 +3,7 @@
 设计文档：docs/superpowers/specs/2026-07-08-production-feedback-entry-design.md §1/§2
 """
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -16,17 +17,23 @@ from app.repositories.creation_repository import (
     CreationQuickCreateRepository,
 )
 from app.repositories.material_repository import MaterialCharacterRepository
+from app.services.creation_service import feedback_tags
 from app.services.creation_service.quick_create_service import _parse_json_list
 
 logger = logging.getLogger(__name__)
 
 
 def serialize_feedback_row(row: CreationImageFeedback) -> Dict[str, Any]:
+    try:
+        selected = json.loads(row.selected_tags_json or "[]")
+    except (TypeError, ValueError):
+        selected = []
     return {
         "prompt_id": row.prompt_id,
         "image_index": int(row.image_index),
         "leg_foot_bad": bool(row.leg_foot_bad),
         "feedback_text": row.feedback_text or "",
+        "selected_tags": selected if isinstance(selected, list) else [],
     }
 
 
@@ -44,6 +51,7 @@ class ImageFeedbackService:
         image_index: int,
         feedback_text: str,
         leg_foot_bad: bool,
+        selected_tags: Optional[List[Dict[str, Any]]] = None,
     ) -> Optional[Dict[str, Any]]:
         tid = (task_id or "").strip()
         pid = (prompt_id or "").strip()
@@ -52,9 +60,12 @@ class ImageFeedbackService:
         if self.quick_repo.get_by_id(tid) is None:
             raise ValueError("一键创作任务不存在")
 
+        config = feedback_tags.get_tag_config()
+        normalized = feedback_tags.normalize_selected_tags(selected_tags, config)
         text = (feedback_text or "").strip()
-        bad = bool(leg_foot_bad)
-        if not text and not bad:
+        bad = feedback_tags.derive_leg_foot_bad(normalized, bool(leg_foot_bad), config)
+        # 清空即删三条件：文本空 且 推导后未标 bad 且 无选中标签
+        if not text and not bad and not normalized:
             self.repo.delete_for_image(tid, pid, image_index)
             return None
         row = self.repo.upsert(
@@ -63,6 +74,7 @@ class ImageFeedbackService:
             image_index=image_index,
             leg_foot_bad=bad,
             feedback_text=text,
+            selected_tags_json=json.dumps(normalized, ensure_ascii=False),
         )
         return serialize_feedback_row(row)
 

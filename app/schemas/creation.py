@@ -294,9 +294,15 @@ class BatchAutomationItemListResponse(BaseModel):
     total: int = 0
 
 
+class ImageFeedbackTagIn(BaseModel):
+    key: str
+    severity: Optional[str] = None
+
+
 class ImageFeedbackSaveRequest(BaseModel):
     feedback_text: str = ""
     leg_foot_bad: bool = False
+    selected_tags: List[ImageFeedbackTagIn] = Field(default_factory=list)
 
 
 class ImageFeedbackOut(BaseModel):
@@ -304,3 +310,4 @@ class ImageFeedbackOut(BaseModel):
     image_index: int
     leg_foot_bad: bool
     feedback_text: str
+    selected_tags: List[Dict[str, Any]] = Field(default_factory=list)

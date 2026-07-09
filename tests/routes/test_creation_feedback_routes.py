@@ -57,6 +57,7 @@ def test_save_and_clear_feedback(api_client, db_session):
     assert body["data"] == {
         "prompt_id": "p1", "image_index": 0,
         "leg_foot_bad": True, "feedback_text": "脚部简陋",
+        "selected_tags": [],
     }
     # 清空即删
     r2 = api_client.put(_fb_url(task.id), json={"feedback_text": "", "leg_foot_bad": False})
@@ -106,7 +107,7 @@ def test_hydrated_items_include_feedbacks(api_client, db_session):
     row = next(x for x in items if x["id"] == item.id)
     assert row["feedbacks"] == [
         {"prompt_id": "p1", "image_index": 0,
-         "leg_foot_bad": False, "feedback_text": "回显"}
+         "leg_foot_bad": False, "feedback_text": "回显", "selected_tags": []}
     ]
 
 
@@ -136,3 +137,47 @@ def test_feedback_tags_api_degrades_when_config_missing(api_client, monkeypatch)
     r = api_client.get("/api/creation/feedback/tags")
     assert r.status_code == 200
     assert r.json()["data"] == {"version": 0, "tags": []}
+
+
+def test_save_with_selected_tags_roundtrip(api_client, db_session):
+    task = _make_qc_task(db_session)
+    r = api_client.put(_fb_url(task.id), json={
+        "feedback_text": "",
+        "leg_foot_bad": False,
+        "selected_tags": [
+            {"key": "sock_toe_separation", "severity": "minor"},
+            {"key": "pos_sock_style"},
+        ],
+    })
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["selected_tags"] == [
+        {"key": "sock_toe_separation", "severity": "minor"},
+        {"key": "pos_sock_style"},
+    ]
+    assert data["leg_foot_bad"] is True  # sock_toe_separation 计 bad
+
+    # 回显同样带标签
+    from app.repositories.creation_batch_repository import CreationBatchRepository
+    repo = CreationBatchRepository(db_session)
+    run = repo.create_run(iterations_total=1, config_json="{}", status="completed")
+    item = repo.create_item(
+        run_id=run.id, step_index=0, character_id=task.character_id,
+        seed_prompt_id="s1", seed_section="general", seed_prompt_text="seed",
+        status="completed",
+    )
+    repo.update_item(item.id, {"quick_create_task_id": task.id})
+    r2 = api_client.get("/api/creation/batch-automation/items-hydrated")
+    row = next(x for x in r2.json()["data"]["items"] if x["id"] == item.id)
+    assert row["feedbacks"][0]["selected_tags"] == [
+        {"key": "sock_toe_separation", "severity": "minor"},
+        {"key": "pos_sock_style"},
+    ]
+
+
+def test_save_body_without_selected_tags_still_works(api_client, db_session):
+    # 向后兼容：旧 body 不带 selected_tags
+    task = _make_qc_task(db_session)
+    r = api_client.put(_fb_url(task.id), json={"feedback_text": "老格式", "leg_foot_bad": False})
+    assert r.status_code == 200
+    assert r.json()["data"]["selected_tags"] == []

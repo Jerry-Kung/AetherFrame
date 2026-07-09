@@ -232,6 +232,7 @@ def test_hydrated_equivalence_with_legacy(db_session):
             "image_index": 0,
             "leg_foot_bad": True,
             "feedback_text": "等价性校验用反馈",
+            "selected_tags": [],
         }
     ], f"populated feedbacks 未正确装配: {item_1['feedbacks']!r}"
 

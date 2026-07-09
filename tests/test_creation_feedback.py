@@ -105,6 +105,7 @@ class TestImageFeedbackService:
             "image_index": 0,
             "leg_foot_bad": True,
             "feedback_text": "袜口花边过重",
+            "selected_tags": [],
         }
 
     def test_save_empty_clears_row(self, db_session):
@@ -146,6 +147,71 @@ class TestImageFeedbackService:
         )
         QuickCreateService(db_session).delete_history(task.id)
         assert CreationImageFeedbackRepository(db_session).list_all() == []
+
+    def test_save_with_tags_normalizes_and_derives_bad(self, db_session):
+        task = make_qc_task(db_session)
+        data = ImageFeedbackService(db_session).save_feedback(
+            task_id=task.id, prompt_id="p1", image_index=0,
+            feedback_text="", leg_foot_bad=False,
+            selected_tags=[
+                {"key": "sock_wrinkle_heavy", "severity": "severe"},
+                {"key": "ghost_tag"},                      # 未知 → 剔除
+                {"key": "leg_twist"},                      # 缺 severity → moderate
+                {"key": "pos_overall_good", "severity": "minor"},  # 正面 → 剥 severity
+            ],
+        )
+        assert data is not None
+        assert data["selected_tags"] == [
+            {"key": "sock_wrinkle_heavy", "severity": "severe"},
+            {"key": "leg_twist", "severity": "moderate"},
+            {"key": "pos_overall_good"},
+        ]
+        assert data["leg_foot_bad"] is True  # 腿脚负面标签自动推导
+
+    def test_save_non_legfoot_tag_does_not_set_bad(self, db_session):
+        task = make_qc_task(db_session)
+        data = ImageFeedbackService(db_session).save_feedback(
+            task_id=task.id, prompt_id="p1", image_index=0,
+            feedback_text="", leg_foot_bad=False,
+            selected_tags=[{"key": "style_doll3d", "severity": "minor"}],
+        )
+        assert data is not None
+        assert data["leg_foot_bad"] is False
+
+    def test_save_checkbox_fallback_with_text_only(self, db_session):
+        task = make_qc_task(db_session)
+        data = ImageFeedbackService(db_session).save_feedback(
+            task_id=task.id, prompt_id="p1", image_index=0,
+            feedback_text="标签覆盖不了的新问题", leg_foot_bad=True, selected_tags=[],
+        )
+        assert data is not None and data["leg_foot_bad"] is True
+
+    def test_tags_only_counts_as_filled_and_clear_needs_all_empty(self, db_session):
+        task = make_qc_task(db_session)
+        svc = ImageFeedbackService(db_session)
+        # 只有标签也算已填
+        data = svc.save_feedback(
+            task_id=task.id, prompt_id="p1", image_index=0,
+            feedback_text="", leg_foot_bad=False,
+            selected_tags=[{"key": "neutral_normal"}],
+        )
+        assert data is not None
+        # 三条件全空 → 删行
+        assert svc.save_feedback(
+            task_id=task.id, prompt_id="p1", image_index=0,
+            feedback_text="  ", leg_foot_bad=False, selected_tags=[],
+        ) is None
+        assert CreationImageFeedbackRepository(db_session).list_all() == []
+
+    def test_unknown_tags_only_treated_as_empty(self, db_session):
+        # 选中的标签全被剔除且无文本无勾选 → 等价清空
+        task = make_qc_task(db_session)
+        data = ImageFeedbackService(db_session).save_feedback(
+            task_id=task.id, prompt_id="p1", image_index=0,
+            feedback_text="", leg_foot_bad=False,
+            selected_tags=[{"key": "ghost_tag"}],
+        )
+        assert data is None
 
 
 QC_RESULTS = [
