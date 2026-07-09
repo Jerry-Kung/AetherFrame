@@ -82,7 +82,8 @@ def test_export_endpoint(api_client, db_session):
     r = api_client.get("/api/creation/feedback/export")
     assert r.status_code == 200
     data = r.json()["data"]
-    assert data["schema"] == "aetherframe_feedback_v1"
+    assert data["schema"] == "aetherframe_feedback_v2"
+    assert "tag_config" in data
     assert len(data["records"]) == 1
     assert data["records"][0]["quick_create_task_id"] == task.id
 

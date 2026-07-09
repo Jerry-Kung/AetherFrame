@@ -37,6 +37,25 @@ def serialize_feedback_row(row: CreationImageFeedback) -> Dict[str, Any]:
     }
 
 
+def _selected_tag_labels(
+    selected: List[Dict[str, Any]], tag_by_key: Dict[str, Dict[str, Any]]
+) -> List[str]:
+    """人读标签名：负面带等级后缀「（严重）」；配置里已移除的 key 回落 key。"""
+    labels: List[str] = []
+    for item in selected:
+        key = str(item.get("key") or "")
+        tag = tag_by_key.get(key)
+        if tag is None:
+            labels.append(key)
+            continue
+        sev = item.get("severity")
+        if tag["polarity"] == "negative" and sev in feedback_tags.SEVERITY_LABELS:
+            labels.append(f"{tag['label']}（{feedback_tags.SEVERITY_LABELS[sev]}）")
+        else:
+            labels.append(tag["label"])
+    return labels
+
+
 class ImageFeedbackService:
     def __init__(self, db: Session):
         self.db = db
@@ -79,7 +98,7 @@ class ImageFeedbackService:
         return serialize_feedback_row(row)
 
     def build_export(self) -> Dict[str, Any]:
-        """全量导出所有已填 feedback（spec §2.3 aetherframe_feedback_v1）。"""
+        """全量导出所有已填 feedback（spec §2.3 aetherframe_feedback_v2）。"""
         from app.models.creation_batch import CreationBatchRunItem
 
         rows = self.repo.list_all()
@@ -108,6 +127,9 @@ class ImageFeedbackService:
 
         title_maps = self._build_prompt_title_maps(items, char_map)
 
+        config = feedback_tags.get_tag_config()
+        tag_by_key = {t["key"]: t for t in config.get("tags", [])}
+
         records: List[Dict[str, Any]] = []
         for tid in sorted(by_task.keys()):
             task = qc_map.get(tid)
@@ -118,14 +140,20 @@ class ImageFeedbackService:
                 records.append(
                     self._build_record(
                         task, by_task[tid], item_map.get(tid), char_map,
-                        title_maps.get(tid, {}),
+                        title_maps.get(tid, {}), tag_by_key,
                     )
                 )
             except Exception:
                 logger.exception("feedback 导出：装配记录失败，跳过 %s", tid)
+        try:
+            tag_config = feedback_tags.tag_config_snapshot(config)
+        except Exception:
+            logger.warning("feedback 导出：tag_config 快照装配失败，输出空快照", exc_info=True)
+            tag_config = {"version": 0, "tags": []}
         return {
-            "schema": "aetherframe_feedback_v1",
+            "schema": "aetherframe_feedback_v2",
             "exported_at": datetime.now(timezone.utc).astimezone().isoformat(),
+            "tag_config": tag_config,
             "records": records,
         }
 
@@ -182,6 +210,7 @@ class ImageFeedbackService:
         item: Optional[Any],
         char_map: Dict[str, Any],
         title_map: Dict[str, str],
+        tag_by_key: Dict[str, Dict[str, Any]],
     ) -> Dict[str, Any]:
         results = _parse_json_list(task.result_json)
         result_by_pid = {
@@ -201,17 +230,21 @@ class ImageFeedbackService:
         for pid, fbs in fb_by_prompt.items():
             res = result_by_pid.get(pid) or {}
             gen = res.get("generated_images") or []
-            images = [
-                {
-                    "image_index": int(fb.image_index),
-                    "image_path": self._image_path(gen[fb.image_index])
-                    if 0 <= fb.image_index < len(gen)
-                    else "",
-                    "leg_foot_bad": bool(fb.leg_foot_bad),
-                    "feedback_text": fb.feedback_text or "",
-                }
-                for fb in fbs
-            ]
+            images = []
+            for fb in fbs:
+                selected = serialize_feedback_row(fb)["selected_tags"]
+                images.append(
+                    {
+                        "image_index": int(fb.image_index),
+                        "image_path": self._image_path(gen[fb.image_index])
+                        if 0 <= fb.image_index < len(gen)
+                        else "",
+                        "leg_foot_bad": bool(fb.leg_foot_bad),
+                        "feedback_text": fb.feedback_text or "",
+                        "selected_tags": selected,
+                        "selected_tag_labels": _selected_tag_labels(selected, tag_by_key),
+                    }
+                )
             prompt_groups.append(
                 {
                     "prompt_id": pid,

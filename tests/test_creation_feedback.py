@@ -262,7 +262,7 @@ class TestBuildExport:
                           feedback_text="构图很好", leg_foot_bad=False)
 
         out = svc.build_export()
-        assert out["schema"] == "aetherframe_feedback_v1"
+        assert out["schema"] == "aetherframe_feedback_v2"
         assert out["exported_at"]
         assert len(out["records"]) == 1
         rec = out["records"][0]
@@ -284,9 +284,11 @@ class TestBuildExport:
         assert g["total_images"] == 3
         assert g["images"] == [
             {"image_index": 0, "image_path": "images/a0.png",
-             "leg_foot_bad": True, "feedback_text": "脚趾夸张"},
+             "leg_foot_bad": True, "feedback_text": "脚趾夸张",
+             "selected_tags": [], "selected_tag_labels": []},
             {"image_index": 2, "image_path": "images/a2.png",
-             "leg_foot_bad": False, "feedback_text": "构图很好"},
+             "leg_foot_bad": False, "feedback_text": "构图很好",
+             "selected_tags": [], "selected_tag_labels": []},
         ]
 
     def test_export_without_batch_item_falls_back_to_task_seed(self, db_session):
@@ -337,3 +339,50 @@ class TestBuildExport:
         g = svc.build_export()["records"][0]["prompt_groups"][0]
         assert g["images"][0]["image_path"] == ""
         assert g["images"][0]["feedback_text"] == "越界索引"
+
+    def test_export_v2_tags_labels_and_config_snapshot(self, db_session):
+        task = make_qc_task(db_session, results=QC_RESULTS)
+        svc = ImageFeedbackService(db_session)
+        svc.save_feedback(
+            task_id=task.id, prompt_id="p1", image_index=0,
+            feedback_text="", leg_foot_bad=False,
+            selected_tags=[
+                {"key": "sock_wrinkle_heavy", "severity": "severe"},
+                {"key": "pos_sock_style"},
+                {"key": "neutral_normal"},
+            ],
+        )
+        out = svc.build_export()
+        assert out["schema"] == "aetherframe_feedback_v2"
+        # tag_config 快照自包含：含 taxonomy 映射与 leg_foot_bad
+        snap = out["tag_config"]
+        assert snap["version"] >= 1
+        by_key = {t["key"]: t for t in snap["tags"]}
+        assert by_key["sock_wrinkle_heavy"]["taxonomy"] == "袜子/皱褶夸张"
+        assert by_key["sock_wrinkle_heavy"]["leg_foot_bad"] is True
+
+        img = out["records"][0]["prompt_groups"][0]["images"][0]
+        assert img["selected_tags"] == [
+            {"key": "sock_wrinkle_heavy", "severity": "severe"},
+            {"key": "pos_sock_style"},
+            {"key": "neutral_normal"},
+        ]
+        assert img["selected_tag_labels"] == [
+            "袜子皱褶过于夸张（严重）", "袜子样式好看", "正常",
+        ]
+        assert img["leg_foot_bad"] is True
+
+    def test_export_label_falls_back_to_key_for_removed_tag(self, db_session):
+        # 存量数据里的 key 已从配置移除 → label 回落 key，不阻断导出
+        from app.repositories.creation_feedback_repository import (
+            CreationImageFeedbackRepository,
+        )
+        task = make_qc_task(db_session, results=QC_RESULTS)
+        CreationImageFeedbackRepository(db_session).upsert(
+            quick_create_task_id=task.id, prompt_id="p1", image_index=0,
+            leg_foot_bad=True, feedback_text="",
+            selected_tags_json='[{"key": "retired_tag", "severity": "minor"}]',
+        )
+        img = ImageFeedbackService(db_session).build_export()[
+            "records"][0]["prompt_groups"][0]["images"][0]
+        assert img["selected_tag_labels"] == ["retired_tag"]
