@@ -638,18 +638,38 @@ export function parseQuickCreateResultImagePath(imageUrl: string, taskId: string
     .join("/");
 }
 
+export type FeedbackSeverity = "minor" | "moderate" | "severe";
+
+export interface SelectedFeedbackTag {
+  key: string;
+  severity?: FeedbackSeverity;
+}
+
+export interface FeedbackTagDef {
+  key: string;
+  label: string;
+  polarity: "positive" | "negative" | "neutral";
+  leg_foot_bad: boolean;
+}
+
+export interface FeedbackTagConfig {
+  version: number;
+  tags: FeedbackTagDef[];
+}
+
 export interface ImageFeedbackEntry {
   prompt_id: string;
   image_index: number;
   leg_foot_bad: boolean;
   feedback_text: string;
+  selected_tags: SelectedFeedbackTag[];
 }
 
 export async function saveImageFeedback(
   taskId: string,
   promptId: string,
   imageIndex: number,
-  body: { feedback_text: string; leg_foot_bad: boolean }
+  body: { feedback_text: string; leg_foot_bad: boolean; selected_tags?: SelectedFeedbackTag[] }
 ): Promise<ImageFeedbackEntry | null> {
   const tid = String(taskId ?? "").trim();
   const pid = String(promptId ?? "").trim();
@@ -676,6 +696,8 @@ export interface FeedbackExportImage {
   image_path: string;
   leg_foot_bad: boolean;
   feedback_text: string;
+  selected_tags: SelectedFeedbackTag[];
+  selected_tag_labels: string[];
 }
 
 export interface FeedbackExportPromptGroup {
@@ -703,6 +725,7 @@ export interface FeedbackExportPayload {
   schema: string;
   exported_at: string;
   records: FeedbackExportRecord[];
+  tag_config: FeedbackTagConfig;
 }
 
 export async function exportImageFeedback(): Promise<FeedbackExportPayload> {
@@ -715,4 +738,25 @@ export async function exportImageFeedback(): Promise<FeedbackExportPayload> {
   } catch (e) {
     rethrow(e);
   }
+}
+
+let feedbackTagsCache: Promise<FeedbackTagConfig> | null = null;
+
+/** 拉取 feedback 标签配置（模块级缓存；失败降级空词表并允许下次重试） */
+export function getFeedbackTags(): Promise<FeedbackTagConfig> {
+  if (!feedbackTagsCache) {
+    feedbackTagsCache = (async () => {
+      const url = `${API_BASE}/feedback/tags`;
+      try {
+        const response = await fetchWithTimeout(url, { method: "GET" });
+        const data = await parseJson<FeedbackTagConfig>(response);
+        throwIfError(response, data);
+        return (data.data ?? { version: 0, tags: [] }) as FeedbackTagConfig;
+      } catch {
+        feedbackTagsCache = null; // 失败不缓存，下次打开弹窗重试
+        return { version: 0, tags: [] };
+      }
+    })();
+  }
+  return feedbackTagsCache;
 }

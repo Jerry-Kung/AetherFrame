@@ -207,7 +207,7 @@ export default function BatchCreationPage({
         leg_foot_bad: legFootBad,
       });
       const filled = text.length > 0 || legFootBad;
-      const nextFb = filled ? { feedbackText: text, legFootBad } : null;
+      const nextFb = filled ? { feedbackText: text, legFootBad, selectedTags: [] } : null;
       const patchImg = (im: QuickCreateImage) =>
         im.id === img.id ? { ...im, userFeedback: nextFb } : im;
       setTasks((prev) =>

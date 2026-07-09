@@ -1,3 +1,5 @@
+import type { SelectedFeedbackTag } from "@/services/creationApi";
+
 export interface AiComment {
   id: string;
   imageId: string;
@@ -18,7 +20,11 @@ export interface QuickCreateImage {
   imageIndex?: number;
   aiComment?: AiComment | null;
   /** 已填的人工 feedback（null/undefined = 未填） */
-  userFeedback?: { feedbackText: string; legFootBad: boolean } | null;
+  userFeedback?: {
+    feedbackText: string;
+    legFootBad: boolean;
+    selectedTags: SelectedFeedbackTag[];
+  } | null;
   beautifiedUrl?: string | null;
   beautifyTaskId?: string | null;
   beautifyStatus?: BeautifyStatus | null;

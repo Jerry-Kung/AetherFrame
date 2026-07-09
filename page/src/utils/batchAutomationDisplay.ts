@@ -211,7 +211,14 @@ export function buildBatchTaskFromHydrated(
         const base = quickCreateImageFromApiEntry(taskId, r.prompt_id, i, img);
         const fb = fbMap.get(`${r.prompt_id}#${i}`);
         return fb
-          ? { ...base, userFeedback: { feedbackText: fb.feedback_text, legFootBad: fb.leg_foot_bad } }
+          ? {
+              ...base,
+              userFeedback: {
+                feedbackText: fb.feedback_text,
+                legFootBad: fb.leg_foot_bad,
+                selectedTags: fb.selected_tags ?? [],
+              },
+            }
           : base;
       });
       for (const im of imgs) flat.push(im);
