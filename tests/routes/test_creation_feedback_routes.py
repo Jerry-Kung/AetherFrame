@@ -108,3 +108,31 @@ def test_hydrated_items_include_feedbacks(api_client, db_session):
         {"prompt_id": "p1", "image_index": 0,
          "leg_foot_bad": False, "feedback_text": "回显"}
     ]
+
+
+def test_feedback_tags_api(api_client):
+    r = api_client.get("/api/creation/feedback/tags")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["success"] is True
+    data = body["data"]
+    assert data["version"] >= 1
+    by_key = {t["key"]: t for t in data["tags"]}
+    assert by_key["sock_wrinkle_heavy"] == {
+        "key": "sock_wrinkle_heavy", "label": "袜子皱褶过于夸张",
+        "polarity": "negative", "leg_foot_bad": True,
+    }
+    assert by_key["neutral_normal"]["polarity"] == "neutral"
+    # taxonomy 不下发
+    assert all("taxonomy" not in t for t in data["tags"])
+
+
+def test_feedback_tags_api_degrades_when_config_missing(api_client, monkeypatch):
+    from app.services.creation_service import feedback_tags
+
+    monkeypatch.setattr(
+        feedback_tags, "get_tag_config", lambda: {"version": 0, "tags": []}
+    )
+    r = api_client.get("/api/creation/feedback/tags")
+    assert r.status_code == 200
+    assert r.json()["data"] == {"version": 0, "tags": []}

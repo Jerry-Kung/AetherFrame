@@ -577,6 +577,14 @@ def export_image_feedback(db: Session = Depends(get_db)):
     return ApiResponse(success=True, data=data, message="导出 feedback 成功")
 
 
+@router.get("/feedback/tags", response_model=ApiResponse)
+def get_feedback_tags():
+    from app.services.creation_service import feedback_tags
+
+    data = feedback_tags.tags_for_api(feedback_tags.get_tag_config())
+    return ApiResponse(success=True, data=data, message="获取 feedback 标签成功")
+
+
 @router.get("/quick-create/tasks/{task_id}/images/{image_path:path}")
 def get_quick_create_image(
     task_id: str,

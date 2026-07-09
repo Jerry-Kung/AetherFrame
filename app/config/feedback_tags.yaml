@@ -1,0 +1,34 @@
+# 生产 feedback 标签词表（设计文档 docs/superpowers/specs/2026-07-09-feedback-tag-selection-design.md §1）
+# key 一经启用不得复用为其他含义；改 label 措辞 / taxonomy 映射 / 增删标签只改本文件，重启生效。
+# polarity: positive | negative | neutral；leg_foot_bad / taxonomy 仅 negative 有意义。
+version: 1
+tags:
+  # ---- 负面 · 腿脚类（选中即计 bad）----
+  - { key: foot_crude,          label: 脚部简陋,                     polarity: negative, leg_foot_bad: true,  taxonomy: 脚部/简陋 }
+  - { key: foot_exaggerated,    label: 脚部细节夸张,                 polarity: negative, leg_foot_bad: true,  taxonomy: 脚部/夸张 }
+  - { key: foot_proportion,     label: 脚部比例结构异常,             polarity: negative, leg_foot_bad: true,  taxonomy: 脚部/比例结构 }
+  - { key: foot_tip_discolor,   label: 脚尖变色,                     polarity: negative, leg_foot_bad: true,  taxonomy: 脚部/脚尖变色 }
+  - { key: leg_multi_missing,   label: 多肢/缺肢,                    polarity: negative, leg_foot_bad: true,  taxonomy: 腿部/结构错误 }
+  - { key: leg_twist,           label: 腿部异常扭曲（含脚尖反向）,   polarity: negative, leg_foot_bad: true,  taxonomy: 腿部/结构错误 }
+  - { key: pose_weird,          label: 姿势诡异（不符合人类正常姿势）, polarity: negative, leg_foot_bad: true,  taxonomy: 其他/未分类 }
+  - { key: leg_proportion,      label: 腿部比例失调（过粗/过细）,    polarity: negative, leg_foot_bad: true,  taxonomy: 身体比例/整体不协调 }
+  - { key: sock_painted,        label: 袜子上色感,                   polarity: negative, leg_foot_bad: true,  taxonomy: 袜子/上色感 }
+  - { key: sock_toe_separation, label: 脚趾分离感,                   polarity: negative, leg_foot_bad: true,  taxonomy: 袜子/上色感 }
+  - { key: sock_plastic,        label: 袜子塑料袋感,                 polarity: negative, leg_foot_bad: true,  taxonomy: 袜子/塑料袋感 }
+  - { key: sock_wrinkle_heavy,  label: 袜子皱褶过于夸张,             polarity: negative, leg_foot_bad: true,  taxonomy: 袜子/皱褶夸张 }
+  - { key: sock_missing,        label: 袜子缺失,                     polarity: negative, leg_foot_bad: true,  taxonomy: 袜子/缺失 }
+  - { key: sock_shoes,          label: 错误穿鞋,                     polarity: negative, leg_foot_bad: true,  taxonomy: 袜子/穿鞋 }
+  # ---- 负面 · 非腿脚类（不计 bad）----
+  - { key: style_realistic,     label: 画风写实化,                   polarity: negative, leg_foot_bad: false, taxonomy: 画风/写实化 }
+  - { key: style_flat2d,        label: 画风平面2D,                   polarity: negative, leg_foot_bad: false, taxonomy: 画风/平面2D }
+  - { key: style_doll3d,        label: 3D玩偶感,                     polarity: negative, leg_foot_bad: false, taxonomy: 画风/3D玩偶感 }
+  - { key: body_proportion,     label: 身体比例不协调,               polarity: negative, leg_foot_bad: false, taxonomy: 身体比例/整体不协调 }
+  - { key: face_collapse,       label: 脸部细节崩坏,                 polarity: negative, leg_foot_bad: false, taxonomy: 其他/未分类 }
+  - { key: face_anchor_lost,    label: 视觉锚点丢失,                 polarity: negative, leg_foot_bad: false, taxonomy: 其他/未分类 }
+  - { key: face_expression,     label: 表情诡异,                     polarity: negative, leg_foot_bad: false, taxonomy: 其他/未分类 }
+  # ---- 正面 ----
+  - { key: pos_sock_style,      label: 袜子样式好看,                 polarity: positive }
+  - { key: pos_leg_natural,     label: 腿脚自然,                     polarity: positive }
+  - { key: pos_overall_good,    label: 整体效果好,                   polarity: positive }
+  # ---- 中立 ----
+  - { key: neutral_normal,      label: 正常,                         polarity: neutral }
