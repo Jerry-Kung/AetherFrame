@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef, memo } from "react";
 import type { CharaProfile } from "@/types/material";
 import type { QuickCreateImage } from "@/types/quickCreate";
 import * as creationApi from "@/services/creationApi";
+import type { SelectedFeedbackTag } from "@/services/creationApi";
 import { listFixedSeedTemplates } from "@/services/materialApi";
 import { ApiError } from "@/services/api";
 import type { BatchTask, BatchTaskConfig } from "@/types/batchAutomation";
@@ -193,7 +194,13 @@ export default function BatchCreationPage({
   );
 
   const handleSaveFeedback = useCallback(
-    async (taskId: string, img: QuickCreateImage, feedbackText: string, legFootBad: boolean) => {
+    async (
+      taskId: string,
+      img: QuickCreateImage,
+      feedbackText: string,
+      legFootBad: boolean,
+      selectedTags: SelectedFeedbackTag[]
+    ) => {
       const task = tasks.find((t) => t.id === taskId);
       if (!task?.quickCreateRecordId) {
         throw new ApiError("该记录缺少美图创作任务，无法保存 feedback", 400);
@@ -202,12 +209,19 @@ export default function BatchCreationPage({
         throw new ApiError("图片索引缺失，无法保存 feedback", 400);
       }
       const text = feedbackText.trim();
-      await creationApi.saveImageFeedback(task.quickCreateRecordId, img.promptId, img.imageIndex, {
-        feedback_text: text,
-        leg_foot_bad: legFootBad,
-      });
-      const filled = text.length > 0 || legFootBad;
-      const nextFb = filled ? { feedbackText: text, legFootBad, selectedTags: [] } : null;
+      const saved = await creationApi.saveImageFeedback(
+        task.quickCreateRecordId,
+        img.promptId,
+        img.imageIndex,
+        { feedback_text: text, leg_foot_bad: legFootBad, selected_tags: selectedTags }
+      );
+      const nextFb = saved
+        ? {
+            feedbackText: saved.feedback_text,
+            legFootBad: saved.leg_foot_bad,
+            selectedTags: saved.selected_tags ?? [],
+          }
+        : null;
       const patchImg = (im: QuickCreateImage) =>
         im.id === img.id ? { ...im, userFeedback: nextFb } : im;
       setTasks((prev) =>

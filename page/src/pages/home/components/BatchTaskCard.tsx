@@ -6,6 +6,7 @@ import ImageFeedbackModal from "./ImageFeedbackModal";
 import DirectionChip from "@/pages/material/components/direction/DirectionChip";
 import type { BatchTask } from "@/types/batchAutomation";
 import type { AiComment, QuickCreateImage } from "@/types/quickCreate";
+import type { SelectedFeedbackTag } from "@/services/creationApi";
 
 interface ImageLightboxState {
   images: QuickCreateImage[];
@@ -21,7 +22,8 @@ interface BatchTaskCardProps {
     taskId: string,
     img: QuickCreateImage,
     feedbackText: string,
-    legFootBad: boolean
+    legFootBad: boolean,
+    selectedTags: SelectedFeedbackTag[]
   ) => Promise<void>;
 }
 
@@ -454,7 +456,7 @@ export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed, 
         <ImageFeedbackModal
           image={feedbackTarget}
           promptTitle={promptTitleForBatchImage(task, feedbackTarget)}
-          onSave={(text, bad) => onSaveFeedback(task.id, feedbackTarget, text, bad)}
+          onSave={(text, bad, tags) => onSaveFeedback(task.id, feedbackTarget, text, bad, tags)}
           onClose={() => setFeedbackTarget(null)}
         />
       )}
