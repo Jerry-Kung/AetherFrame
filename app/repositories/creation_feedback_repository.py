@@ -34,6 +34,7 @@ class CreationImageFeedbackRepository:
         image_index: int,
         leg_foot_bad: bool,
         feedback_text: str,
+        selected_tags_json: str = "[]",
     ) -> CreationImageFeedback:
         row = self.get_for_image(quick_create_task_id, prompt_id, image_index)
         if row is None:
@@ -46,6 +47,7 @@ class CreationImageFeedbackRepository:
             self.db.add(row)
         row.leg_foot_bad = bool(leg_foot_bad)
         row.feedback_text = feedback_text or ""
+        row.selected_tags_json = selected_tags_json or "[]"
         self.db.commit()
         self.db.refresh(row)
         return row

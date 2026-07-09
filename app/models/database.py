@@ -524,6 +524,38 @@ def migrate_material_creative_directions_add_home_settings() -> None:
         raise
 
 
+def migrate_creation_image_feedbacks_add_selected_tags() -> None:
+    """为 creation_image_feedbacks 补充 selected_tags_json 列（feedback 标签化）。"""
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='creation_image_feedbacks'"
+                )
+            ).fetchone()
+            if row is None:
+                return
+            cols = conn.execute(
+                text("PRAGMA table_info(creation_image_feedbacks)")
+            ).fetchall()
+            names = {c[1] for c in cols}
+            if "selected_tags_json" in names:
+                return
+            conn.execute(
+                text(
+                    "ALTER TABLE creation_image_feedbacks ADD COLUMN selected_tags_json TEXT NOT NULL DEFAULT '[]'"
+                )
+            )
+        logger.info("已迁移: creation_image_feedbacks 增加 selected_tags_json 列")
+    except Exception as e:
+        logger.error(
+            f"迁移 creation_image_feedbacks.selected_tags_json 失败: {e}", exc_info=True
+        )
+        raise
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
@@ -562,6 +594,7 @@ def init_db():
         migrate_bio_official_seed_prompts_add_direction_fk()
         migrate_creation_batch_run_items_add_seed_dir_id()
         migrate_material_creative_directions_add_home_settings()
+        migrate_creation_image_feedbacks_add_selected_tags()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:

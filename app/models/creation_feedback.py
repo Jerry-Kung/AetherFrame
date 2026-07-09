@@ -23,6 +23,7 @@ class CreationImageFeedback(Base):
     image_index = Column(Integer, nullable=False)
     leg_foot_bad = Column(Boolean, nullable=False, default=False)
     feedback_text = Column(Text, nullable=False, default="")
+    selected_tags_json = Column(Text, nullable=False, default="[]")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
