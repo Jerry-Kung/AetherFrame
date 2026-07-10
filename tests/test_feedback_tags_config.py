@@ -23,8 +23,8 @@ def _write_config(tmp_path, content: str) -> str:
 SMALL_CONFIG = """
     version: 7
     tags:
-      - { key: sock_wrinkle_heavy, label: 袜子皱褶过于夸张, polarity: negative, leg_foot_bad: true, taxonomy: 袜子/皱褶夸张 }
-      - { key: style_doll3d, label: 3D玩偶感, polarity: negative, leg_foot_bad: false, taxonomy: 画风/3D玩偶感 }
+      - { key: sock_wrinkle_heavy, label: 袜子皱褶过于夸张, polarity: negative, leg_foot_bad: true, taxonomy: 袜子/皱褶夸张, group: 袜子 }
+      - { key: style_doll3d, label: 3D玩偶感, polarity: negative, leg_foot_bad: false, taxonomy: 画风/3D玩偶感, group: 画风 }
       - { key: pos_overall_good, label: 整体效果好, polarity: positive }
       - { key: neutral_normal, label: 正常, polarity: neutral }
 """
@@ -41,6 +41,7 @@ class TestLoad:
         assert neg["polarity"] == "negative"
         assert neg["leg_foot_bad"] is True
         assert neg["taxonomy"] == "袜子/皱褶夸张"
+        assert neg["group"] == "袜子"
 
     def test_load_missing_file_degrades_empty(self, tmp_path):
         cfg = load_tag_config(str(tmp_path / "nope.yaml"))
@@ -57,6 +58,22 @@ class TestLoad:
         assert cfg["version"] >= 1
         assert {"sock_wrinkle_heavy", "leg_multi_missing", "sock_toe_separation",
                 "pos_sock_style", "neutral_normal"} <= keys
+        groups = [t["group"] for t in cfg["tags"] if t["polarity"] == "negative"]
+        assert set(groups) == {"袜子", "脚部", "腿部与姿势", "画风", "脸部与身体"}
+        assert groups[0] == "袜子"  # 生产最高优先级组最排最前
+
+    def test_load_negative_missing_group_defaults_other(self, tmp_path):
+        cfg = load_tag_config(_write_config(tmp_path, """
+            version: 1
+            tags:
+              - { key: no_group_tag, label: 无分组, polarity: negative, leg_foot_bad: true, taxonomy: 其他/未分类 }
+        """))
+        assert cfg["tags"][0]["group"] == "其他"
+
+    def test_load_positive_neutral_have_no_group(self, tmp_path):
+        cfg = load_tag_config(_write_config(tmp_path, SMALL_CONFIG))
+        assert "group" not in cfg["tags"][2]  # positive
+        assert "group" not in cfg["tags"][3]  # neutral
 
 
 class TestNormalize:
@@ -132,11 +149,11 @@ class TestViews:
         assert view["version"] == 7
         assert view["tags"][0] == {
             "key": "sock_wrinkle_heavy", "label": "袜子皱褶过于夸张",
-            "polarity": "negative", "leg_foot_bad": True,
+            "polarity": "negative", "leg_foot_bad": True, "group": "袜子",
         }
         assert view["tags"][2] == {
             "key": "pos_overall_good", "label": "整体效果好",
-            "polarity": "positive", "leg_foot_bad": False,
+            "polarity": "positive", "leg_foot_bad": False, "group": None,
         }
 
     def test_snapshot_keeps_taxonomy_and_is_copy(self, tmp_path):

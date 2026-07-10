@@ -51,6 +51,7 @@ def load_tag_config(path: str = CONFIG_PATH) -> Dict[str, Any]:
         if polarity == "negative":
             entry["leg_foot_bad"] = bool(t.get("leg_foot_bad", False))
             entry["taxonomy"] = str(t.get("taxonomy") or "其他/未分类").strip()
+            entry["group"] = str(t.get("group") or "其他").strip()
         tags.append(entry)
     try:
         version = int(raw.get("version") or 0)
@@ -110,7 +111,7 @@ def derive_leg_foot_bad(
 
 
 def tags_for_api(config: Dict[str, Any]) -> Dict[str, Any]:
-    """前端下发视图：剥离 taxonomy（前端用不到），leg_foot_bad 统一补齐布尔。"""
+    """前端下发视图：剥离 taxonomy（前端用不到），leg_foot_bad 统一补齐布尔，group 下发（非负面为 None）。"""
     return {
         "version": config.get("version", 0),
         "tags": [
@@ -119,6 +120,7 @@ def tags_for_api(config: Dict[str, Any]) -> Dict[str, Any]:
                 "label": t["label"],
                 "polarity": t["polarity"],
                 "leg_foot_bad": bool(t.get("leg_foot_bad", False)),
+                "group": t.get("group"),
             }
             for t in config.get("tags", [])
         ],

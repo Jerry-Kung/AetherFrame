@@ -122,7 +122,7 @@ def test_feedback_tags_api(api_client):
     by_key = {t["key"]: t for t in data["tags"]}
     assert by_key["sock_wrinkle_heavy"] == {
         "key": "sock_wrinkle_heavy", "label": "袜子皱褶过于夸张",
-        "polarity": "negative", "leg_foot_bad": True,
+        "polarity": "negative", "leg_foot_bad": True, "group": "袜子",
     }
     assert by_key["neutral_normal"]["polarity"] == "neutral"
     # taxonomy 不下发
