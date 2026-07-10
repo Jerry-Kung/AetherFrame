@@ -90,8 +90,9 @@
 新增数据迁移 `migrate_creation_image_feedbacks_recompute_leg_foot_bad()`
 （`app/models/database.py`，在 init_db 现有迁移列表末尾调用）：
 
-- **一次性标记**：用 SQLite `PRAGMA user_version` 守卫
-  （0 → 执行迁移 → 置 1）。与现有「查列存在」的结构迁移不同，
+- **一次性标记**：复用现有 `app_migrations` 元表守卫
+  （`_is_migration_applied` / `_mark_migration_applied`，
+  bio walk 一次性数据迁移的同款模式）。与「查列存在」的结构迁移不同，
   这是数据迁移，必须只跑一次——否则将来改配置里的 `leg_foot_bad`
   标志会在每次重启时重写历史数据。
 - **重算**：逐行按当前标签配置重算
@@ -134,7 +135,7 @@
   - 清空即删两条件：有文本无标签→保留；无文本有标签→保留；
     双空→删行（不再受请求体 bad 位影响）。
   - 迁移：有标签行重算为推导值；纯文本手动 bad 行→False 且保留；
-    「无文本无标签」行被删除；user_version 置 1 后重跑不再改动数据；
+    「无文本无标签」行被删除；app_migrations 置标记后重跑不再动数据；
     空配置时跳过且不置标记。
   - 标签 API：下发字段含 `group`。
 - 前端：`npm run type-check` + `npm run lint` 无新增告警。
