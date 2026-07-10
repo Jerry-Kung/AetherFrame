@@ -198,7 +198,6 @@ export default function BatchCreationPage({
       taskId: string,
       img: QuickCreateImage,
       feedbackText: string,
-      legFootBad: boolean,
       selectedTags: SelectedFeedbackTag[]
     ) => {
       const task = tasks.find((t) => t.id === taskId);
@@ -213,7 +212,7 @@ export default function BatchCreationPage({
         task.quickCreateRecordId,
         img.promptId,
         img.imageIndex,
-        { feedback_text: text, leg_foot_bad: legFootBad, selected_tags: selectedTags }
+        { feedback_text: text, selected_tags: selectedTags }
       );
       const nextFb = saved
         ? {

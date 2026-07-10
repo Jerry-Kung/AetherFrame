@@ -650,6 +650,8 @@ export interface FeedbackTagDef {
   label: string;
   polarity: "positive" | "negative" | "neutral";
   leg_foot_bad: boolean;
+  /** 负面标签的 UI 分组名；正面/中立为 null */
+  group: string | null;
 }
 
 export interface FeedbackTagConfig {
@@ -669,7 +671,7 @@ export async function saveImageFeedback(
   taskId: string,
   promptId: string,
   imageIndex: number,
-  body: { feedback_text: string; leg_foot_bad: boolean; selected_tags?: SelectedFeedbackTag[] }
+  body: { feedback_text: string; selected_tags?: SelectedFeedbackTag[] }
 ): Promise<ImageFeedbackEntry | null> {
   const tid = String(taskId ?? "").trim();
   const pid = String(promptId ?? "").trim();

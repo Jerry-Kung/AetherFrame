@@ -20,9 +20,8 @@ interface BatchTaskCardProps {
   onMarkUsed: (taskId: string) => void | Promise<void>;
   onSaveFeedback: (
     taskId: string,
-    img: QuickCreateImage,
+    image: QuickCreateImage,
     feedbackText: string,
-    legFootBad: boolean,
     selectedTags: SelectedFeedbackTag[]
   ) => Promise<void>;
 }
@@ -456,7 +455,7 @@ export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed, 
         <ImageFeedbackModal
           image={feedbackTarget}
           promptTitle={promptTitleForBatchImage(task, feedbackTarget)}
-          onSave={(text, bad, tags) => onSaveFeedback(task.id, feedbackTarget, text, bad, tags)}
+          onSave={(text, tags) => onSaveFeedback(task.id, feedbackTarget, text, tags)}
           onClose={() => setFeedbackTarget(null)}
         />
       )}
