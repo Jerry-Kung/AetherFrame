@@ -5,7 +5,6 @@ import uuid
 from sqlalchemy import text
 
 from app.repositories.creation_feedback_repository import CreationImageFeedbackRepository
-from app.services.creation_service import feedback_tags
 
 FLAG = "2026-07-10_feedback_leg_foot_bad_recompute"
 
@@ -32,7 +31,12 @@ def _seed(db_session, *, text_="", bad=False, tags_json="[]"):
 def _run_migration(monkeypatch, cfg=TEST_CFG):
     from app.models import database
 
-    monkeypatch.setattr(feedback_tags, "get_tag_config", lambda: cfg)
+    # 字符串目标：patch 时经 importlib 重新解析模块，补丁必然落在当前 sys.modules
+    # 的模块对象上——与迁移函数局部 import 拿到同一对象，
+    # 对 test_file_services 的 sys.modules 清理免疫。
+    monkeypatch.setattr(
+        "app.services.creation_service.feedback_tags.get_tag_config", lambda: cfg
+    )
     database.migrate_creation_image_feedbacks_recompute_leg_foot_bad()
 
 
