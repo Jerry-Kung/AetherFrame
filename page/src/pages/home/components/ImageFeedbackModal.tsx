@@ -130,6 +130,7 @@ export default function ImageFeedbackModal({
   onClose,
 }: ImageFeedbackModalProps) {
   const [tagDefs, setTagDefs] = useState<FeedbackTagDef[]>([]);
+  const [tagsLoading, setTagsLoading] = useState(true);
   const [selected, setSelected] = useState<SelectedFeedbackTag[]>(
     image.userFeedback?.selectedTags ?? []
   );
@@ -140,7 +141,10 @@ export default function ImageFeedbackModal({
   useEffect(() => {
     let alive = true;
     void getFeedbackTags().then((cfg) => {
-      if (alive) setTagDefs(cfg.tags);
+      if (alive) {
+        setTagDefs(cfg.tags);
+        setTagsLoading(false);
+      }
     });
     return () => {
       alive = false;
@@ -232,7 +236,14 @@ export default function ImageFeedbackModal({
             </div>
           </div>
 
-          {tagDefs.length > 0 && (
+          {tagsLoading && (
+            <div className="mb-3 flex items-center gap-2 text-xs text-rose-400/70">
+              <i className="ri-loader-4-line animate-spin" aria-hidden></i>
+              <span style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>标签加载中…</span>
+            </div>
+          )}
+
+          {!tagsLoading && tagDefs.length > 0 && (
             <div className="mb-3 space-y-2.5">
               <p className="text-xs text-rose-400/70">
                 问题标签（点「轻/中/重」一次选中；点标签名按「中等」快捷选中/取消）

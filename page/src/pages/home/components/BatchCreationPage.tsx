@@ -133,6 +133,12 @@ export default function BatchCreationPage({
     void loadFixedSeedMeta();
   }, [loadFixedSeedMeta]);
 
+  // 预热 feedback 标签词表缓存：进页面即拉取，抢在大批出图请求占满浏览器同域并发之前完成，
+  // 避免首次打开反馈弹窗时标签请求被排队、长时间无标签可点。
+  useEffect(() => {
+    void creationApi.getFeedbackTags();
+  }, []);
+
   const loadTasksFromApi = useCallback(async () => {
     setTasksLoading(true);
     setTasksError(null);
