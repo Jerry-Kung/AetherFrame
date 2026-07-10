@@ -556,6 +556,79 @@ def migrate_creation_image_feedbacks_add_selected_tags() -> None:
         raise
 
 
+_FEEDBACK_BAD_RECOMPUTE_FLAG = "2026-07-10_feedback_leg_foot_bad_recompute"
+
+
+def migrate_creation_image_feedbacks_recompute_leg_foot_bad() -> None:
+    """一次性数据迁移：勾选框移除后，把存量行 leg_foot_bad 重算为纯标签推导值。
+
+    设计文档 docs/superpowers/specs/2026-07-10-feedback-modal-ux-design.md §3.3：
+    - app_migrations 标记守卫只跑一次（防将来改配置 leg_foot_bad 时重写历史数据）；
+    - 标签配置为空时跳过且不置标记（配置尚未就绪窗口不得清空全库 bad），下次启动重试；
+    - 重算后「文本空且无标签」的行删除（对齐两条件清空语义）。
+    """
+    from app.services.creation_service import feedback_tags
+
+    try:
+        _ensure_app_migrations_table()  # 自给自足：独立调用本迁移时元表也存在
+        with engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='creation_image_feedbacks'"
+                )
+            ).fetchone()
+            if row is None:
+                return
+            if _is_migration_applied(conn, _FEEDBACK_BAD_RECOMPUTE_FLAG):
+                return
+            config = feedback_tags.get_tag_config()
+            if not config.get("tags"):
+                logger.warning(
+                    "feedback bad 重算迁移：标签配置为空，跳过（不置标记，下次启动重试）"
+                )
+                return
+            rows = conn.execute(
+                text(
+                    "SELECT id, feedback_text, selected_tags_json FROM creation_image_feedbacks"
+                )
+            ).fetchall()
+            updated = deleted = 0
+            for r in rows:
+                try:
+                    selected = json.loads(r.selected_tags_json or "[]")
+                except (TypeError, ValueError):
+                    selected = []
+                if not isinstance(selected, list):
+                    selected = []
+                selected = [s for s in selected if isinstance(s, dict)]
+                if not (r.feedback_text or "").strip() and not selected:
+                    conn.execute(
+                        text("DELETE FROM creation_image_feedbacks WHERE id = :id"),
+                        {"id": r.id},
+                    )
+                    deleted += 1
+                    continue
+                bad = feedback_tags.derive_leg_foot_bad(selected, config)
+                conn.execute(
+                    text(
+                        "UPDATE creation_image_feedbacks SET leg_foot_bad = :bad WHERE id = :id"
+                    ),
+                    {"bad": 1 if bad else 0, "id": r.id},
+                )
+                updated += 1
+            _mark_migration_applied(conn, _FEEDBACK_BAD_RECOMPUTE_FLAG)
+            conn.commit()
+        logger.info(
+            "已迁移: creation_image_feedbacks leg_foot_bad 重算 updated=%d deleted=%d",
+            updated, deleted,
+        )
+    except Exception as e:
+        logger.error(
+            f"迁移 creation_image_feedbacks leg_foot_bad 重算失败: {e}", exc_info=True
+        )
+        raise
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
@@ -595,6 +668,7 @@ def init_db():
         migrate_creation_batch_run_items_add_seed_dir_id()
         migrate_material_creative_directions_add_home_settings()
         migrate_creation_image_feedbacks_add_selected_tags()
+        migrate_creation_image_feedbacks_recompute_leg_foot_bad()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:
