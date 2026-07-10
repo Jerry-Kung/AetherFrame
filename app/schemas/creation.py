@@ -301,6 +301,7 @@ class ImageFeedbackTagIn(BaseModel):
 
 class ImageFeedbackSaveRequest(BaseModel):
     feedback_text: str = ""
+    # deprecated（2026-07-10 起）：bad 已改为纯标签推导，本字段仅为兼容旧页面缓存保留，值被忽略
     leg_foot_bad: bool = False
     selected_tags: List[ImageFeedbackTagIn] = Field(default_factory=list)
 

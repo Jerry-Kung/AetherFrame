@@ -98,12 +98,12 @@ class TestImageFeedbackService:
         svc = ImageFeedbackService(db_session)
         data = svc.save_feedback(
             task_id=task.id, prompt_id="p1", image_index=0,
-            feedback_text="袜口花边过重", leg_foot_bad=True,
+            feedback_text="袜口花边过重",
         )
         assert data == {
             "prompt_id": "p1",
             "image_index": 0,
-            "leg_foot_bad": True,
+            "leg_foot_bad": False,  # 勾选框已移除：纯文本不记 bad，bad 纯标签推导
             "feedback_text": "袜口花边过重",
             "selected_tags": [],
         }
@@ -112,29 +112,29 @@ class TestImageFeedbackService:
         task = make_qc_task(db_session)
         svc = ImageFeedbackService(db_session)
         svc.save_feedback(task_id=task.id, prompt_id="p1", image_index=0,
-                          feedback_text="临时", leg_foot_bad=False)
+                          feedback_text="临时")
         data = svc.save_feedback(task_id=task.id, prompt_id="p1", image_index=0,
-                                 feedback_text="   ", leg_foot_bad=False)
+                                 feedback_text="   ")
         assert data is None
         assert CreationImageFeedbackRepository(db_session).list_all() == []
         # 行本不存在时清空也幂等成功
         assert svc.save_feedback(task_id=task.id, prompt_id="p9", image_index=0,
-                                 feedback_text="", leg_foot_bad=False) is None
+                                 feedback_text="") is None
 
-    def test_save_only_checkbox_is_filled(self, db_session):
+    def test_no_text_no_tags_is_empty_regardless_of_flag(self, db_session):
+        # 「仅勾选」场景已不存在：文本空且无标签 → 两条件清空即删
         task = make_qc_task(db_session)
         data = ImageFeedbackService(db_session).save_feedback(
-            task_id=task.id, prompt_id="p1", image_index=2,
-            feedback_text="", leg_foot_bad=True,
+            task_id=task.id, prompt_id="p1", image_index=2, feedback_text="",
         )
-        assert data is not None and data["leg_foot_bad"] is True
+        assert data is None
 
     def test_save_missing_task_raises(self, db_session):
         import pytest as _pytest
         with _pytest.raises(ValueError, match="任务不存在"):
             ImageFeedbackService(db_session).save_feedback(
                 task_id="qcreate_missing0000", prompt_id="p1", image_index=0,
-                feedback_text="x", leg_foot_bad=False,
+                feedback_text="x",
             )
 
     def test_quick_create_delete_history_removes_feedback(self, db_session):
@@ -143,7 +143,7 @@ class TestImageFeedbackService:
         task = make_qc_task(db_session)
         ImageFeedbackService(db_session).save_feedback(
             task_id=task.id, prompt_id="p1", image_index=0,
-            feedback_text="将被联动删除", leg_foot_bad=True,
+            feedback_text="将被联动删除",
         )
         QuickCreateService(db_session).delete_history(task.id)
         assert CreationImageFeedbackRepository(db_session).list_all() == []
@@ -152,7 +152,7 @@ class TestImageFeedbackService:
         task = make_qc_task(db_session)
         data = ImageFeedbackService(db_session).save_feedback(
             task_id=task.id, prompt_id="p1", image_index=0,
-            feedback_text="", leg_foot_bad=False,
+            feedback_text="",
             selected_tags=[
                 {"key": "sock_wrinkle_heavy", "severity": "severe"},
                 {"key": "ghost_tag"},                      # 未知 → 剔除
@@ -172,19 +172,19 @@ class TestImageFeedbackService:
         task = make_qc_task(db_session)
         data = ImageFeedbackService(db_session).save_feedback(
             task_id=task.id, prompt_id="p1", image_index=0,
-            feedback_text="", leg_foot_bad=False,
+            feedback_text="",
             selected_tags=[{"key": "style_doll3d", "severity": "minor"}],
         )
         assert data is not None
         assert data["leg_foot_bad"] is False
 
-    def test_save_checkbox_fallback_with_text_only(self, db_session):
+    def test_text_only_does_not_set_bad(self, db_session):
         task = make_qc_task(db_session)
         data = ImageFeedbackService(db_session).save_feedback(
             task_id=task.id, prompt_id="p1", image_index=0,
-            feedback_text="标签覆盖不了的新问题", leg_foot_bad=True, selected_tags=[],
+            feedback_text="标签覆盖不了的新问题", selected_tags=[],
         )
-        assert data is not None and data["leg_foot_bad"] is True
+        assert data is not None and data["leg_foot_bad"] is False
 
     def test_tags_only_counts_as_filled_and_clear_needs_all_empty(self, db_session):
         task = make_qc_task(db_session)
@@ -192,14 +192,14 @@ class TestImageFeedbackService:
         # 只有标签也算已填
         data = svc.save_feedback(
             task_id=task.id, prompt_id="p1", image_index=0,
-            feedback_text="", leg_foot_bad=False,
+            feedback_text="",
             selected_tags=[{"key": "neutral_normal"}],
         )
         assert data is not None
         # 三条件全空 → 删行
         assert svc.save_feedback(
             task_id=task.id, prompt_id="p1", image_index=0,
-            feedback_text="  ", leg_foot_bad=False, selected_tags=[],
+            feedback_text="  ", selected_tags=[],
         ) is None
         assert CreationImageFeedbackRepository(db_session).list_all() == []
 
@@ -208,7 +208,7 @@ class TestImageFeedbackService:
         task = make_qc_task(db_session)
         data = ImageFeedbackService(db_session).save_feedback(
             task_id=task.id, prompt_id="p1", image_index=0,
-            feedback_text="", leg_foot_bad=False,
+            feedback_text="",
             selected_tags=[{"key": "ghost_tag"}],
         )
         assert data is None
@@ -257,9 +257,9 @@ class TestBuildExport:
         item = make_batch_item_for_task(db_session, task)
         svc = ImageFeedbackService(db_session)
         svc.save_feedback(task_id=task.id, prompt_id="p1", image_index=0,
-                          feedback_text="脚趾夸张", leg_foot_bad=True)
+                          feedback_text="脚趾夸张")
         svc.save_feedback(task_id=task.id, prompt_id="p1", image_index=2,
-                          feedback_text="构图很好", leg_foot_bad=False)
+                          feedback_text="构图很好")
 
         out = svc.build_export()
         assert out["schema"] == "aetherframe_feedback_v2"
@@ -284,7 +284,7 @@ class TestBuildExport:
         assert g["total_images"] == 3
         assert g["images"] == [
             {"image_index": 0, "image_path": "images/a0.png",
-             "leg_foot_bad": True, "feedback_text": "脚趾夸张",
+             "leg_foot_bad": False, "feedback_text": "脚趾夸张",
              "selected_tags": [], "selected_tag_labels": []},
             {"image_index": 2, "image_path": "images/a2.png",
              "leg_foot_bad": False, "feedback_text": "构图很好",
@@ -295,7 +295,7 @@ class TestBuildExport:
         task = make_qc_task(db_session, results=QC_RESULTS, seed_prompt="手动种子")
         svc = ImageFeedbackService(db_session)
         svc.save_feedback(task_id=task.id, prompt_id="p2", image_index=0,
-                          feedback_text="ok", leg_foot_bad=False)
+                          feedback_text="ok")
         rec = svc.build_export()["records"][0]
         assert rec["batch_item_id"] is None
         assert rec["seed_prompt_id"] is None
@@ -309,9 +309,9 @@ class TestBuildExport:
         task = make_qc_task(db_session, results=QC_RESULTS)
         svc = ImageFeedbackService(db_session)
         svc.save_feedback(task_id=task.id, prompt_id="p2", image_index=0,
-                          feedback_text="乙组反馈", leg_foot_bad=False)
+                          feedback_text="乙组反馈")
         svc.save_feedback(task_id=task.id, prompt_id="p1", image_index=0,
-                          feedback_text="甲组反馈", leg_foot_bad=True)
+                          feedback_text="甲组反馈")
 
         rec = svc.build_export()["records"][0]
         assert [g["prompt_id"] for g in rec["prompt_groups"]] == ["p1", "p2"]
@@ -327,7 +327,7 @@ class TestBuildExport:
         )
         task = make_qc_task(db_session, results=QC_RESULTS)
         svc.save_feedback(task_id=task.id, prompt_id="p1", image_index=1,
-                          feedback_text="正常", leg_foot_bad=False)
+                          feedback_text="正常")
         out = svc.build_export()
         assert [r["quick_create_task_id"] for r in out["records"]] == [task.id]
 
@@ -335,7 +335,7 @@ class TestBuildExport:
         task = make_qc_task(db_session, results=QC_RESULTS)
         svc = ImageFeedbackService(db_session)
         svc.save_feedback(task_id=task.id, prompt_id="p2", image_index=5,
-                          feedback_text="越界索引", leg_foot_bad=False)
+                          feedback_text="越界索引")
         g = svc.build_export()["records"][0]["prompt_groups"][0]
         assert g["images"][0]["image_path"] == ""
         assert g["images"][0]["feedback_text"] == "越界索引"
@@ -345,7 +345,7 @@ class TestBuildExport:
         svc = ImageFeedbackService(db_session)
         svc.save_feedback(
             task_id=task.id, prompt_id="p1", image_index=0,
-            feedback_text="", leg_foot_bad=False,
+            feedback_text="",
             selected_tags=[
                 {"key": "sock_wrinkle_heavy", "severity": "severe"},
                 {"key": "pos_sock_style"},

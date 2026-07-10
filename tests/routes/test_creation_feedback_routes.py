@@ -50,13 +50,14 @@ def _fb_url(task_id, prompt_id="p1", index=0):
 
 def test_save_and_clear_feedback(api_client, db_session):
     task = _make_qc_task(db_session)
+    # body 中 deprecated 的 leg_foot_bad=True 被忽略：无 bad 标签 → 落库 False
     r = api_client.put(_fb_url(task.id), json={"feedback_text": "脚部简陋", "leg_foot_bad": True})
     assert r.status_code == 200
     body = r.json()
     assert body["success"] is True
     assert body["data"] == {
         "prompt_id": "p1", "image_index": 0,
-        "leg_foot_bad": True, "feedback_text": "脚部简陋",
+        "leg_foot_bad": False, "feedback_text": "脚部简陋",
         "selected_tags": [],
     }
     # 清空即删

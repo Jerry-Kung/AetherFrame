@@ -560,7 +560,6 @@ def save_quick_create_image_feedback(
             prompt_id=pid,
             image_index=image_index,
             feedback_text=body.feedback_text,
-            leg_foot_bad=body.leg_foot_bad,
             selected_tags=[t.model_dump() for t in body.selected_tags],
         )
     except ValueError as e:

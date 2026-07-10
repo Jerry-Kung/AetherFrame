@@ -99,15 +99,15 @@ def normalize_selected_tags(
 
 
 def derive_leg_foot_bad(
-    normalized: List[Dict[str, Any]], checkbox: bool, config: Dict[str, Any]
+    normalized: List[Dict[str, Any]], config: Dict[str, Any]
 ) -> bool:
-    """落库 leg_foot_bad = 任一选中负面标签 leg_foot_bad=true OR 兜底勾选。"""
+    """落库 leg_foot_bad = 任一选中负面标签 leg_foot_bad=true（纯标签推导，勾选框已移除）。"""
     known = _tag_map(config)
     for item in normalized:
         tag = known.get(item.get("key"))
         if tag is not None and tag.get("leg_foot_bad"):
             return True
-    return bool(checkbox)
+    return False
 
 
 def tags_for_api(config: Dict[str, Any]) -> Dict[str, Any]:

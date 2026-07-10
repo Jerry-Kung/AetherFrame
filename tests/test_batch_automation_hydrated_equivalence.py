@@ -211,7 +211,6 @@ def test_hydrated_equivalence_with_legacy(db_session):
         prompt_id="p1",
         image_index=0,
         feedback_text="等价性校验用反馈",
-        leg_foot_bad=True,
     )
 
     svc = BatchAutomationService(db)
@@ -230,7 +229,7 @@ def test_hydrated_equivalence_with_legacy(db_session):
         {
             "prompt_id": "p1",
             "image_index": 0,
-            "leg_foot_bad": True,
+            "leg_foot_bad": False,
             "feedback_text": "等价性校验用反馈",
             "selected_tags": [],
         }

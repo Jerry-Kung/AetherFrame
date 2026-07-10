@@ -1,6 +1,7 @@
 """生产出图人工 feedback：保存语义（清空即删）与全量导出聚合。
 
 设计文档：docs/superpowers/specs/2026-07-08-production-feedback-entry-design.md §1/§2
+（2026-07-10 feedback-modal-ux-design.md §3：bad 纯标签推导）
 """
 
 import json
@@ -69,7 +70,6 @@ class ImageFeedbackService:
         prompt_id: str,
         image_index: int,
         feedback_text: str,
-        leg_foot_bad: bool,
         selected_tags: Optional[List[Dict[str, Any]]] = None,
     ) -> Optional[Dict[str, Any]]:
         tid = (task_id or "").strip()
@@ -82,16 +82,15 @@ class ImageFeedbackService:
         config = feedback_tags.get_tag_config()
         normalized = feedback_tags.normalize_selected_tags(selected_tags, config)
         text = (feedback_text or "").strip()
-        bad = feedback_tags.derive_leg_foot_bad(normalized, bool(leg_foot_bad), config)
-        # 清空即删三条件：文本空 且 推导后未标 bad 且 无选中标签
-        if not text and not bad and not normalized:
+        # 清空即删两条件：文本空 且 无选中标签（bad 为纯推导值，无标签必为 False）
+        if not text and not normalized:
             self.repo.delete_for_image(tid, pid, image_index)
             return None
         row = self.repo.upsert(
             quick_create_task_id=tid,
             prompt_id=pid,
             image_index=image_index,
-            leg_foot_bad=bad,
+            leg_foot_bad=feedback_tags.derive_leg_foot_bad(normalized, config),
             feedback_text=text,
             selected_tags_json=json.dumps(normalized, ensure_ascii=False),
         )

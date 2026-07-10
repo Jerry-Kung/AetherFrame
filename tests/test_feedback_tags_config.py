@@ -128,18 +128,18 @@ class TestDeriveBad:
 
     def test_legfoot_negative_tag_implies_bad(self, tmp_path):
         assert derive_leg_foot_bad(
-            [{"key": "sock_wrinkle_heavy", "severity": "minor"}], False, self._cfg(tmp_path)
+            [{"key": "sock_wrinkle_heavy", "severity": "minor"}], self._cfg(tmp_path)
         ) is True
 
     def test_non_legfoot_negative_does_not_imply(self, tmp_path):
         assert derive_leg_foot_bad(
-            [{"key": "style_doll3d", "severity": "severe"}], False, self._cfg(tmp_path)
+            [{"key": "style_doll3d", "severity": "severe"}], self._cfg(tmp_path)
         ) is False
 
-    def test_checkbox_fallback_and_positive_only(self, tmp_path):
+    def test_no_tags_or_positive_only_is_false(self, tmp_path):
         cfg = self._cfg(tmp_path)
-        assert derive_leg_foot_bad([], True, cfg) is True
-        assert derive_leg_foot_bad([{"key": "pos_overall_good"}], False, cfg) is False
+        assert derive_leg_foot_bad([], cfg) is False
+        assert derive_leg_foot_bad([{"key": "pos_overall_good"}], cfg) is False
 
 
 class TestViews:
