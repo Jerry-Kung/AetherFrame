@@ -22,6 +22,11 @@ interface BatchCreationPageProps {
 
 type GenState = "idle" | "generating";
 
+/** 运行中/排队中的产线记录禁止批量删除（后台任务仍在写入）。 */
+function isTaskDeletable(t: BatchTask): boolean {
+  return t.itemStatus !== "running" && t.itemStatus !== "pending";
+}
+
 /** 当前角色 bio 内未用种子条数（不含全局固定模板）。 */
 function getAvailableSeedsCount(chara: CharaProfile): number {
   const p = chara.bio.officialSeedPrompts;
@@ -114,6 +119,11 @@ export default function BatchCreationPage({
   const [fixedSeedUsedFlags, setFixedSeedUsedFlags] = useState<boolean[]>([]);
   const [exportingFeedback, setExportingFeedback] = useState(false);
   const [exportHint, setExportHint] = useState<string | null>(null);
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [batchDeleting, setBatchDeleting] = useState(false);
+  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
+  const [batchResultHint, setBatchResultHint] = useState<string | null>(null);
 
   const loadFixedSeedMeta = useCallback(async () => {
     try {
@@ -187,6 +197,72 @@ export default function BatchCreationPage({
     },
     [loadTasksFromApi]
   );
+
+  const deletableTaskIds = useMemo(
+    () => tasks.filter(isTaskDeletable).map((t) => t.id),
+    [tasks]
+  );
+
+  // 列表刷新后清掉已不存在/已变为不可删的选中项
+  useEffect(() => {
+    setSelectedTaskIds((prev) => {
+      const valid = new Set(deletableTaskIds);
+      const next = new Set(Array.from(prev).filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [deletableTaskIds]);
+
+  const toggleTaskSelect = useCallback((taskId: string) => {
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }, []);
+
+  const selectAllTasks = useCallback(() => {
+    setSelectedTaskIds(new Set(deletableTaskIds));
+  }, [deletableTaskIds]);
+
+  const clearTaskSelection = useCallback(() => {
+    setSelectedTaskIds(new Set());
+  }, []);
+
+  const exitBatchMode = useCallback(() => {
+    setBatchMode(false);
+    setSelectedTaskIds(new Set());
+  }, []);
+
+  const selectedFeedbackCount = useMemo(
+    () =>
+      tasks
+        .filter((t) => selectedTaskIds.has(t.id))
+        .reduce((acc, t) => acc + t.images.filter((im) => im.userFeedback).length, 0),
+    [tasks, selectedTaskIds]
+  );
+
+  const handleBatchDelete = useCallback(async () => {
+    if (selectedTaskIds.size === 0 || batchDeleting) return;
+    setBatchDeleting(true);
+    setBatchResultHint(null);
+    try {
+      const res = await creationApi.batchDeleteBatchAutomationItems(
+        Array.from(selectedTaskIds)
+      );
+      const parts = [`成功删除 ${res.deleted.length} 条`];
+      if (res.skipped_running.length > 0) parts.push(`跳过 ${res.skipped_running.length} 条进行中`);
+      if (res.failed.length > 0) parts.push(`失败 ${res.failed.length} 条`);
+      setBatchResultHint(parts.join("，"));
+      exitBatchMode();
+    } catch (e) {
+      // 请求整体失败时可能已删除一部分，finally 里的刷新会拉到真实状态
+      setTasksError(e instanceof ApiError ? e.message : "批量删除失败");
+    } finally {
+      setBatchDeleting(false);
+      await loadTasksFromApi();
+    }
+  }, [selectedTaskIds, batchDeleting, exitBatchMode, loadTasksFromApi]);
 
   const handleMarkUsed = useCallback(
     async (taskId: string) => {
@@ -576,9 +652,28 @@ export default function BatchCreationPage({
                 </span>
               </div>
               <div className="flex items-center gap-2">
+                {batchResultHint && (
+                  <span className="text-xs text-rose-400/70">{batchResultHint}</span>
+                )}
                 {exportHint && (
                   <span className="text-xs text-rose-400/70">{exportHint}</span>
                 )}
+                <button
+                  type="button"
+                  onClick={() => (batchMode ? exitBatchMode() : setBatchMode(true))}
+                  disabled={batchDeleting}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs cursor-pointer transition-all duration-200 whitespace-nowrap"
+                  style={{
+                    background: batchMode ? "rgba(244,114,182,0.15)" : "rgba(253,164,175,0.1)",
+                    border: "1px solid rgba(253,164,175,0.2)",
+                    color: "#f472b6",
+                    fontFamily: "'ZCOOL KuaiLe', cursive",
+                    opacity: batchDeleting ? 0.5 : 1,
+                  }}
+                >
+                  <i className="ri-checkbox-multiple-line text-xs"></i>
+                  {batchMode ? "退出批量" : "批量管理"}
+                </button>
                 <button
                   type="button"
                   onClick={() => void handleExportFeedback()}
@@ -597,11 +692,66 @@ export default function BatchCreationPage({
                 </button>
               </div>
             </div>
+            {batchMode && (
+              <div
+                className="flex items-center gap-3 flex-wrap rounded-xl px-3 py-2"
+                style={{
+                  background: "rgba(253,164,175,0.08)",
+                  border: "1px dashed rgba(244,114,182,0.3)",
+                }}
+              >
+                <span
+                  className="text-xs font-bold"
+                  style={{ color: "#f472b6", fontFamily: "'ZCOOL KuaiLe', cursive" }}
+                >
+                  已选 {selectedTaskIds.size} 条
+                </span>
+                <button
+                  type="button"
+                  onClick={selectAllTasks}
+                  className="text-xs cursor-pointer transition-colors duration-200 whitespace-nowrap"
+                  style={{ color: "#f472b6" }}
+                >
+                  全选
+                </button>
+                <button
+                  type="button"
+                  onClick={clearTaskSelection}
+                  className="text-xs cursor-pointer transition-colors duration-200 whitespace-nowrap"
+                  style={{ color: "#f472b6" }}
+                >
+                  取消全选
+                </button>
+                <span className="text-xs text-rose-300/50">进行中/排队中的记录不可选</span>
+                <button
+                  type="button"
+                  onClick={() => setShowBatchDeleteConfirm(true)}
+                  disabled={selectedTaskIds.size === 0 || batchDeleting}
+                  className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium text-white transition-all duration-200 whitespace-nowrap"
+                  style={{
+                    fontFamily: "'ZCOOL KuaiLe', cursive",
+                    background:
+                      selectedTaskIds.size === 0 || batchDeleting
+                        ? "rgba(251,113,133,0.35)"
+                        : "linear-gradient(135deg, #fb7185 0%, #f472b6 100%)",
+                    cursor:
+                      selectedTaskIds.size === 0 || batchDeleting ? "not-allowed" : "pointer",
+                  }}
+                >
+                  <i className="ri-delete-bin-line text-xs"></i>
+                  {batchDeleting ? "删除中…" : "删除所选"}
+                </button>
+              </div>
+            )}
             {tasks.map((task, idx) => (
               <BatchTaskCard
                 key={task.id}
                 task={task}
                 index={idx}
+                batchMode={batchMode}
+                selected={selectedTaskIds.has(task.id)}
+                selectable={isTaskDeletable(task)}
+                onToggleSelect={toggleTaskSelect}
                 onDelete={handleDeleteTask}
                 onMarkUsed={handleMarkUsed}
                 onSaveFeedback={handleSaveFeedback}
@@ -640,6 +790,85 @@ export default function BatchCreationPage({
         }}
         onCancel={() => setShowConfigModal(false)}
       />
+
+      {showBatchDeleteConfirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center">
+          <div
+            className="absolute inset-0"
+            style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }}
+            onClick={() => setShowBatchDeleteConfirm(false)}
+          />
+          <div
+            className="relative w-80 rounded-3xl overflow-hidden mx-4"
+            style={{ background: "rgba(255,255,255,0.97)", border: "1px solid rgba(253,164,175,0.3)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col items-center pt-7 pb-4 px-6">
+              <div
+                className="w-14 h-14 flex items-center justify-center rounded-2xl mb-4"
+                style={{
+                  background: "linear-gradient(135deg, rgba(253,164,175,0.15) 0%, rgba(244,114,182,0.1) 100%)",
+                  border: "1.5px solid rgba(244,114,182,0.2)",
+                }}
+              >
+                <i className="ri-delete-bin-2-line text-rose-400 text-2xl"></i>
+              </div>
+              <h3
+                className="text-base font-bold text-rose-600 mb-1.5"
+                style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}
+              >
+                删除选中的 {selectedTaskIds.size} 条产线记录？
+              </h3>
+              <p className="text-sm text-rose-400/70 text-center leading-relaxed">
+                这会同步删除对应的 Prompt 预生成记录和美图创作记录，不可恢复哦～
+              </p>
+              {selectedFeedbackCount > 0 && (
+                <div
+                  className="mt-3 rounded-xl px-3 py-2 text-xs font-medium text-center leading-relaxed"
+                  style={{
+                    background: "rgba(251,191,36,0.15)",
+                    border: "1px solid rgba(217,119,6,0.35)",
+                    color: "#b45309",
+                  }}
+                >
+                  ⚠️ 其中将连带删除 {selectedFeedbackCount} 条人工 feedback，建议先「导出
+                  Feedback JSON」再删除！
+                </div>
+              )}
+            </div>
+            <div className="h-px mx-5" style={{ background: "rgba(253,164,175,0.2)" }} />
+            <div className="flex gap-3 p-4">
+              <button
+                type="button"
+                onClick={() => setShowBatchDeleteConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm cursor-pointer transition-all duration-200 whitespace-nowrap"
+                style={{
+                  background: "rgba(253,164,175,0.08)",
+                  color: "#f472b6",
+                  border: "1px solid rgba(244,114,182,0.2)",
+                  fontFamily: "'ZCOOL KuaiLe', cursive",
+                }}
+              >
+                再想想
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBatchDeleteConfirm(false);
+                  void handleBatchDelete();
+                }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all duration-200 whitespace-nowrap text-white"
+                style={{
+                  background: "linear-gradient(135deg, #fb7185 0%, #f472b6 100%)",
+                  fontFamily: "'ZCOOL KuaiLe', cursive",
+                }}
+              >
+                确认删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <CuteConfirmModal
         isOpen={showStartConfirm}
