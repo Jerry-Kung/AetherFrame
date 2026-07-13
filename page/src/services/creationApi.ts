@@ -600,6 +600,33 @@ export async function deleteBatchAutomationItem(itemId: string): Promise<{ delet
   }
 }
 
+export interface BatchDeleteItemsResult {
+  deleted: string[];
+  skipped_running: string[];
+  not_found: string[];
+  failed: { id: string; error: string }[];
+}
+
+export async function batchDeleteBatchAutomationItems(
+  itemIds: string[]
+): Promise<BatchDeleteItemsResult> {
+  const ids = itemIds.map((x) => String(x ?? "").trim()).filter(Boolean);
+  if (ids.length === 0) throw new ApiError("未选择要删除的产线记录", 400);
+  const url = `${API_BASE}/batch-automation/items/batch-delete`;
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_ids: ids }),
+    });
+    const data = await parseJson<BatchDeleteItemsResult>(response);
+    throwIfError(response, data);
+    return data.data as BatchDeleteItemsResult;
+  } catch (e) {
+    rethrow(e);
+  }
+}
+
 export function buildQuickCreateResultImageUrl(taskId: string, imagePath: string): string {
   const tid = encodeURIComponent(String(taskId ?? "").trim());
   const segs = String(imagePath ?? "")

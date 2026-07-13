@@ -16,6 +16,10 @@ interface ImageLightboxState {
 interface BatchTaskCardProps {
   task: BatchTask;
   index: number;
+  batchMode?: boolean;
+  selected?: boolean;
+  selectable?: boolean;
+  onToggleSelect?: (taskId: string) => void;
   onDelete: (taskId: string) => void | Promise<void>;
   onMarkUsed: (taskId: string) => void | Promise<void>;
   onSaveFeedback: (
@@ -40,7 +44,17 @@ function promptTitleForBatchImage(task: BatchTask, img: QuickCreateImage): strin
   return "Prompt";
 }
 
-export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed, onSaveFeedback }: BatchTaskCardProps) {
+export default memo(function BatchTaskCard({
+  task,
+  index,
+  batchMode = false,
+  selected = false,
+  selectable = true,
+  onToggleSelect,
+  onDelete,
+  onMarkUsed,
+  onSaveFeedback,
+}: BatchTaskCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [lightbox, setLightbox] = useState<ImageLightboxState | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -105,16 +119,49 @@ export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed, 
     <div
       className="rounded-2xl overflow-hidden transition-all duration-300"
       style={{
-        background: "rgba(255,255,255,0.7)",
-        border: "1px solid rgba(253,164,175,0.2)",
+        background: batchMode && selected ? "rgba(255,241,246,0.9)" : "rgba(255,255,255,0.7)",
+        border:
+          batchMode && selected
+            ? "1.5px solid rgba(244,114,182,0.55)"
+            : "1px solid rgba(253,164,175,0.2)",
       }}
     >
       <div
-        className="flex items-center justify-between px-4 py-3 cursor-pointer"
-        style={{ borderBottom: expanded ? "1px solid rgba(253,164,175,0.15)" : "none" }}
-        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center justify-between px-4 py-3"
+        style={{
+          borderBottom: expanded && !batchMode ? "1px solid rgba(253,164,175,0.15)" : "none",
+          cursor: batchMode && !selectable ? "not-allowed" : "pointer",
+        }}
+        onClick={() => {
+          if (batchMode) {
+            if (selectable) onToggleSelect?.(task.id);
+            return;
+          }
+          setExpanded((v) => !v);
+        }}
       >
         <div className="flex items-center gap-3 min-w-0">
+          {batchMode && (
+            <div
+              className="w-5 h-5 flex items-center justify-center shrink-0"
+              title={selectable ? undefined : "进行中的产线不可删除"}
+            >
+              <i
+                className={
+                  selected && selectable
+                    ? "ri-checkbox-circle-fill text-base"
+                    : "ri-checkbox-blank-circle-line text-base"
+                }
+                style={{
+                  color: !selectable
+                    ? "rgba(190,18,60,0.25)"
+                    : selected
+                      ? "#f472b6"
+                      : "rgba(244,114,182,0.5)",
+                }}
+              ></i>
+            </div>
+          )}
           <div
             className="w-7 h-7 flex items-center justify-center rounded-xl text-xs font-bold text-white shrink-0"
             style={{ background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)" }}
@@ -190,12 +237,14 @@ export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed, 
           >
             <i className="ri-file-text-line text-rose-400 text-xs"></i>
           </button>
-          <div className="w-5 h-5 flex items-center justify-center">
-            <i
-              className="ri-arrow-down-s-line text-rose-400 text-sm transition-transform duration-200"
-              style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}
-            ></i>
-          </div>
+          {!batchMode && (
+            <div className="w-5 h-5 flex items-center justify-center">
+              <i
+                className="ri-arrow-down-s-line text-rose-400 text-sm transition-transform duration-200"
+                style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}
+              ></i>
+            </div>
+          )}
         </div>
       </div>
 
@@ -230,7 +279,7 @@ export default memo(function BatchTaskCard({ task, index, onDelete, onMarkUsed, 
         </div>
       )}
 
-      {expanded && (
+      {expanded && !batchMode && (
         <div className="px-4 pb-4 pt-2 space-y-3">
           {task.errorMessage && (
             <div
