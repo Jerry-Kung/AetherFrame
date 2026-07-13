@@ -3,7 +3,7 @@
 """
 import logging
 import os
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
@@ -14,6 +14,7 @@ from app.utils.cache_response import build_immutable_file_response
 from app.routes.material import ensure_valid_character_id
 from app.schemas.creation import (
     ApiResponse,
+    BatchAutomationBatchDeleteRequest,
     BatchAutomationItemListResponse,
     BatchAutomationRunDetailResponse,
     BatchAutomationStartRequest,
@@ -535,6 +536,28 @@ def batch_automation_delete_item(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     return ApiResponse(success=True, data=data, message="删除批量创作条目成功")
+
+
+@router.post(
+    "/batch-automation/items/batch-delete",
+    response_model=ApiResponse,
+)
+def batch_automation_batch_delete_items(
+    body: BatchAutomationBatchDeleteRequest,
+    service: BatchAutomationService = Depends(get_batch_automation_service),
+):
+    """批量删除产线记录。恒 200，部分失败通过 data 表达。"""
+    ids: List[str] = []
+    seen: set[str] = set()
+    for raw in body.item_ids:
+        iid = (raw or "").strip()
+        if iid and iid not in seen:
+            seen.add(iid)
+            ids.append(iid)
+    if not ids:
+        raise HTTPException(status_code=400, detail="item_ids 无效")
+    data = service.batch_delete_items(ids)
+    return ApiResponse(success=True, data=data, message="批量删除产线记录完成")
 
 
 @router.put(

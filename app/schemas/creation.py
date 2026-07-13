@@ -294,6 +294,17 @@ class BatchAutomationItemListResponse(BaseModel):
     total: int = 0
 
 
+class BatchAutomationBatchDeleteRequest(BaseModel):
+    """批量删除产线记录"""
+
+    item_ids: List[str] = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="要删除的产线记录 ID 列表（去重去空白后为空则 400）",
+    )
+
+
 class ImageFeedbackTagIn(BaseModel):
     key: str
     severity: Optional[str] = None
