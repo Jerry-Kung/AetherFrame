@@ -49,7 +49,7 @@ class BatchAutomationBatchDeleteRequest(BaseModel):
     item_ids: List[str]  # 1..200 条，后端去重、去空白
 ```
 
-- 路由（`app/routes/creation.py`）：校验非空后调 service，恒返回 200 + `ApiResponse`，部分失败通过 data 表达。
+- 路由（`app/routes/creation.py`）：去重、去空白后若列表为空则返回 400；超过 200 条返回 422；否则调 service，恒返回 200 + `ApiResponse`，部分失败通过 data 表达。
 
 **Service**：`BatchAutomationService.batch_delete_items(item_ids: List[str]) -> Dict`
 
