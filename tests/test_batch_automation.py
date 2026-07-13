@@ -159,3 +159,66 @@ class TestBatchAutomationDeleteItem:
         assert data == {"deleted_id": item.id}
         assert batch_repo.get_item(item.id) is None
         assert qc_repo.get_by_id(qc_task.id) is None
+
+
+class TestBatchAutomationBatchDelete:
+    @staticmethod
+    def _make_item(db_session, *, status="completed"):
+        char = MaterialCharacterRepository(db_session).create(
+            {"id": f"mchar_{uuid.uuid4().hex[:12]}", "name": "batch-bulk-char"}
+        )
+        batch_repo = CreationBatchRepository(db_session)
+        run = batch_repo.create_run(iterations_total=1, config_json="{}", status="completed")
+        item = batch_repo.create_item(
+            run_id=run.id,
+            step_index=0,
+            character_id=char.id,
+            seed_prompt_id="s1",
+            seed_section="general",
+            seed_prompt_text="seed",
+            status=status,
+        )
+        return batch_repo, item
+
+    def test_batch_delete_mixed_statuses(self, db_session):
+        """completed/failed 删除；running/pending 跳过；不存在的归入 not_found。"""
+        batch_repo, done1 = self._make_item(db_session)
+        _, done2 = self._make_item(db_session, status="failed")
+        _, running = self._make_item(db_session, status="running")
+        _, pending = self._make_item(db_session, status="pending")
+
+        data = BatchAutomationService(db_session).batch_delete_items(
+            [done1.id, done2.id, running.id, pending.id, "bb_item_missing0000"]
+        )
+
+        assert sorted(data["deleted"]) == sorted([done1.id, done2.id])
+        assert sorted(data["skipped_running"]) == sorted([running.id, pending.id])
+        assert data["not_found"] == ["bb_item_missing0000"]
+        assert data["failed"] == []
+        assert batch_repo.get_item(done1.id) is None
+        assert batch_repo.get_item(done2.id) is None
+        assert batch_repo.get_item(running.id) is not None
+        assert batch_repo.get_item(pending.id) is not None
+
+    def test_batch_delete_partial_failure_does_not_block_rest(self, db_session, monkeypatch):
+        """某条删除抛异常时：该条进 failed，其余条目照常删除。"""
+        batch_repo, ok = self._make_item(db_session)
+        _, bad = self._make_item(db_session)
+
+        original = BatchAutomationService.delete_batch_item
+
+        def flaky(self, item_id):
+            if item_id == bad.id:
+                raise RuntimeError("boom")
+            return original(self, item_id)
+
+        monkeypatch.setattr(BatchAutomationService, "delete_batch_item", flaky)
+
+        data = BatchAutomationService(db_session).batch_delete_items([ok.id, bad.id])
+
+        assert data["deleted"] == [ok.id]
+        assert data["skipped_running"] == []
+        assert data["not_found"] == []
+        assert [f["id"] for f in data["failed"]] == [bad.id]
+        assert batch_repo.get_item(ok.id) is None
+        assert batch_repo.get_item(bad.id) is not None

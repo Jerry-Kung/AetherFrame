@@ -551,6 +551,36 @@ class BatchAutomationService:
         self.batch_repo.delete_item_row(item_id)
         return {"deleted_id": item_id}
 
+    def batch_delete_items(self, item_ids: List[str]) -> Dict[str, Any]:
+        """批量删除产线记录：逐条复用 delete_batch_item，互不阻断。
+
+        running/pending 的条目后台任务仍在写入，强制跳过（不只靠前端禁选）。
+        """
+        deleted: List[str] = []
+        skipped_running: List[str] = []
+        not_found: List[str] = []
+        failed: List[Dict[str, str]] = []
+        for iid in item_ids:
+            item = self.batch_repo.get_item(iid)
+            if not item:
+                not_found.append(iid)
+                continue
+            if item.status in ("running", "pending"):
+                skipped_running.append(iid)
+                continue
+            try:
+                self.delete_batch_item(iid)
+                deleted.append(iid)
+            except Exception as e:
+                logger.exception("批量删除产线记录失败 item_id=%s", iid)
+                failed.append({"id": iid, "error": str(e) or e.__class__.__name__})
+        return {
+            "deleted": deleted,
+            "skipped_running": skipped_running,
+            "not_found": not_found,
+            "failed": failed,
+        }
+
 
 def _execute_single_item(
     item_id: str,
