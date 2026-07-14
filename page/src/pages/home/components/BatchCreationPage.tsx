@@ -9,6 +9,7 @@ import type { BatchTask, BatchTaskConfig } from "@/types/batchAutomation";
 import { DEFAULT_BATCH_CONFIG } from "@/types/batchAutomation";
 import type { SeedPromptSection } from "@/mocks/materialChara";
 import { buildBatchTaskFromHydrated } from "@/utils/batchAutomationDisplay";
+import { thumbUrl } from "@/utils/imageUrl";
 import BatchConfigModal from "./BatchConfigModal";
 import BatchTaskCard from "./BatchTaskCard";
 import CuteConfirmModal from "@/pages/repair/components/CuteConfirmModal";
@@ -74,7 +75,7 @@ const CharaSelectChip = memo(function CharaSelectChip({
       }}
     >
       <div className="w-6 h-6 rounded-lg overflow-hidden shrink-0 border border-rose-100">
-        <img src={chara.avatarUrl} alt="" className="w-full h-full object-cover object-top" />
+        <img src={thumbUrl(chara.avatarUrl)} alt="" className="w-full h-full object-cover object-top" />
       </div>
       <span className="text-xs font-bold text-rose-700/80" style={{ fontFamily: "'ZCOOL KuaiLe', cursive" }}>
         {chara.name}

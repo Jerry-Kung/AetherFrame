@@ -1,5 +1,6 @@
 import type { CharaProfile } from "@/types/material";
 import { STATUS_LABEL, STATUS_STYLE } from "@/types/material";
+import { thumbUrl } from "@/utils/imageUrl";
 import { memo } from "react";
 
 function formatUpdatedAt(iso: string): string {
@@ -93,7 +94,7 @@ const CharaList = memo(function CharaList({ charas, selectedId, onSelect, onDele
               )}
 
               <div className="shrink-0 w-11 h-11 rounded-xl overflow-hidden border border-rose-100/80 bg-rose-50/50">
-                <img src={c.avatarUrl} alt="" className="w-full h-full object-cover" draggable={false} />
+                <img src={thumbUrl(c.avatarUrl)} alt="" className="w-full h-full object-cover" draggable={false} />
               </div>
 
               <div className="flex-1 min-w-0">

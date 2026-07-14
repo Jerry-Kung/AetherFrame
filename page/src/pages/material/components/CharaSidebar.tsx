@@ -1,5 +1,6 @@
 import type { CharaProfile } from "@/types/material";
 import { STATUS_LABEL, STATUS_STYLE } from "@/types/material";
+import { thumbUrl } from "@/utils/imageUrl";
 import { memo } from "react";
 
 interface CharaSidebarProps {
@@ -60,7 +61,7 @@ const CharaSidebar = memo(function CharaSidebar({
               aria-label="换头像"
             >
               <img
-                src={chara.avatarUrl}
+                src={thumbUrl(chara.avatarUrl)}
                 alt=""
                 className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
                 draggable={false}
@@ -80,7 +81,7 @@ const CharaSidebar = memo(function CharaSidebar({
             </button>
           ) : (
             <div className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-rose-100 shadow-sm">
-              <img src={chara.avatarUrl} alt="" className="w-full h-full object-cover" draggable={false} />
+              <img src={thumbUrl(chara.avatarUrl)} alt="" className="w-full h-full object-cover" draggable={false} />
             </div>
           )}
           <div className="mt-3 flex items-center justify-center gap-2">

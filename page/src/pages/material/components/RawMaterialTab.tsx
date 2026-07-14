@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo, type RefObject } from "react";
 import type { CharaRawImage, RawImageType } from "@/types/material";
+import { thumbUrl } from "@/utils/imageUrl";
 
 interface RawMaterialTabProps {
   characterId: string;
@@ -239,7 +240,7 @@ const RawMaterialTab = memo(function RawMaterialTab({
                   onMouseLeave={() => setHoverPreview(null)}
                   onClick={() => onRawImageClick(im.id)}
                 >
-                  <img loading="lazy" src={im.url} alt="" className="w-full h-full object-cover" draggable={false} />
+                  <img loading="lazy" src={thumbUrl(im.url)} alt="" className="w-full h-full object-cover" draggable={false} />
                 </button>
                 <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none ${cfg.hoverOverlay}`} />
                 <button
@@ -378,7 +379,7 @@ const RawMaterialTab = memo(function RawMaterialTab({
             height: 240,
           }}
         >
-          <img loading="lazy" src={hoverPreview.url} alt="" className="w-full h-full object-cover" draggable={false} />
+          <img loading="lazy" src={thumbUrl(hoverPreview.url)} alt="" className="w-full h-full object-cover" draggable={false} />
         </div>
       )}
     </div>

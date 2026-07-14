@@ -7,6 +7,7 @@ import DirectionChip from "@/pages/material/components/direction/DirectionChip";
 import type { BatchTask } from "@/types/batchAutomation";
 import type { AiComment, QuickCreateImage } from "@/types/quickCreate";
 import type { SelectedFeedbackTag } from "@/services/creationApi";
+import { thumbUrl } from "@/utils/imageUrl";
 
 interface ImageLightboxState {
   images: QuickCreateImage[];
@@ -169,7 +170,7 @@ export default memo(function BatchTaskCard({
             {index + 1}
           </div>
           <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-rose-100">
-            <img loading="lazy" src={task.charaAvatar} alt="" className="w-full h-full object-cover object-top" />
+            <img loading="lazy" src={thumbUrl(task.charaAvatar)} alt="" className="w-full h-full object-cover object-top" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 min-w-0">
@@ -263,7 +264,7 @@ export default memo(function BatchTaskCard({
                 style={{ border: "1px solid rgba(253,164,175,0.2)" }}
                 aria-label="查看大图"
               >
-                <img loading="lazy" src={img.url} alt="" className="w-full h-full object-cover object-top" draggable={false} />
+                <img loading="lazy" src={thumbUrl(img.url)} alt="" className="w-full h-full object-cover object-top" draggable={false} />
               </button>
             ))}
             {totalImages > 3 && (
@@ -372,7 +373,7 @@ export default memo(function BatchTaskCard({
                     <div className="w-full aspect-square">
                       <img
                         loading="lazy"
-                        src={img.url}
+                        src={thumbUrl(img.url)}
                         alt=""
                         className="w-full h-full object-cover object-top"
                         draggable={false}

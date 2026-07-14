@@ -14,6 +14,7 @@ import {
   type CreativeDirectionApi,
 } from "@/services/materialApi";
 import { ApiError } from "@/services/api";
+import { thumbUrl } from "@/utils/imageUrl";
 import DirectionStage from "@/pages/material/components/DirectionStage";
 import SeedPromptStage from "@/pages/material/components/SeedPromptStage";
 
@@ -463,7 +464,7 @@ const FanartSelector = ({
                 onClick={() => onToggle(img.id)}
               >
                 <img
-                  src={img.url}
+                  src={thumbUrl(img.url)}
                   alt="同人立绘"
                   className="w-full h-full object-cover object-top transition-transform duration-200 group-hover:scale-105"
                 />

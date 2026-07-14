@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CharaRawImage, RawImageType } from "@/types/material";
 import type { ApiCharacterDetail } from "@/types/material";
+import { thumbUrl } from "@/utils/imageUrl";
 import { ApiError } from "@/services/api";
 import * as materialApi from "@/services/materialApi";
 import {
@@ -657,7 +658,7 @@ const PhotoTaskPage = ({ characterId, rawImages, onCharacterUpdated, showToast }
                               }}
                               onClick={() => toggleRef(img.id)}
                             >
-                              <img loading="lazy" src={img.url} alt="参考图" className="w-full h-full object-cover object-top" />
+                              <img loading="lazy" src={thumbUrl(img.url)} alt="参考图" className="w-full h-full object-cover object-top" />
                               {isSelected && (
                                 <div
                                   className="absolute inset-0 flex items-start justify-end p-1"

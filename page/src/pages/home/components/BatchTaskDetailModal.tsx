@@ -4,6 +4,7 @@ import * as materialApi from "@/services/materialApi";
 import type { CreativeDirectionApi } from "@/services/materialApi";
 import type { BatchTask } from "@/types/batchAutomation";
 import { copyTextToClipboard } from "@/utils/clipboard";
+import { thumbUrl } from "@/utils/imageUrl";
 
 interface BatchTaskDetailModalProps {
   task: BatchTask;
@@ -142,7 +143,7 @@ export default function BatchTaskDetailModal({ task, onClose }: BatchTaskDetailM
         >
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-rose-100">
-              <img loading="lazy" src={task.charaAvatar} alt="" className="w-full h-full object-cover object-top" />
+              <img loading="lazy" src={thumbUrl(task.charaAvatar)} alt="" className="w-full h-full object-cover object-top" />
             </div>
             <h3
               className="text-base font-bold text-rose-600 truncate"

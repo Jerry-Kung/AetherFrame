@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import type { CharaProfile } from "@/types/material";
 import { STANDARD_PHOTO_LABELS } from "@/types/material";
+import { thumbUrl } from "@/utils/imageUrl";
 
 interface AvatarPickerModalProps {
   isOpen: boolean;
@@ -337,7 +338,7 @@ const ImageGridItem = ({
     onClick={onClick}
   >
     <img
-      src={url}
+      src={thumbUrl(url)}
       alt={label ?? "图片"}
       className="w-full h-full object-cover object-top transition-transform duration-200 group-hover:scale-105 pointer-events-none"
     />
@@ -587,7 +588,7 @@ const AvatarPickerModal = ({ isOpen, chara, onConfirm, onCancel }: AvatarPickerM
                       style={{ borderColor: "rgba(244,114,182,0.4)" }}
                     >
                       <img
-                        src={selectedUrl}
+                        src={thumbUrl(selectedUrl)}
                         alt="预览"
                         className="w-full h-full object-cover object-top"
                       />
