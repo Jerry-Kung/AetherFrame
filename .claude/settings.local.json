@@ -17,7 +17,18 @@
       "Bash(bash D:/KLH/DevTools/ClaudeCode/ClaudeCodeData/plugins/cache/claude-plugins-official/superpowers/6.1.0/skills/subagent-driven-development/scripts/review-package a26c89e 09d9322)",
       "Bash(bash D:/KLH/DevTools/ClaudeCode/ClaudeCodeData/plugins/cache/claude-plugins-official/superpowers/6.1.0/skills/subagent-driven-development/scripts/review-package 7248298 a0e89d5)",
       "Bash(bash D:/KLH/DevTools/ClaudeCode/ClaudeCodeData/plugins/cache/claude-plugins-official/superpowers/6.1.0/skills/subagent-driven-development/scripts/review-package a0e89d5 199ecda)",
-      "Bash(bash D:/KLH/DevTools/ClaudeCode/ClaudeCodeData/plugins/cache/claude-plugins-official/superpowers/6.1.0/skills/subagent-driven-development/scripts/review-package 7450124 HEAD)"
+      "Bash(bash D:/KLH/DevTools/ClaudeCode/ClaudeCodeData/plugins/cache/claude-plugins-official/superpowers/6.1.0/skills/subagent-driven-development/scripts/review-package 7450124 HEAD)",
+      "PowerShell(git *)",
+      "Bash(curl -s -o /dev/null -w \"health: %{http_code} %{time_total}s\\\\n\" --max-time 20 http://localhost:8000/health)",
+      "Bash(curl -s --max-time 20 -o /tmp/chars.json -w \"characters-list: %{http_code} %{time_total}s size=%{size_download}\\\\n\" \"http://localhost:8000/api/material/characters?skip=0&limit=100\")",
+      "PowerShell(Get-NetTCPConnection *)",
+      "Bash(curl -s --noproxy '*' -o /dev/null -w \"direct: %{http_code} connect=%{time_connect}s total=%{time_total}s\\\\n\" --max-time 15 http://118.196.73.79:8000/health)",
+      "Bash(curl -s -o /dev/null -w \"via-proxy: %{http_code} connect=%{time_connect}s total=%{time_total}s\\\\n\" --max-time 15 http://118.196.73.79:8000/health)",
+      "Bash(cd /tmp)",
+      "Bash(curl -s --noproxy '*' --max-time 60 -o chars.json -w \"list-characters: %{http_code} %{time_total}s size=%{size_download}B\\\\n\" \"http://118.196.73.79:8000/api/material/characters?skip=0&limit=100\")",
+      "Bash(curl *)",
+      "Bash(cp /d/KLH/Projects/AI_Images/AetherFrame/app/tools/llm/config.py /tmp/af-base2/app/tools/llm/config.py)",
+      "Read(//tmp/**)"
     ]
   }
 }
