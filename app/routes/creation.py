@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models.database import get_db
 from app.utils.cache_response import build_immutable_file_response
+from app.utils.thumbnails import get_or_create_thumbnail
 from app.routes.material import ensure_valid_character_id
 from app.schemas.creation import (
     ApiResponse,
@@ -612,6 +613,7 @@ def get_feedback_tags():
 def get_quick_create_image(
     task_id: str,
     image_path: str,
+    variant: Optional[str] = Query(None, description="thumb=返回 512px WebP 缩略图"),
     service: QuickCreateService = Depends(get_quick_create_service),
 ):
     tid = (task_id or "").strip()
@@ -620,5 +622,11 @@ def get_quick_create_image(
     path = service.get_task_image_path(tid, image_path)
     if not path:
         raise HTTPException(status_code=404, detail="文件不存在")
+    if variant == "thumb":
+        thumb = get_or_create_thumbnail(path)
+        if thumb:
+            return build_immutable_file_response(
+                path=thumb, filename=os.path.basename(thumb), media_type="image/webp"
+            )
     # 文件名带微秒级时间戳，URL 即内容寻址，安全使用 immutable 强缓存。
     return build_immutable_file_response(path=path, filename=os.path.basename(path))

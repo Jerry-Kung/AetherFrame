@@ -131,3 +131,52 @@ def test_delete_raw_image_also_deletes_thumbnail(api_client, db_session):
     assert mfs.delete_raw_image_file(char_id, stored, "official") is True
 
     assert not os.path.isfile(thumbnail_path_for(src))
+
+
+def test_standard_slot_image_thumb_variant(api_client, db_session):
+    from app.services.material_service import material_file_service as mfs
+
+    char_id = _create_character(db_session)
+    mfs.ensure_character_dirs(char_id)
+    slot_dir = mfs.get_standard_photo_slot_dir(char_id)
+    os.makedirs(slot_dir, exist_ok=True)
+    Image.new("RGB", (1280, 720), (10, 200, 100)).save(
+        os.path.join(slot_dir, "full_front.png"), format="PNG"
+    )
+
+    thumb = api_client.get(
+        f"/api/material/characters/{char_id}/standard-photo/slot-images/full_front?variant=thumb"
+    )
+
+    assert thumb.status_code == 200
+    assert thumb.headers["content-type"] == "image/webp"
+
+
+def test_quick_create_image_thumb_variant(api_client, db_session, temp_data_dir):
+    from app.models.creation import CreationQuickCreateTask
+
+    char_id = _create_character(db_session)
+    task_id = f"qct_{uuid.uuid4().hex[:10]}"
+    work_dir = os.path.join(temp_data_dir, "beautify", "quick_create", task_id)
+    os.makedirs(work_dir, exist_ok=True)
+    Image.new("RGB", (1920, 1080), (120, 60, 200)).save(
+        os.path.join(work_dir, "result_0.png"), format="PNG"
+    )
+    db_session.add(
+        CreationQuickCreateTask(
+            id=task_id,
+            character_id=char_id,
+            status="completed",
+            n=1,
+            work_dir=work_dir,
+        )
+    )
+    db_session.commit()
+
+    thumb = api_client.get(
+        f"/api/creation/quick-create/tasks/{task_id}/images/result_0.png?variant=thumb"
+    )
+
+    assert thumb.status_code == 200
+    assert thumb.headers["content-type"] == "image/webp"
+    assert "immutable" in thumb.headers["cache-control"]

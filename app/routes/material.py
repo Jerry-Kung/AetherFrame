@@ -987,6 +987,7 @@ def get_standard_slot_image(
     character_id: str,
     shot_type: str,
     request: Request,
+    variant: Optional[str] = Query(None, description="thumb=返回 512px WebP 缩略图"),
     service: MaterialService = Depends(get_material_service),
 ):
     """已保存的正式标准参考图（按类型槽位存储，与当前生成任务目录无关）。"""
@@ -995,6 +996,16 @@ def get_standard_slot_image(
     path = service.get_standard_slot_image_path(character_id, shot_type)
     if not path:
         raise HTTPException(status_code=404, detail="文件不存在")
+    if variant == "thumb":
+        thumb = get_or_create_thumbnail(path)
+        if thumb:
+            # 槽位 URL 固定，协商缓存；槽位被覆盖保存→缩略图重建→ETag 变化
+            return build_revalidate_file_response(
+                request=request,
+                path=thumb,
+                filename=f"{shot_type}.webp",
+                media_type="image/webp",
+            )
     return build_revalidate_file_response(
         request=request,
         path=path,
