@@ -21,6 +21,7 @@ from app.services.file_service import (
     delete_directory,
     delete_file,
 )
+from app.utils.thumbnails import delete_thumbnail_for
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +245,7 @@ def _clear_avatar_dir_files(character_id: str) -> None:
         path = os.path.join(d, name)
         if os.path.isfile(path):
             try:
+                delete_thumbnail_for(path)
                 os.remove(path)
             except OSError as e:
                 logger.warning(f"删除旧头像文件失败 {path}: {e}")
@@ -300,8 +302,11 @@ def delete_avatar_file(character_id: str, filename: str) -> bool:
 
 
 def delete_raw_image_file(character_id: str, stored_filename: str, raw_image_type: str = "official") -> bool:
-    """删除 raw 目录下单张参考图文件。"""
+    """删除 raw 目录下单张参考图文件（连同缩略图）。"""
     image_type = raw_image_type if raw_image_type in RAW_IMAGE_TYPES else "official"
+    src = get_raw_image_path(character_id, stored_filename, image_type)
+    if src:
+        delete_thumbnail_for(src)
     typed_dir = get_character_raw_type_dir(character_id, image_type)
     try:
         if delete_file(typed_dir, stored_filename):

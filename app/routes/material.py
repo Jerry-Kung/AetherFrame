@@ -25,6 +25,7 @@ from app.utils.cache_response import (
     build_revalidate_file_response,
     guess_media_type,
 )
+from app.utils.thumbnails import get_or_create_thumbnail
 from fastapi.responses import FileResponse, JSONResponse
 from app.schemas.material import (
     ApiResponse,
@@ -599,12 +600,20 @@ def patch_raw_image_tags(
 def get_raw_image(
     character_id: str,
     filename: str,
+    variant: Optional[str] = Query(None, description="thumb=返回 512px WebP 缩略图"),
     service: MaterialService = Depends(get_material_service),
 ):
     logger.debug(f"API 请求 - 读取参考图: {character_id}/{filename}")
     path = service.get_raw_image_path(character_id, filename)
     if not path:
         raise HTTPException(status_code=404, detail="文件不存在")
+    if variant == "thumb":
+        thumb = get_or_create_thumbnail(path)
+        if thumb:
+            # URL 内容寻址（variant 参与缓存键），缩略图同样可用 immutable
+            return build_immutable_file_response(
+                path=thumb, filename=os.path.basename(thumb), media_type="image/webp"
+            )
     return build_immutable_file_response(path=path, filename=filename)
 
 
@@ -613,12 +622,23 @@ def get_avatar_image(
     character_id: str,
     filename: str,
     request: Request,
+    variant: Optional[str] = Query(None, description="thumb=返回 512px WebP 缩略图"),
     service: MaterialService = Depends(get_material_service),
 ):
     logger.debug(f"API 请求 - 读取角色头像: {character_id}/{filename}")
     path = service.get_avatar_image_path(character_id, filename)
     if not path:
         raise HTTPException(status_code=404, detail="文件不存在")
+    if variant == "thumb":
+        thumb = get_or_create_thumbnail(path)
+        if thumb:
+            # 头像 URL 固定文件名，协商缓存；ETag 基于缩略图文件，原图更新会触发重建→ETag 变化
+            return build_revalidate_file_response(
+                request=request,
+                path=thumb,
+                filename=os.path.basename(thumb),
+                media_type="image/webp",
+            )
     return build_revalidate_file_response(request=request, path=path, filename=filename)
 
 
