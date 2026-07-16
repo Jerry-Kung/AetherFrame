@@ -1,0 +1,15 @@
+# 生产 Prompt 版本时间线（方式一：时间戳近似，2026-07-16 设计文档 §7）。
+# 用途：feedback case 按 created_at 落入区间推断所属 Prompt 版本（"推断版本"，接受不精确）。
+# 维护规则：每次生产 Prompt 更新（app/prompts/ 提交并部署）后手动追加一条，
+#   since 取部署生效时刻（无准确记录时用 git 提交时间近似，附 commit 参照便于复核）。
+# 列表按 since 升序；第一条 since 为 null 表示时间线起点之前的基线版本。
+versions:
+  - version: pre_slim
+    since: null
+    description: slim 瘦身之前的旧生产模板
+  - version: slim
+    since: "2026-07-06T15:33:00"
+    description: exp001 slim 瘦身模板落地（commit 499731b/68989cf/9387d19，终审 624b214）
+  - version: rulepack
+    since: "2026-07-07T19:06:00"
+    description: exp002 腿脚规则包 R1-R6（commit 5c14c0c，终审 cf51075）

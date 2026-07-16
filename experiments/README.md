@@ -28,6 +28,7 @@ experiments/
 ├── checker/            # 自动指标（结构检查 + 锚点保留），需校准后才可采信
 ├── report.py           # metrics / review（盲评页）/ reveal（揭盲页）/ final（合流报告）
 ├── casebank/           # Case 结构化格式、归档、聚合分析、taxonomy
+├── feedback_kb/        # 生产 feedback 知识库 + 关联分析（见下「Feedback 知识库」）
 ├── configs/            # 实验定义 expNNN.yaml（exp_id、benchmark、变体、张数、乱序种子）
 ├── fixtures/           # benchmark_vN.yaml（种子集，冻结）+ anchors/（角色锚点清单）
 ├── variants/           # 各实验冻结的变体 Prompt（git 提交后永不再编辑）
@@ -51,6 +52,23 @@ experiments/
 ```bash
 python -m experiments.casebank.case_analyze --cases-dir experiments/cases
 ```
+
+### Feedback 知识库（`experiments/feedback_kb/`）
+
+生产 feedback 的机读分析底座（设计文档 `docs/superpowers/specs/2026-07-16-feedback-kb-analysis-design.md`）：
+从 v2 导出 JSON 构建 `cases/feature_kb.jsonl`（一 case 一行，保留 per-image severity、
+COMPOSITION 五维、规则包指纹、LLM 姿势族标签、版本推断），在其上产出
+「紧迫度排行榜 + Prompt 特征关联证据（RR + 样本守门 + 置信标注）」报告，供人机对话层开方。
+
+```bash
+# 新导出落到 feedbacks/ 后（仅对新 case 调一次 LLM 姿势打标，重跑幂等）：
+python -m experiments.feedback_kb.kb_build
+python -m experiments.feedback_kb.report --out experiments/results/feedback_report_YYYYMMDD.md
+```
+
+维护点：生产 Prompt 更新后在 `cases/prompt_versions.yaml` 手动追加版本行（时间戳近似）；
+姿势族新增走 `cases/pose_taxonomy.yaml` 只增不改；崩坏 tag→taxonomy 映射跟随
+`app/config/feedback_tags.yaml`（v3 扩词典后重跑报告即全库重算，无需重建 KB）。
 
 **不可回改原则**：Case 的三段原文与已定稿的 tags/taxonomy_version 永不回改；新一轮
 只允许新增文件/新增 Case。taxonomy 只增不删，新子 tag 须经用户确认后 bump version。
