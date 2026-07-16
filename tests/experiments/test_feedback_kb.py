@@ -349,3 +349,8 @@ def test_report_v2_renders_hypothesis_rows(tmp_path):
     assert row["id"] == "H001" and row["confidence"] == "strong"
     md = report_mod.render_markdown(rep)
     assert "| H001 |" in md and "★强" in md and "candidate" in md
+    # 正则竖线须转义，否则破坏 Markdown 表格列
+    hyp_pipe = {**HYP, "patterns": ["蕾丝(花边|袜口)"]}
+    md2 = report_mod.render_markdown(
+        report_mod.build_report(kb, tl, hypotheses=[hyp_pipe]))
+    assert "蕾丝(花边\\|袜口)" in md2

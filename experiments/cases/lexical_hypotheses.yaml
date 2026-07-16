@@ -3,4 +3,32 @@
 # id 一经使用不复用；status ∈ candidate / supported / refuted / retired，
 # 由人工在查看 lexicon_verify 验证数据后更新（假说生命周期状态，非冻结 case）。
 version: v1
-hypotheses: []
+hypotheses:
+  - id: H001
+    mode: 袜子/上色感
+    scope: 脚部/袜子
+    patterns: ["隐约(可见|透出|显现)[^。]{0,15}(脚掌|足底|脚趾|肉感|弧度|肤色)"]
+    min_hits: 1
+    rationale: 教模型画袜下皮肤/脚部形体的透视措辞，诱导"袜子像涂在皮肤上"的上色感
+    source: contrast_袜子_上色感_20260716 对话精读（2026-07-16 用户确认）
+    status: candidate
+    date: "2026-07-16"
+  - id: H002
+    mode: 脚部/夸张
+    scope: 脚部/袜子
+    patterns: ["隐约(可见|透出|显现)[^。]{0,15}(脚掌|足底|脚趾|肉感|弧度|肤色)"]
+    min_hits: 1
+    rationale: 同款透视措辞把注意力勾向袜下脚部形体刻画（首验疑单种子，待积累）
+    source: contrast_袜子_上色感_20260716 对话精读（2026-07-16 用户确认）
+    status: candidate
+    date: "2026-07-16"
+  - id: H003
+    mode: 腿部/结构错误
+    scope: full
+    patterns: ["(脚掌|足底)相(对|抵|触)"]
+    min_hits: 1
+    rationale: 盘腿足底相抵属几何复杂腿型，疑诱发多肢/缺肢（首验样本不足，挂起待积累）
+    source: contrast_腿部_结构错误_20260716 对话精读（2026-07-16 用户确认）
+    status: candidate
+    date: "2026-07-16"
+

@@ -70,6 +70,7 @@ def render_markdown(report: dict) -> str:
             pats = " ∨ ".join(r["patterns"])
             if r["min_hits"] > 1:
                 pats += f"（≥{r['min_hits']}次）"
+            pats = pats.replace("|", "\\|")  # 正则竖线转义，防破坏 Markdown 表格
             flags = "；".join(r["flags"]) or "—"
             lines.append(
                 f"| {r['id']} | {r['mode']} | {r['scope']} | {pats} "
