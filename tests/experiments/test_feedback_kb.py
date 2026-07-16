@@ -1,13 +1,16 @@
-"""feedback_kb 机制测试（设计文档 §12）：版本时间线、姿势字典、特征提取、
-姿势打标、KB 构建幂等/过滤/排除、关联守门、紧迫度排序。"""
+"""feedback_kb 机制测试（v1 设计 §12 + 归因层重构设计）：版本时间线、姿势字典、
+特征提取、姿势打标、KB 构建幂等/过滤/排除、词汇假说验证守门、对比素材包、
+紧迫度排序、报告 v2。"""
 import json
 
 import pytest
 
-from experiments.feedback_kb import correlate as co
+from experiments.feedback_kb import contrast
 from experiments.feedback_kb import features
 from experiments.feedback_kb import kb_build
+from experiments.feedback_kb import lexicon_verify as lv
 from experiments.feedback_kb import pose_tagger
+from experiments.feedback_kb import report as report_mod
 from experiments.feedback_kb.kb_query import load_kb
 from experiments.feedback_kb.pose_taxonomy import load_pose_taxonomy
 from experiments.feedback_kb.rank import rank_modes
@@ -186,6 +189,7 @@ def test_kb_build_skips_v1_and_excluded_and_dedups(tmp_path):
     assert kb[0]["case_id"] == "Case_prod_20260708_aabbccdd_0"
     assert kb[0]["version_inferred"] == "rulepack"
     assert kb[0]["pose_family"] == "lie_side"
+    assert kb[0]["full_prompt"] == FULL_PROMPT  # 词汇层分析的数据基础
     assert kb[0]["bad"] == 1 and kb[0]["images"][0]["severities"] == ["severe"]
 
 
@@ -208,13 +212,15 @@ def test_kb_build_no_llm_leaves_pending(tmp_path):
     assert load_kb(kb_path)[0]["pose_family"] is None
 
 
-# ---------- correlate 守门 ----------
+# ---------- lexicon_verify 守门（统计核心沿自 v1 correlate，语义不变） ----------
 
-def _case(pose, seed, with_mode):
+def _case(pose, seed, with_mode, full_prompt=None, key=None):
     tags = [{"key": "foot_crude", "severity": "moderate"}] if with_mode else []
-    return {"case_key": f"k{id(object())}", "seed_id": seed,
+    return {"case_key": key or f"k{id(object())}", "case_id": "Case_x",
+            "character_name": "Castorice", "seed_id": seed, "seed_text": "种子",
             "version_inferred": "rulepack", "pose_family": pose,
             "composition": {"aspect_ratio": "3:4"},
+            "full_prompt": full_prompt or FULL_PROMPT,
             "images": [{"image_index": 0, "leg_foot_bad": with_mode,
                         "tag_keys": [t["key"] for t in tags],
                         "severities": [t["severity"] for t in tags],
@@ -224,35 +230,90 @@ def _case(pose, seed, with_mode):
 TAG_MAP = {"foot_crude": "脚部/简陋"}
 
 
-def test_correlate_nmin_gate():
-    kb = [_case("lie_side", f"s{i}", True) for i in range(3)] + \
-         [_case("sit_normal", f"t{i}", False) for i in range(20)]
-    rows = co.correlate(kb, "脚部/简陋", "pose_family", tag_map=TAG_MAP)
-    lie = next(r for r in rows if r["value"] == "lie_side")
-    assert lie["confidence"] == "insufficient" and lie["rr"] is None  # 暴露侧 3 < 8
+def test_rr_contrast_nmin_gate():
+    exposed = [_case("lie_side", f"s{i}", True) for i in range(3)]
+    control = [_case("sit_normal", f"t{i}", False) for i in range(20)]
+    row = lv.rr_contrast(exposed, control, "脚部/简陋", tag_map=TAG_MAP)
+    assert row["confidence"] == "insufficient" and row["rr"] is None  # 暴露侧 3 < 8
 
 
-def test_correlate_strong_and_single_seed_flag():
-    kb = [_case("lie_side", f"s{i}", i < 6) for i in range(10)] + \
-         [_case("sit_normal", f"t{i}", i < 1) for i in range(20)]
-    rows = co.correlate(kb, "脚部/简陋", "pose_family", tag_map=TAG_MAP)
-    lie = next(r for r in rows if r["value"] == "lie_side")
-    assert lie["rr"] and lie["rr"] > co.STRONG_RR and lie["confidence"] == "strong"
+def test_rr_contrast_strong_and_single_seed_flag():
+    exposed = [_case("lie_side", f"s{i}", i < 6) for i in range(10)]
+    control = [_case("sit_normal", f"t{i}", i < 1) for i in range(20)]
+    row = lv.rr_contrast(exposed, control, "脚部/简陋", tag_map=TAG_MAP)
+    assert row["rr"] and row["rr"] > lv.STRONG_RR and row["confidence"] == "strong"
     # 同样分布但崩坏全来自同一 seed → 降为 weak 并打标
-    kb2 = [_case("lie_side", "same-seed" if i < 6 else f"s{i}", i < 6)
-           for i in range(10)] + \
-          [_case("sit_normal", f"t{i}", i < 1) for i in range(20)]
-    lie2 = next(r for r in co.correlate(kb2, "脚部/简陋", "pose_family", tag_map=TAG_MAP)
-                if r["value"] == "lie_side")
-    assert lie2["confidence"] == "weak" and any("单种子" in f for f in lie2["flags"])
+    exposed2 = [_case("lie_side", "same-seed" if i < 6 else f"s{i}", i < 6)
+                for i in range(10)]
+    row2 = lv.rr_contrast(exposed2, control, "脚部/简陋", tag_map=TAG_MAP)
+    assert row2["confidence"] == "weak" and any("单种子" in f for f in row2["flags"])
 
 
-def test_correlate_zero_control():
-    kb = [_case("lie_side", f"s{i}", i < 4) for i in range(10)] + \
-         [_case("sit_normal", f"t{i}", False) for i in range(10)]
-    lie = next(r for r in co.correlate(kb, "脚部/简陋", "pose_family", tag_map=TAG_MAP)
-               if r["value"] == "lie_side")
-    assert lie["rr"] is None and any("无对照" in f for f in lie["flags"])
+def test_rr_contrast_zero_control():
+    exposed = [_case("lie_side", f"s{i}", i < 4) for i in range(10)]
+    control = [_case("sit_normal", f"t{i}", False) for i in range(10)]
+    row = lv.rr_contrast(exposed, control, "脚部/简陋", tag_map=TAG_MAP)
+    assert row["rr"] is None and any("无对照" in f for f in row["flags"])
+
+
+# ---------- 词汇假说：scope 段落匹配与 min_hits ----------
+
+HYP = {"id": "H001", "mode": "脚部/简陋", "scope": "脚部/袜子",
+       "patterns": ["蕾丝"], "min_hits": 2, "status": "candidate"}
+
+
+def test_hypothesis_hits_scope_and_min_hits():
+    # FULL_PROMPT 脚袜段"蕾丝"1 次、服装段 1 次——scope 限定后仅计脚袜段
+    assert lv.hypothesis_hits(_case("sit_normal", "s", False), HYP) == 1
+    assert lv.hypothesis_hits(_case("sit_normal", "s", False),
+                              {**HYP, "scope": "full"}) == 2
+    doubled = FULL_PROMPT.replace("袜口有蕾丝", "袜口有蕾丝和蕾丝花边")
+    assert lv.hypothesis_hits(_case("s", "s", False, full_prompt=doubled), HYP) == 2
+
+
+def test_verify_hypothesis_splits_by_hits():
+    doubled = FULL_PROMPT.replace("袜口有蕾丝", "袜口有蕾丝和蕾丝花边")
+    kb = [_case("lie_side", f"s{i}", i < 6, full_prompt=doubled) for i in range(10)] \
+        + [_case("sit_normal", f"t{i}", i < 1) for i in range(20)]
+    row = lv.verify_hypothesis(kb, HYP, tag_map=TAG_MAP)
+    assert row["exposed"] == "6/10" and row["control"] == "1/20"
+    assert row["confidence"] == "strong" and row["id"] == "H001"
+
+
+def test_load_hypotheses_validates(tmp_path):
+    ok = _write(tmp_path, "h.yaml", "version: v1\nhypotheses: []\n")
+    assert lv.load_hypotheses(ok) == []
+    dup = ("version: v1\nhypotheses:\n"
+           "  - {id: H1, mode: m, scope: full, patterns: [a]}\n"
+           "  - {id: H1, mode: m, scope: full, patterns: [b]}\n")
+    with pytest.raises(ValueError):
+        lv.load_hypotheses(_write(tmp_path, "h2.yaml", dup))
+    with pytest.raises(ValueError):
+        lv.load_hypotheses(_write(tmp_path, "h3.yaml",
+                                  "hypotheses:\n  - {id: H1, mode: m}\n"))
+
+
+# ---------- contrast 素材包 ----------
+
+def test_contrast_split_groups_stratified_and_deterministic():
+    kb = ([_case("lie_side", f"s{i}", True, key=f"e{i}") for i in range(4)]
+          + [_case("lie_side", f"c{i}", False, key=f"cl{i}") for i in range(3)]
+          + [_case("sit_normal", f"c{i}", False, key=f"cs{i}") for i in range(10)])
+    exposed, control = contrast.split_groups(kb, "脚部/简陋", tag_map=TAG_MAP)
+    assert len(exposed) == 4 and len(control) == 4
+    # 分层：对照组优先取与暴露组同姿势族的 case，不足再顺序补齐
+    assert sum(1 for c in control if c["pose_family"] == "lie_side") == 3
+    again = contrast.split_groups(kb, "脚部/简陋", tag_map=TAG_MAP)
+    assert [c["case_key"] for c in again[1]] == [c["case_key"] for c in control]
+
+
+def test_contrast_cap_and_render():
+    kb = ([_case("lie_side", f"s{i}", True, key=f"e{i}") for i in range(20)]
+          + [_case("sit_normal", f"c{i}", False, key=f"c{i}") for i in range(20)])
+    exposed, control = contrast.split_groups(kb, "脚部/简陋", tag_map=TAG_MAP, cap=5)
+    assert len(exposed) == 5 and len(control) == 5
+    md = contrast.render_bundle("脚部/简陋", exposed, control, tag_map=TAG_MAP)
+    assert "崩坏组" in md and "对照组" in md and FULL_PROMPT.strip() in md
 
 
 # ---------- rank ----------
@@ -265,3 +326,26 @@ def test_rank_modes_severity_and_neutral_trend(tmp_path):
     assert rows[0]["freq"] == 4 and rows[0]["severity_weight"] == 2.0  # 全部中等
     assert rows[0]["trend"] == 1.0 and "单版本" in rows[0]["trend_note"]
     assert rows[0]["urgency"] == 8.0
+
+
+# ---------- report v2 ----------
+
+def test_report_v2_empty_hypotheses_and_no_dim_section(tmp_path):
+    tl = load_versions(_write(tmp_path, "v.yaml", VERSIONS_YAML))
+    kb = [_case("lie_side", f"s{i}", i < 4) for i in range(10)]
+    rep = report_mod.build_report(kb, tl, hypotheses=[])
+    md = report_mod.render_markdown(rep)
+    assert "词汇假说验证" in md and "暂无登记假说" in md
+    assert "特征关联证据" not in md and "aspect_ratio" not in md  # 配置维度已删除
+
+
+def test_report_v2_renders_hypothesis_rows(tmp_path):
+    tl = load_versions(_write(tmp_path, "v.yaml", VERSIONS_YAML))
+    doubled = FULL_PROMPT.replace("袜口有蕾丝", "袜口有蕾丝和蕾丝花边")
+    kb = [_case("lie_side", f"s{i}", i < 6, full_prompt=doubled) for i in range(10)] \
+        + [_case("sit_normal", f"t{i}", i < 1) for i in range(20)]
+    rep = report_mod.build_report(kb, tl, hypotheses=[HYP])
+    row = rep["lexical_verification"][0]
+    assert row["id"] == "H001" and row["confidence"] == "strong"
+    md = report_mod.render_markdown(rep)
+    assert "| H001 |" in md and "★强" in md and "candidate" in md

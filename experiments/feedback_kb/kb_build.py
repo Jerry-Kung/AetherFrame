@@ -67,6 +67,7 @@ def build_case_row(record: dict, group: dict, exported_from: str, timeline) -> d
         "seed_text": record["seed_prompt_text"],
         "composition": features.extract_composition(full_prompt),
         "rules": features.detect_rules(full_prompt),
+        "full_prompt": full_prompt,
         "pose_family": None,
         "pose_text": features.get_pose_text(full_prompt),
         "total_images": group["total_images"],

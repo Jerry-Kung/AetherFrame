@@ -55,20 +55,27 @@ python -m experiments.casebank.case_analyze --cases-dir experiments/cases
 
 ### Feedback 知识库（`experiments/feedback_kb/`）
 
-生产 feedback 的机读分析底座（设计文档 `docs/superpowers/specs/2026-07-16-feedback-kb-analysis-design.md`）：
-从 v2 导出 JSON 构建 `cases/feature_kb.jsonl`（一 case 一行，保留 per-image severity、
-COMPOSITION 五维、规则包指纹、LLM 姿势族标签、版本推断），在其上产出
-「紧迫度排行榜 + Prompt 特征关联证据（RR + 样本守门 + 置信标注）」报告，供人机对话层开方。
+生产 feedback 的机读分析底座（底座设计 `docs/superpowers/specs/2026-07-16-feedback-kb-analysis-design.md`，
+归因层重构 `…-feedback-kb-lexical-attribution-redesign.md`）：从 v2 导出 JSON 构建
+`cases/feature_kb.jsonl`（一 case 一行，保留 full_prompt 全文、per-image severity、
+LLM 姿势族标签、版本推断），在其上产出「紧迫度排行榜 + 词汇假说验证（RR + 样本守门 +
+置信标注）」报告。归因闭环 = **LLM 提假说（对话层）、代码验假说（确定性）**：
 
 ```bash
-# 新导出落到 feedbacks/ 后（仅对新 case 调一次 LLM 姿势打标，重跑幂等）：
+# [1] 新导出落到 feedbacks/ 后构建/更新 KB（仅对新 case 调一次 LLM 姿势打标，重跑幂等）
 python -m experiments.feedback_kb.kb_build
+# [2] 产出报告：排行榜（定靶）+ 已登记词汇假说的全库验证
 python -m experiments.feedback_kb.report --out experiments/results/feedback_report_YYYYMMDD.md
+# [3] 对排行榜靶模式生成对比精读素材包（崩坏组 vs 姿势族配对对照组，完整 Prompt）
+python -m experiments.feedback_kb.contrast --mode 腿部/结构错误
+# [4] 对话层精读素材包提出可检测假说（pattern+scope）→ 用户确认后登记
+#     experiments/cases/lexical_hypotheses.yaml → 重跑 [2] 看验证结果 → 开方进 A/B
 ```
 
 维护点：生产 Prompt 更新后在 `cases/prompt_versions.yaml` 手动追加版本行（时间戳近似）；
 姿势族新增走 `cases/pose_taxonomy.yaml` 只增不改；崩坏 tag→taxonomy 映射跟随
-`app/config/feedback_tags.yaml`（v3 扩词典后重跑报告即全库重算，无需重建 KB）。
+`app/config/feedback_tags.yaml`（扩词典后重跑报告即全库重算，无需重建 KB）；
+假说 id 不复用，status（candidate/supported/refuted/retired）由人工看验证数据后更新。
 
 **不可回改原则**：Case 的三段原文与已定稿的 tags/taxonomy_version 永不回改；新一轮
 只允许新增文件/新增 Case。taxonomy 只增不删，新子 tag 须经用户确认后 bump version。

@@ -1,0 +1,6 @@
+# 词汇假说库（归因层重构设计 §4）
+# 假说来源：对话层对比精读素材包（experiments/results/contrast_*.md）→ 用户确认后登记。
+# id 一经使用不复用；status ∈ candidate / supported / refuted / retired，
+# 由人工在查看 lexicon_verify 验证数据后更新（假说生命周期状态，非冻结 case）。
+version: v1
+hypotheses: []
