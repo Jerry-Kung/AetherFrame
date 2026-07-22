@@ -80,8 +80,26 @@ page/src/types/video.ts
 - **LLM 文本推理**：`app/tools/llm/yibu_llm_infer.py` 的 `yibu_gemini_infer`（支持 `image_path` 多模态输入、`thinking_level`）。
 - **缩略图**：`app/utils/thumbnails.get_or_create_thumbnail`。
 - **文件响应缓存**：`app/utils/cache_response`。
-- **新依赖**：`volcengine-python-sdk[ark]` 加入 `requirements.txt`。
-- **配置**：Seedance 的 `api_key` / `base_url` / 模型 ID 加入 `app/tools/llm/config.py`（gitignored 惯例，需本地创建）。
+- **新依赖**：`volcengine-python-sdk[ark]` 与 `python-dotenv` 加入 `requirements.txt`。
+- **Seedance 配置（独立入口）**：见 §3.4。Seedance 2.0 的 `base_url` / `model` / `api_key` 与现有 yibu（文本 / 文生图）API **不一致**，单独配置，放 `.env`，由生产环境自行配置。
+
+### 3.4 Seedance 配置入口（独立于 yibu API）
+
+Seedance 2.0 与现有 yibu（文本 / 文生图）API 的 `base_url` 和 `api_key` 不一致，需独立配置入口。
+
+- **位置**：`.env` 文件（已在 `.gitignore` 中；由生产环境自行配置，不入库）。
+- **加载**：`requirements.txt` 增加 `python-dotenv`；在 `app/main.py` 启动早期 `load_dotenv()`，随后用 `os.environ.get` 读取。项目现有环境变量读取（`TOS_ACCESS_KEY` 等）也是 `os.environ.get`，引入 dotenv 后这些同样可从 `.env` 读到，行为向后兼容。
+- **配置项与默认值**（`app/tools/llm/seedance.py` 内以 `os.environ.get(key, default)` 读取）：
+
+  | 环境变量 | 默认值 | 说明 |
+  |---|---|---|
+  | `SEEDANCE_BASE_URL` | `https://ark.cn-beijing.volces.com/api/v3` | 示例代码默认，直接采用 |
+  | `SEEDANCE_MODEL` | `doubao-seedance-2-0-260128` | 示例代码默认，直接采用 |
+  | `SEEDANCE_API_KEY` | 无默认（必填） | 生产环境在 `.env` 中填入；缺失时提交任务报明确错误 |
+
+- **不改动原有 yibu 配置**：`app/tools/llm/config.py` 与 `app/tools/beautify/config.py` 保持原样，暂不迁移到 `.env`；yibu → `.env` 的迁移后续单独起任务。
+- **交付物**：仓库内提供 `.env.example`（`base_url` / `model` 填默认值，`api_key` 留空占位），`.env` 本身不入库。
+- **Docker**：`docker-compose.yml` 为后端服务补充 `.env` 注入（`env_file: .env` 或等价），使容器内可读到这些变量。
 
 ## 4. 数据模型
 
@@ -202,7 +220,7 @@ Prompt 作业由 `prompt_service.py` 编排，走 BackgroundTasks，结果写入
 - 导入校验：仅接受图片类型，大小上限沿用素材模块上传限制。
 - 提交 409（已有任务在跑）→ 前端 toast 明确提示串行约束。
 - Runner 各环节失败均落 `failed + error_message`；TOS 清理放 finally 保证不残留。
-- 应用重启把 in-flight 任务标记 `failed`（见 §5）。
+- 依赖与配置：`volcengine-python-sdk[ark]`、`python-dotenv` 进 `requirements.txt`；Seedance 配置见 §3.4，缺 `SEEDANCE_API_KEY` 时提交任务返回明确错误。
 
 ## 11. 测试
 
