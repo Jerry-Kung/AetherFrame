@@ -11,3 +11,5 @@ services:
       - ./data:/app/data
     environment:
       - DATA_DIR=/app/data
+    env_file:
+      - .env
