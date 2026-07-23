@@ -1,4 +1,3 @@
-import logging
 import os
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
@@ -17,8 +16,6 @@ from app.services.video_service.exceptions import VideoConflictError, VideoNotFo
 from app.services.video_service.prompt_service import VideoPromptService
 from app.services.video_service.video_service import VideoService
 from app.utils.thumbnails import get_or_create_thumbnail
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/video", tags=["video"])
 
@@ -120,7 +117,9 @@ def get_image(task_id: str, db: Session = Depends(get_db)):
     if not task or not task.ref_image_path or not os.path.exists(task.ref_image_path):
         raise HTTPException(status_code=404, detail="参考图不存在")
     thumb = get_or_create_thumbnail(task.ref_image_path)
-    return FileResponse(thumb)
+    if thumb:
+        return FileResponse(thumb)
+    return FileResponse(task.ref_image_path)
 
 
 @router.delete("/tasks/{task_id}", response_model=ApiResponse)
