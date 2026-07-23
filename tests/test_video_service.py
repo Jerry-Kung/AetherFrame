@@ -93,3 +93,62 @@ def test_prompt_job_failure_records_error():
     finally:
         repo.delete("vid_pj_c")
         db.close()
+
+
+def test_submit_conflict_when_inflight():
+    from app.services.video_service.video_service import VideoService
+    from app.services.video_service.exceptions import VideoConflictError
+    import pytest as _pytest
+
+    init_db()
+    db = SessionLocal()
+    try:
+        repo = VideoRepository(db)
+        # 一个占位 in-flight 任务
+        repo.create({
+            "id": "vid_inflight", "source_kind": "upload",
+            "ref_image_path": "x", "image_role": "first_frame",
+            "duration": 8, "generate_audio": False, "ratio": "3:4",
+            "status": "generating",
+        })
+        # 另一个 draft，尝试提交应 409
+        repo.create({
+            "id": "vid_draft", "source_kind": "upload",
+            "ref_image_path": "x", "image_role": "first_frame",
+            "duration": 8, "generate_audio": False, "ratio": "3:4",
+            "status": "draft",
+        })
+        svc = VideoService(db)
+        with _pytest.raises(VideoConflictError):
+            svc.submit(
+                "vid_draft", video_prompt_text="p", image_role="first_frame",
+                duration=8, generate_audio=False, ratio="3:4", prompt_mode="manual",
+                background_tasks=None,
+            )
+    finally:
+        repo.delete("vid_inflight")
+        repo.delete("vid_draft")
+        db.close()
+
+
+def test_delete_running_task_rejected():
+    from app.services.video_service.video_service import VideoService
+    from app.services.video_service.exceptions import VideoConflictError
+    import pytest as _pytest
+
+    init_db()
+    db = SessionLocal()
+    try:
+        repo = VideoRepository(db)
+        repo.create({
+            "id": "vid_del_run", "source_kind": "upload",
+            "ref_image_path": "x", "image_role": "first_frame",
+            "duration": 8, "generate_audio": False, "ratio": "3:4",
+            "status": "downloading",
+        })
+        svc = VideoService(db)
+        with _pytest.raises(VideoConflictError):
+            svc.delete_task("vid_del_run")
+    finally:
+        repo.delete("vid_del_run")
+        db.close()
