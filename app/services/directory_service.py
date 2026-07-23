@@ -65,6 +65,21 @@ def get_beautify_dir() -> str:
     return os.path.join(get_data_dir(), "beautify")
 
 
+def get_video_dir() -> str:
+    """获取视频创作模块目录（data/video）"""
+    return os.path.join(get_data_dir(), "video")
+
+
+def get_video_tasks_dir() -> str:
+    """获取视频任务根目录（data/video/tasks）"""
+    return os.path.join(get_video_dir(), "tasks")
+
+
+def get_video_task_dir(task_id: str) -> str:
+    """单个视频任务工作目录（data/video/tasks/{task_id}）"""
+    return os.path.join(get_video_tasks_dir(), task_id)
+
+
 def get_prompt_precreation_task_dir(character_id: str, task_id: str) -> str:
     """Prompt 预生成任务工作目录：data/beautify/prompt_precreation/{character_id}/{task_id}/"""
     return os.path.join(get_beautify_dir(), "prompt_precreation", character_id, task_id)
@@ -205,6 +220,7 @@ def initialize_data_directory() -> None:
     ensure_dir_exists(get_material_dir())
     ensure_dir_exists(get_material_characters_dir())
     ensure_dir_exists(get_beautify_dir())
+    ensure_dir_exists(get_video_tasks_dir())
     ensure_dir_exists(get_prompt_precreation_history_dir())
     ensure_dir_exists(get_prompt_precreation_history_records_dir())
     ensure_dir_exists(get_quick_create_history_dir())
