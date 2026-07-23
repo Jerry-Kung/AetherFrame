@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AetherFrame is a lightweight personal image processing tool for anime-style content. It provides three main modules: Material Processing (素材加工), Art Creation (美图创作), and Image Repair (图片修补). The app calls external AI APIs (Gemini via yibuapi.com) for LLM inference and image generation. Image beautify (图片美化) is documented in `claude_docs/feature_beautify/`.
+AetherFrame is a lightweight personal image processing tool for anime-style content. It provides four main modules: Material Processing (素材加工), Art Creation (美图创作), Image Repair (图片修补), and Video Creation (视频创作). The app calls external AI APIs (Gemini via yibuapi.com) for LLM inference and image generation. Video Creation turns 灵感产线 art outputs into 4–15s home-style dynamic photo videos (居家动态写真) via the Seedance 2.0 text-to-video model (Volcengine Ark SDK); it uses a separate `.env`-based config distinct from the yibu API (see `.env.example`). Image beautify (图片美化) is documented in `claude_docs/feature_beautify/`.
 
 ## Development Commands
 
@@ -44,8 +44,8 @@ pytest
 
 - **Framework**: FastAPI with SQLAlchemy ORM, SQLite database (WAL mode) stored at `data/db/aetherframe.db`
 - **Entry point**: `app/main.py` — registers routers, runs lifespan init (directory setup, DB migrations, prompt template seeding)
-- **Route modules**: `app/routes/` — `repair.py`, `material.py`, `creation.py`, `api.py`, `pages.py`
-- **Service layer**: `app/services/` — business logic organized by module (repair_service/, material_service/, creation_service/)
+- **Route modules**: `app/routes/` — `repair.py`, `material.py`, `creation.py`, `beautify.py`, `video.py`, `api.py`, `pages.py`
+- **Service layer**: `app/services/` — business logic organized by module (repair_service/, material_service/, creation_service/, video_service/). `video_service/` holds the Seedance orchestration (`video_service.py`), background `runner.py`, LLM `prompt_service.py`, and `exceptions.py`.
 - **Repository layer**: `app/repositories/` — generic `BaseRepository[T]` with CRUD; module-specific repos extend it
 - **Schemas**: `app/schemas/` — Pydantic models for request/response validation
 - **Models**: `app/models/` — SQLAlchemy models; `database.py` contains engine setup and lightweight migrations (no Alembic — uses ALTER TABLE checks)
