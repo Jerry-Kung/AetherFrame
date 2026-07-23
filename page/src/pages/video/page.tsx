@@ -25,6 +25,7 @@ export default function VideoPage() {
   const [historyKey, setHistoryKey] = useState(0);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const promptPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -92,23 +93,37 @@ export default function VideoPage() {
   };
 
   const pollPromptJob = async (taskId: string) => {
+    if (promptPollRef.current) clearInterval(promptPollRef.current);
     return new Promise<void>((resolve, reject) => {
       const iv = setInterval(async () => {
         try {
           const t = await videoApi.getPromptJobStatus(taskId);
           if (t.prompt_job_status === "completed") {
             clearInterval(iv);
+            promptPollRef.current = null;
             if (t.prompt_job_result) setPrompt(t.prompt_job_result);
             setTask(t);
             resolve();
           } else if (t.prompt_job_status === "failed") {
             clearInterval(iv);
+            promptPollRef.current = null;
             reject(new Error(t.prompt_job_error ?? "Prompt 生成失败"));
           }
-        } catch (e) { clearInterval(iv); reject(e); }
+        } catch (e) { clearInterval(iv); promptPollRef.current = null; reject(e); }
       }, 2000);
+      promptPollRef.current = iv;
     });
   };
+
+  // Clear prompt-job poll interval on unmount
+  useEffect(() => {
+    return () => {
+      if (promptPollRef.current) {
+        clearInterval(promptPollRef.current);
+        promptPollRef.current = null;
+      }
+    };
+  }, []);
 
   const handleRecommend = async () => {
     if (!task) return;
