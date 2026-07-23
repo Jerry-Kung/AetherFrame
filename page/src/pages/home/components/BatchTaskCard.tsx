@@ -1,4 +1,5 @@
 import { memo, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import CreationResultLightbox from "@/components/CreationResultLightbox";
 import AiCommentModal from "@/pages/creation/components/AiCommentModal";
 import BatchTaskDetailModal from "./BatchTaskDetailModal";
@@ -6,7 +7,9 @@ import ImageFeedbackModal from "./ImageFeedbackModal";
 import DirectionChip from "@/pages/material/components/direction/DirectionChip";
 import type { BatchTask } from "@/types/batchAutomation";
 import type { AiComment, QuickCreateImage } from "@/types/quickCreate";
+import * as creationApi from "@/services/creationApi";
 import type { SelectedFeedbackTag } from "@/services/creationApi";
+import { importFromQuickCreate } from "@/services/videoApi";
 import { thumbUrl } from "@/utils/imageUrl";
 
 interface ImageLightboxState {
@@ -56,6 +59,7 @@ export default memo(function BatchTaskCard({
   onMarkUsed,
   onSaveFeedback,
 }: BatchTaskCardProps) {
+  const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
   const [lightbox, setLightbox] = useState<ImageLightboxState | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -67,6 +71,8 @@ export default memo(function BatchTaskCard({
     imageUrl: string;
     promptTitle: string;
   } | null>(null);
+  const [creatingVideoImageId, setCreatingVideoImageId] = useState<string | null>(null);
+  const [videoCreateError, setVideoCreateError] = useState<string | null>(null);
 
   const totalImages = task.images.length;
 
@@ -104,6 +110,40 @@ export default memo(function BatchTaskCard({
   );
 
   const closeComment = useCallback(() => setViewingComment(null), []);
+
+  const handleCreateVideo = useCallback(
+    async (img: QuickCreateImage) => {
+      if (!task.quickCreateRecordId) return;
+      const sourceImagePath = creationApi.parseQuickCreateResultImagePath(
+        img.url,
+        task.quickCreateRecordId
+      );
+      if (!sourceImagePath) {
+        setVideoCreateError("无法解析该图片的来源路径，暂不支持去创作视频");
+        return;
+      }
+      const card = task.promptCards.find((c) => c.id === img.promptId);
+      const refPrompt =
+        card?.fullPrompt ??
+        task.groups.find((g) => g.promptId === img.promptId)?.promptPreview ??
+        null;
+      setVideoCreateError(null);
+      setCreatingVideoImageId(img.id);
+      try {
+        const created = await importFromQuickCreate({
+          source_task_id: task.quickCreateRecordId,
+          source_image_path: sourceImagePath,
+          ref_prompt_text: refPrompt,
+        });
+        navigate(`/video?task=${created.task_id}`);
+      } catch (e) {
+        setVideoCreateError(e instanceof Error ? e.message : "创建视频草稿失败，请稍后重试");
+      } finally {
+        setCreatingVideoImageId(null);
+      }
+    },
+    [navigate, task.quickCreateRecordId, task.promptCards, task.groups]
+  );
 
   const patchImage = useCallback((imageId: string, patch: Partial<QuickCreateImage>) => {
     setLightbox((prev) =>
@@ -354,6 +394,14 @@ export default memo(function BatchTaskCard({
               </span>
               <span className="text-xs text-rose-300/60">{totalImages} 张</span>
             </div>
+            {videoCreateError && (
+              <div
+                className="rounded-xl p-2.5 mb-2 text-xs text-rose-700"
+                style={{ background: "rgba(251,113,133,0.08)", border: "1px solid rgba(251,113,133,0.25)" }}
+              >
+                {videoCreateError}
+              </div>
+            )}
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {task.images.map((img, imgIdx) => (
                 <div
@@ -388,6 +436,35 @@ export default memo(function BatchTaskCard({
                       </div>
                     </div>
                   </button>
+
+                  {task.quickCreateRecordId && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleCreateVideo(img);
+                      }}
+                      disabled={creatingVideoImageId === img.id}
+                      className="absolute top-2 right-2 z-10 flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs cursor-pointer transition-all duration-200 whitespace-nowrap hover:opacity-90 pointer-events-auto disabled:opacity-60 disabled:cursor-not-allowed"
+                      style={{
+                        fontFamily: "'ZCOOL KuaiLe', cursive",
+                        background: "linear-gradient(135deg, #fda4af 0%, #f472b6 100%)",
+                        color: "white",
+                        boxShadow: "0 2px 10px rgba(244,114,182,0.4)",
+                      }}
+                    >
+                      <span className="w-3 h-3 flex items-center justify-center" aria-hidden>
+                        <i
+                          className={
+                            creatingVideoImageId === img.id
+                              ? "ri-loader-4-line text-xs animate-spin"
+                              : "ri-video-add-line text-xs"
+                          }
+                        ></i>
+                      </span>
+                      去创作视频
+                    </button>
+                  )}
 
                   {task.quickCreateRecordId && typeof img.imageIndex === "number" && (
                     <button
