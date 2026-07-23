@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from app.routes import pages, api, repair, material, creation, beautify
+from app.routes import pages, api, repair, material, creation, beautify, video
 
 # 配置日志
 logging.basicConfig(
@@ -40,6 +40,9 @@ class _SuppressPollAccessLog(logging.Filter):
         if "/batch-automation/runs/" in msg or "/batch-automation/items" in msg:
             return False
         if "/api/beautify/tasks/" in msg and "/status HTTP" in msg:
+            return False
+        # 视频创作任务状态轮询
+        if "/api/video/tasks/" in msg and "/status HTTP" in msg:
             return False
         return True
 
@@ -152,4 +155,5 @@ app.include_router(repair.router)
 app.include_router(material.router)
 app.include_router(creation.router)
 app.include_router(beautify.router, prefix="/api/beautify")
+app.include_router(video.router)
 app.include_router(pages.router)
