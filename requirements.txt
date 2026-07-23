@@ -9,3 +9,5 @@ Pillow>=10.0.0
 requests>=2.31.0
 tos>=2.6.0
 pyyaml>=6.0
+volcengine-python-sdk[ark]
+python-dotenv
