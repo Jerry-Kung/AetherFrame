@@ -629,6 +629,13 @@ def migrate_creation_image_feedbacks_recompute_leg_foot_bad() -> None:
         raise
 
 
+def migrate_create_video_creation_tasks() -> None:
+    """创建 video_creation_tasks 表（幂等：依赖 create_all）。"""
+    from app.models.video import VideoCreationTask  # noqa: F401
+
+    logger.info("migrate: video_creation_tasks ensured")
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     logger.info("========== 开始初始化数据库 ==========")
@@ -650,6 +657,7 @@ def init_db():
         from app.models.creation_batch import CreationBatchRun, CreationBatchRunItem  # noqa: F401
         from app.models.beautify import ImageBeautifyTask  # noqa: F401
         from app.models.creation_feedback import CreationImageFeedback  # noqa: F401
+        from app.models.video import VideoCreationTask  # noqa: F401
 
         Base.metadata.create_all(bind=engine)
         _ensure_app_migrations_table()
@@ -669,6 +677,7 @@ def init_db():
         migrate_material_creative_directions_add_home_settings()
         migrate_creation_image_feedbacks_add_selected_tags()
         migrate_creation_image_feedbacks_recompute_leg_foot_bad()
+        migrate_create_video_creation_tasks()
         logger.info("所有数据表创建成功")
         logger.info("========== 数据库初始化完成 ==========")
     except Exception as e:
