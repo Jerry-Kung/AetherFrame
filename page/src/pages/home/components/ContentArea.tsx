@@ -18,6 +18,10 @@ const emptyStateConfig: Record<ModeId, { emoji: string; hint: string }> = {
     emoji: "🖌️",
     hint: "智能去水印、背景抹除、画质修复一键搞定",
   },
+  video: {
+    emoji: "🎬",
+    hint: "上传参考图，AI 生成专属短视频",
+  },
 };
 
 const ContentArea = ({ activeMode }: ContentAreaProps) => {

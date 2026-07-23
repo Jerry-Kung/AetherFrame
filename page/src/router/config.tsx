@@ -6,6 +6,7 @@ const Home = lazy(() => import("../pages/home/page"));
 const RepairPage = lazy(() => import("../pages/repair/page"));
 const MaterialPage = lazy(() => import("../pages/material/page"));
 const CreationPage = lazy(() => import("../pages/creation/page"));
+const VideoPage = lazy(() => import("../pages/video/page"));
 
 function PageFallback() {
   return (
@@ -53,6 +54,14 @@ const routes: RouteObject[] = [
     element: (
       <Suspense fallback={<PageFallback />}>
         <CreationPage />
+      </Suspense>
+    ),
+  },
+  {
+    path: "/video",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <VideoPage />
       </Suspense>
     ),
   },

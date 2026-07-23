@@ -11,7 +11,9 @@ interface ApiEnvelope<T = unknown> {
   detail?: unknown;
 }
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
+type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
+
+async function call<T>(path: string, init?: FetchInit): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT);
   try {

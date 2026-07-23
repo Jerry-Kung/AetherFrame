@@ -1,4 +1,4 @@
-export type ModeId = "material" | "creation" | "repair";
+export type ModeId = "material" | "creation" | "repair" | "video";
 
 export interface Mode {
   id: ModeId;
@@ -29,6 +29,13 @@ export const MODES: Mode[] = [
     icon: "ri-eraser-line",
     activeGradient: "from-pink-300 to-rose-400",
     accentColor: "#f9a8d4",
+  },
+  {
+    id: "video",
+    label: "视频创作",
+    icon: "ri-video-line",
+    activeGradient: "from-rose-400 to-pink-400",
+    accentColor: "#fb7185",
   },
 ];
 

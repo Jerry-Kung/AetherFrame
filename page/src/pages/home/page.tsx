@@ -107,6 +107,10 @@ export default function Home() {
       navigate("/creation");
       return;
     }
+    if (id === "video") {
+      navigate("/video");
+      return;
+    }
     setActiveMode(id);
   };
 
