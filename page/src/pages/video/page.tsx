@@ -43,6 +43,7 @@ export default function VideoPage() {
     setTask(t);
     if (t.video_prompt_text) setPrompt(t.video_prompt_text);
     if (t.recommended_ratio) setRatio(t.recommended_ratio);
+    else if (t.ratio) setRatio(t.ratio);
     if (t.image_role) setImageRole(t.image_role);
     if (t.duration) setDuration(t.duration);
     if (typeof t.generate_audio === "boolean") setGenerateAudio(t.generate_audio);

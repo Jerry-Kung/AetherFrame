@@ -75,6 +75,25 @@ def test_prompt_job_optimize_uses_manual_prompt():
         db.close()
 
 
+def test_start_job_rejects_when_pending():
+    from app.services.video_service.prompt_service import VideoPromptService
+    import pytest as _pytest
+
+    init_db()
+    db = SessionLocal()
+    try:
+        repo = VideoRepository(db)
+        _seed_draft(repo, "vid_pj_pending")
+        svc = VideoPromptService(db)
+        # 模拟第一次点击已把作业置为 pending（尚未跑到 running）
+        repo.update("vid_pj_pending", {"prompt_job_status": "pending"})
+        with _pytest.raises(ValueError):
+            svc.start_job("vid_pj_pending", "recommend", None, background_tasks=None)
+    finally:
+        repo.delete("vid_pj_pending")
+        db.close()
+
+
 def test_prompt_job_failure_records_error():
     from app.services.video_service.prompt_service import VideoPromptService
 
@@ -128,6 +147,93 @@ def test_submit_conflict_when_inflight():
     finally:
         repo.delete("vid_inflight")
         repo.delete("vid_draft")
+        db.close()
+
+
+def test_import_from_quick_create_rejects_path_traversal(tmp_path):
+    from app.services.video_service.video_service import VideoService
+    from app.services.video_service.exceptions import VideoNotFoundError
+    from app.repositories.creation_repository import CreationQuickCreateRepository
+    from app.repositories.material_repository import MaterialCharacterRepository
+    import pytest as _pytest
+
+    init_db()
+    db = SessionLocal()
+    source_task = None
+    char = None
+    result = None
+    try:
+        mrepo = MaterialCharacterRepository(db)
+        char = mrepo.create({"id": "mchar_vid_traversal", "name": "video-traversal-test-char"})
+        quick_repo = CreationQuickCreateRepository(db)
+        source_task = quick_repo.create(
+            character_id=char.id,
+            seed_prompt="p",
+            n=1,
+            aspect_ratio="1:1",
+            selected_prompts=[],
+        )
+        work_dir = source_task.work_dir
+        os.makedirs(work_dir, exist_ok=True)
+        real_img = os.path.join(work_dir, "real.png")
+        with open(real_img, "wb") as f:
+            f.write(b"fake-png-bytes")
+
+        # 位于 work_dir 之外的秘密文件（模拟任意文件读取目标）
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+        secret_path = outside_dir / "secret.txt"
+        secret_path.write_text("top secret")
+
+        svc = VideoService(db)
+        from app.models.video import VideoCreationTask
+
+        before_count = db.query(VideoCreationTask).count()
+
+        # 相对路径穿越
+        with _pytest.raises(VideoNotFoundError):
+            svc.import_from_quick_create(
+                source_task.id, "../../../../../../../../etc/passwd", None
+            )
+
+        # 绝对路径直接指向 work_dir 之外的文件
+        with _pytest.raises(VideoNotFoundError):
+            svc.import_from_quick_create(source_task.id, str(secret_path), None)
+
+        # 未创建任何 video 任务、也未拷贝任何文件（穿越应在拷贝前被拦截）
+        assert db.query(VideoCreationTask).count() == before_count
+
+        # 合法路径仍应正常工作（回归）
+        result = svc.import_from_quick_create(source_task.id, "real.png", None)
+        assert result["task_id"]
+        assert result["ratio"]
+        from app.services import directory_service
+
+        copied_path = os.path.join(
+            directory_service.get_video_task_dir(result["task_id"]), "ref.png"
+        )
+        assert os.path.isfile(copied_path)
+    finally:
+        try:
+            if result:
+                video_repo = VideoRepository(db)
+                video_repo.delete(result["task_id"])
+        except Exception:
+            pass
+        try:
+            if source_task is not None:
+                db.query(source_task.__class__).filter(
+                    source_task.__class__.id == source_task.id
+                ).delete()
+                db.commit()
+        except Exception:
+            pass
+        try:
+            if char is not None:
+                db.query(char.__class__).filter(char.__class__.id == char.id).delete()
+                db.commit()
+        except Exception:
+            pass
         db.close()
 
 

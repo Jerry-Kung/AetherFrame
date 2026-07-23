@@ -31,7 +31,7 @@ class VideoPromptService:
         task = self.repo.get_by_id(task_id)
         if not task:
             raise FileNotFoundError("视频任务不存在")
-        if task.prompt_job_status == "running":
+        if task.prompt_job_status in ("pending", "running"):
             raise ValueError("已有 Prompt 作业进行中")
         if mode == "optimize" and not (manual_prompt and manual_prompt.strip()):
             raise ValueError("优化模式需要提供手写 Prompt")

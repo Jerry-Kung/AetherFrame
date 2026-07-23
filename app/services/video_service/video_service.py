@@ -46,8 +46,13 @@ class VideoService:
         source_task = self.quick_repo.get_by_id(source_task_id)
         if not source_task:
             raise VideoNotFoundError("源产线任务不存在")
-        abs_src = os.path.join(source_task.work_dir, source_image_path)
-        if not os.path.exists(abs_src):
+        base = os.path.realpath(source_task.work_dir)
+        abs_src = os.path.realpath(os.path.join(base, source_image_path))
+        try:
+            within_base = os.path.commonpath([base, abs_src]) == base
+        except ValueError:
+            within_base = False
+        if not within_base or not os.path.isfile(abs_src):
             raise VideoNotFoundError("源图片不存在")
 
         task_id = self._new_task_id()
